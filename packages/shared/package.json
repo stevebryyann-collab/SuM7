@@ -1,0 +1,42 @@
+{
+  "name": "@b2b/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/types/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "default": "./dist/schemas/index.js"
+    },
+    "./utils/crypto": {
+      "types": "./dist/utils/crypto.d.ts",
+      "default": "./dist/utils/crypto.js"
+    },
+    "./utils/logger": {
+      "types": "./dist/utils/logger.d.ts",
+      "default": "./dist/utils/logger.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "pino": "9.4.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "20.16.5",
+    "typescript": "5.5.4"
+  }
+}

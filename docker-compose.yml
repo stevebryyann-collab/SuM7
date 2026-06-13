@@ -1,0 +1,87 @@
+# Local development infrastructure.
+# Production runs Postgres/Redis as managed services (Railway / Upstash).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: b2b-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: b2b_wholesale
+      POSTGRES_USER: b2bapp
+      POSTGRES_PASSWORD: localdev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U b2bapp -d b2b_wholesale"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - b2b-network
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: b2b-redis-cache
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - b2b-network
+
+  redis-queue:
+    image: redis:7-alpine
+    container_name: b2b-redis-queue
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: >
+      redis-server
+      --maxmemory-policy noeviction
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redisqueuedata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - b2b-network
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: b2b-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: localdev
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - b2b-network
+
+volumes:
+  pgdata:
+  redisqueuedata:
+
+networks:
+  b2b-network:
+    driver: bridge

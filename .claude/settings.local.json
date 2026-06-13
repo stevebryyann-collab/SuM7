@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /root/wholesale-portal)",
+      "Bash(pnpm --version)",
+      "Bash(docker --version)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm --filter @b2b/shared typecheck)",
+      "Bash(pnpm --filter @b2b/database exec prisma validate)",
+      "Bash(grep -E '^\\(prisma|tsc|next\\)$')",
+      "Bash(ls apps/web/node_modules)",
+      "Bash(ls apps/web/node_modules/@types)",
+      "Bash(awk '/^model Merchant /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^model MerchantUser /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^enum MerchantRole /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^enum MerchantStatus /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^enum SubscriptionTier /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/^enum MerchantUserRole /,/^}/' packages/database/prisma/schema.prisma)",
+      "Bash(awk '/MerchantRole/,/;|\\\\}/' packages/shared/src/types/index.ts)",
+      "Bash(node -e \"try{require.resolve\\('class-validator'\\);console.log\\('class-validator OK'\\)}catch\\(e\\){console.log\\('class-validator MISSING'\\)}\")",
+      "Bash(node -e \"try{require.resolve\\('class-transformer'\\);console.log\\('class-transformer OK'\\)}catch\\(e\\){console.log\\('class-transformer MISSING'\\)}\")",
+      "Bash(./node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit)",
+      "Bash(./node_modules/.bin/jest -c apps/api/jest.config.js)",
+      "Bash(pnpm --filter @b2b/api exec jest)"
+    ]
+  }
+}
