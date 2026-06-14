@@ -13,7 +13,7 @@ export interface AppConfig {
   INTERNAL_API_SECRET: string;
 
   DATABASE_URL: string;
-  DIRECT_DATABASE_URL: string;
+  DATABASE_DIRECT_URL: string;
 
   REDIS_CACHE_URL: string;
   REDIS_QUEUE_URL: string;
@@ -21,10 +21,9 @@ export interface AppConfig {
   SHOPIFY_CLIENT_ID: string;
   SHOPIFY_CLIENT_SECRET: string;
 
-  NEXTAUTH_SECRET: string;
-
-  AUTH_PRIVATE_KEY: string;
-  AUTH_PUBLIC_KEY: string;
+  CLERK_SECRET_KEY: string;
+  CLERK_PUBLISHABLE_KEY: string;
+  CLERK_WEBHOOK_SECRET: string;
 
   AWS_ACCESS_KEY_ID: string;
   AWS_SECRET_ACCESS_KEY: string;
@@ -71,8 +70,6 @@ const base64Key32 = Joi.string()
   }, '32-byte base64 key')
   .messages({ 'any.invalid': 'must decode to exactly 32 bytes' });
 
-const pemKey = Joi.string().pattern(/-----BEGIN [A-Z ]+-----/, 'PEM header');
-
 export const envValidationSchema = Joi.object({
   // ── Runtime ──
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
@@ -82,7 +79,7 @@ export const envValidationSchema = Joi.object({
 
   // ── Database ──
   DATABASE_URL: Joi.string().uri({ scheme: ['postgresql', 'postgres'] }).required(),
-  DIRECT_DATABASE_URL: Joi.string()
+  DATABASE_DIRECT_URL: Joi.string()
     .uri({ scheme: ['postgresql', 'postgres'] })
     .required(),
 
@@ -94,12 +91,10 @@ export const envValidationSchema = Joi.object({
   SHOPIFY_CLIENT_ID: Joi.string().required(),
   SHOPIFY_CLIENT_SECRET: Joi.string().required(),
 
-  // ── Merchant auth ──
-  NEXTAUTH_SECRET: Joi.string().min(16).required(),
-
-  // ── Buyer auth (RS256) ──
-  AUTH_PRIVATE_KEY: pemKey.required(),
-  AUTH_PUBLIC_KEY: pemKey.required(),
+  // ── Authentication (Clerk) ──
+  CLERK_SECRET_KEY: Joi.string().pattern(/^sk_/, 'clerk secret key').required(),
+  CLERK_PUBLISHABLE_KEY: Joi.string().pattern(/^pk_/, 'clerk publishable key').required(),
+  CLERK_WEBHOOK_SECRET: Joi.string().pattern(/^whsec_/, 'clerk webhook secret').required(),
 
   // ── AWS S3 ──
   AWS_ACCESS_KEY_ID: Joi.string().required(),

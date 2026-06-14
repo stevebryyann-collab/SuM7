@@ -9,8 +9,8 @@ import {
 import { Redis } from 'ioredis';
 import type { SubscriptionTier } from '@b2b/shared';
 import { REDIS_CACHE } from '../../redis/redis.module';
-import type { MerchantAuthenticatedRequest } from '../../auth/guards/merchant-session.guard';
-import type { BuyerAuthenticatedRequest } from '../../auth/guards/buyer-jwt.guard';
+import type { MerchantAuthenticatedRequest } from '../../auth/guards/clerk-merchant.guard';
+import type { BuyerAuthenticatedRequest } from '../../auth/guards/clerk-buyer.guard';
 
 interface Limit {
   limit: number;
@@ -55,7 +55,7 @@ export class RateLimitGuard implements CanActivate {
     await this.enforce('ip', ip, GLOBAL_IP_LIMIT, res);
 
     if (req.buyer) {
-      await this.enforce('buyer', req.buyer.sub, BUYER_LIMIT, res);
+      await this.enforce('buyer', req.buyer.buyerId, BUYER_LIMIT, res);
     } else if (req.merchant) {
       const tier = await this.resolveMerchantTier(req.merchant.merchantId);
       await this.enforce('merchant', req.merchant.merchantId, MERCHANT_LIMITS[tier], res);

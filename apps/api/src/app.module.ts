@@ -13,6 +13,14 @@ import { AppConfigService } from './config/app-config.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule, REDIS_CACHE } from './redis/redis.module';
 import { CryptoModule } from './crypto/crypto.module';
+import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
+import { ShopifyModule } from './shopify/shopify.module';
+import { StorageModule } from './storage/storage.module';
+import { EmailModule } from './email/email.module';
+import { QueueModule } from './queues/queue.module';
+import { BullBoardConfigModule } from './queues/bull-board.module';
+import { WorkersModule } from './workers/workers.module';
+import { CatalogModule } from './catalog/catalog.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { GraphQLModule } from './graphql/graphql.module';
@@ -46,6 +54,10 @@ import { IdempotencyMiddleware } from './common/middleware/idempotency.middlewar
     PrismaModule,
     RedisModule,
     CryptoModule,
+    CircuitBreakerModule,
+    ShopifyModule,
+    StorageModule,
+    EmailModule,
 
     // Rate limiting storage shares the cache Redis instance.
     ThrottlerModule.forRootAsync({
@@ -82,12 +94,18 @@ import { IdempotencyMiddleware } from './common/middleware/idempotency.middlewar
 
     ScheduleModule.forRoot(),
 
+    // Queues, workers and the (auth-gated) Bull Board dashboard.
+    QueueModule,
+    WorkersModule,
+    BullBoardConfigModule,
+
     // Domain modules.
     AuthModule,
     MerchantsModule,
     BuyersModule,
     WebhooksModule,
     PricingModule,
+    CatalogModule,
     OrdersModule,
     InvoicesModule,
     AnalyticsModule,

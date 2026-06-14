@@ -1,6 +1,42 @@
 # B2B Wholesale Portal — Context Handoff
 
-_Last updated: 2026-06-13_
+_Last updated: 2026-06-14_
+
+> ## Update 2026-06-14 — Clerk/Supabase migration + Prompt 2 (Tasks 1–7) DONE
+>
+> **Auth/DB migration (per CLAUDE.md) executed.** `apps/api` typechecks **and
+> builds** clean (`nest build` → `dist/main.js`); pricing unit tests 19/19 pass.
+>
+> - **Schema:** dropped `RefreshToken`; `merchants.clerkOrgId`, `buyers.clerkUserId`
+>   added (both `@unique`); `merchant_users` simplified to a role-map
+>   (`clerkUserId`, no password/mfa/login fields); datasource `directUrl` →
+>   `DATABASE_DIRECT_URL`. Prisma client regenerated. RLS file lost its
+>   `refresh_tokens` block; seed updated (Clerk ids, no merchant_user password).
+> - **Auth:** deleted NextAuth route + buyer-JWT/merchant-session guards +
+>   buyer-auth service + web auth-options/next-auth.d.ts. Added
+>   `auth/guards/clerk-merchant.guard.ts`, `auth/guards/clerk-buyer.guard.ts`,
+>   `auth/clerk-webhooks.controller.ts` (Svix). `rate-limit.guard` +
+>   `tenant-context.interceptor` repointed to the Clerk guards.
+> - **Env/infra:** `env.validation` swapped NEXTAUTH/RS256 → CLERK_* +
+>   DATABASE_DIRECT_URL; `.env.example` → Supabase + Clerk; `docker-compose`
+>   dropped postgres + pgadmin (Supabase hosts DB); kept both Redis.
+> - **Deps added** to `apps/api`: `@clerk/backend`, `svix`, `@types/react`.
+>   (The npm mirror was briefly unreachable — installs may need a retry offline.)
+> - **Prompt 2 features built:** webhooks ingestion (`webhooks/`), queues +
+>   queue-health + bull-board (`queues/`), 7 workers (`workers/`), catalog
+>   service (`catalog/`), plus supporting `storage/`, `email/`, and
+>   `invoices/invoice-pdf.service.ts`. Circuit breaker + Shopify + pricing
+>   (Tasks 1/2/7) were already present and are unchanged.
+> - **Deliberate correctness deviations from the task spec** (documented in code):
+>   queues carrying >1 job type (`invoice`, `merchant`) have ONE WorkerHost that
+>   dispatches by job name (two competing `@Processor` consumers would silently
+>   drop jobs); the invoice PDF render + S3 upload happen *before* the
+>   SERIALIZABLE financial tx (10s idle-in-tx limit).
+> - **Still TODO:** web Clerk integration (ClerkProvider/middleware — `@clerk/nextjs`
+>   not installed, web `src/` is currently empty after NextAuth removal); deep
+>   catalog cursor pagination (Shopify REST since_id); DB-backed runtime test.
+
+---
 
 A Shopify-embedded B2B wholesale operating system (Next.js 14 + NestJS 10 +
 PostgreSQL 16/Prisma 5 + Redis 7, pnpm/turbo monorepo). This document is the

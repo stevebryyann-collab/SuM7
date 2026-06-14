@@ -5,7 +5,7 @@
  * are idempotent so re-running is safe.
  *
  * Usage: node scripts/apply-raw-migrations.mjs
- * Requires: DIRECT_DATABASE_URL (a superuser/owner connection — RLS + roles +
+ * Requires: DATABASE_DIRECT_URL (a superuser/owner connection — RLS + roles +
  * extensions need elevated privileges and must bypass PgBouncer).
  */
 import { readFile } from 'node:fs/promises';
@@ -24,9 +24,9 @@ const FILES = [
 ];
 
 async function main() {
-  const connectionString = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
+  const connectionString = process.env.DATABASE_DIRECT_URL ?? process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error('DIRECT_DATABASE_URL (or DATABASE_URL) must be set');
+    throw new Error('DATABASE_DIRECT_URL (or DATABASE_URL) must be set');
   }
 
   const client = new pg.Client({ connectionString });

@@ -42,8 +42,8 @@ async function main(): Promise<void> {
     update: {},
     create: {
       merchantId: merchant.id,
+      clerkUserId: 'user_seed_owner_demo_fashion',
       email: 'owner@demo-fashion.test',
-      passwordHash,
       role: 'owner',
       firstName: 'Dana',
       lastName: 'Merchant',
@@ -71,6 +71,7 @@ async function main(): Promise<void> {
     update: {},
     create: {
       email: 'buyer@boutique.test',
+      clerkUserId: 'user_seed_buyer_boutique',
       passwordHash,
       companyName: 'Uptown Boutique LLC',
       businessType: 'Apparel Retailer',

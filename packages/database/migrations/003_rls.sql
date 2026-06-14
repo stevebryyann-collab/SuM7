@@ -206,15 +206,6 @@ CREATE POLICY webhook_events_isolation ON webhook_events
     current_setting('app.bypass_rls', true) = 'true'
   );
 
--- ── refresh_tokens (internal service role only) ────────────────────────
--- Buyer-auth runs as a system path (bypass). No tenant-scoped access at all.
-ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE refresh_tokens FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS refresh_tokens_internal_only ON refresh_tokens;
-CREATE POLICY refresh_tokens_internal_only ON refresh_tokens
-  USING (current_setting('app.bypass_rls', true) = 'true')
-  WITH CHECK (current_setting('app.bypass_rls', true) = 'true');
-
 -- ── audit_log (read tenant-scoped; insert via audit_writer; never u/d) ──
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;

@@ -1,11 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
-import { generateSecureToken, type MerchantRole, type UpsertMerchantInput } from '@b2b/shared';
+import { type MerchantRole, type UpsertMerchantInput } from '@b2b/shared';
 import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { EncryptionService } from '../crypto/encryption.service';
 
-/** Result returned to the web NextAuth callback; mirrors its MerchantUpsertResult. */
+/** Result returned to the internal merchant-provisioning caller. */
 export interface MerchantUpsertResult {
   merchantId: string;
   merchantUserId: string;
@@ -13,8 +12,6 @@ export interface MerchantUpsertResult {
   role: MerchantRole;
   email: string;
 }
-
-const BCRYPT_COST = 12;
 
 @Injectable()
 export class MerchantsService {
@@ -76,9 +73,9 @@ export class MerchantsService {
   /**
    * Find-or-create the merchant user for this email. The first user on a brand
    * new merchant is the `owner`; any later new user defaults to `staff`. An
-   * existing user keeps its current role. OAuth-provisioned users have no
-   * password, so the NOT NULL column is filled with a bcrypt hash of an
-   * unguessable random secret — password login is effectively disabled.
+   * existing user keeps its current role. Clerk owns the user identity record;
+   * `merchant_users` is a role-mapping table, and `clerkUserId` is linked later
+   * by the Clerk `organization`/`user` webhooks (null until then).
    */
   private async upsertOwnerUser(
     tx: PrismaTransaction,
@@ -95,10 +92,9 @@ export class MerchantsService {
 
     const userCount = await tx.merchantUser.count({ where: { merchantId } });
     const role: MerchantRole = userCount === 0 ? 'owner' : 'staff';
-    const passwordHash = await bcrypt.hash(generateSecureToken(32), BCRYPT_COST);
 
     const created = await tx.merchantUser.create({
-      data: { merchantId, email, role, passwordHash },
+      data: { merchantId, email, role },
       select: { id: true, email: true, role: true },
     });
     return { id: created.id, email: created.email, role: created.role as MerchantRole };

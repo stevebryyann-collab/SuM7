@@ -1,9 +1,15 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
+import { InvoicePdfService } from './invoice-pdf.service';
 
 /**
- * Invoicing & accounts receivable (PDF generation via @react-pdf/renderer,
- * S3 storage, reminders, payment reconciliation). Bootable scaffold — services
- * added by the Invoices feature task.
+ * Invoicing & accounts receivable. Currently exposes the PDF generator used by
+ * the invoice-generate worker (@react-pdf/renderer, SHA-256 integrity, 15s
+ * timeout). Global so workers can inject {@link InvoicePdfService}. AR aging,
+ * reminders and reconciliation services are added by the Invoices feature task.
  */
-@Module({})
+@Global()
+@Module({
+  providers: [InvoicePdfService],
+  exports: [InvoicePdfService],
+})
 export class InvoicesModule {}
