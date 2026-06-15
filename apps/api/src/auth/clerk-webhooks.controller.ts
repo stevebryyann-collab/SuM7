@@ -17,10 +17,10 @@ import { MerchantContextService } from '../prisma/merchant-context.service';
 /** Minimal shape of the Clerk webhook payloads we act on. */
 interface ClerkEmailAddress {
   email_address: string;
+  verification?: { status?: string | null } | null;
 }
 interface ClerkEventData {
   id: string;
-  slug?: string | null;
   email_addresses?: ClerkEmailAddress[];
 }
 interface ClerkWebhookEvent {
@@ -35,6 +35,11 @@ interface ClerkWebhookEvent {
  * processing. This route is exempt from rate limiting (the RateLimitGuard skips
  * `/webhooks/*`) and is not bound to a validated DTO, so the global
  * ValidationPipe never touches the raw body Svix needs.
+ *
+ * Clerk owns BUYER identity only — merchants authenticate via NextAuth + Shopify
+ * OAuth, so there is no organization sync here. `user.created` links the Clerk
+ * user id to the buyer record; `user.updated` mirrors Clerk's verified-email
+ * state into `buyers.emailVerifiedAt`.
  */
 @Controller('webhooks/clerk')
 export class ClerkWebhooksController {
@@ -84,11 +89,11 @@ export class ClerkWebhooksController {
     }
 
     switch (event.type) {
-      case 'organization.created':
-        await this.onOrganizationCreated(event.data);
-        break;
       case 'user.created':
         await this.onUserCreated(event.data);
+        break;
+      case 'user.updated':
+        await this.onUserUpdated(event.data);
         break;
       case 'user.deleted':
         // GDPR erasure runs via our own pipeline (merchant-purge-data worker);
@@ -100,22 +105,6 @@ export class ClerkWebhooksController {
     }
 
     return { received: true };
-  }
-
-  /** Link a newly-created Clerk organization to its merchant by Shopify domain. */
-  private async onOrganizationCreated(data: ClerkEventData): Promise<void> {
-    const slug = data.slug;
-    if (!slug) {
-      this.logger.warn(`organization.created ${data.id} has no slug; cannot link merchant`);
-      return;
-    }
-    const result = await this.merchantContext.runAsSystem(() =>
-      this.prisma.merchant.updateMany({
-        where: { shopifyDomain: slug },
-        data: { clerkOrgId: data.id },
-      }),
-    );
-    this.logger.log(`Linked Clerk org ${data.id} to ${result.count} merchant(s) (${slug})`);
   }
 
   /** Link a newly-created Clerk user to its buyer account by email. */
@@ -132,5 +121,26 @@ export class ClerkWebhooksController {
       }),
     );
     this.logger.log(`Linked Clerk user ${data.id} to ${result.count} buyer(s) (${email})`);
+  }
+
+  /**
+   * Mirror Clerk's verified-email status into `buyers.emailVerifiedAt`. Sets the
+   * timestamp only when the primary email is verified AND the column is still
+   * null — an existing verification timestamp is never overwritten.
+   */
+  private async onUserUpdated(data: ClerkEventData): Promise<void> {
+    const verified = data.email_addresses?.[0]?.verification?.status === 'verified';
+    if (!verified) {
+      return;
+    }
+    const result = await this.merchantContext.runAsSystem(() =>
+      this.prisma.buyer.updateMany({
+        where: { clerkUserId: data.id, emailVerifiedAt: null },
+        data: { emailVerifiedAt: new Date() },
+      }),
+    );
+    if (result.count > 0) {
+      this.logger.log(`Marked email verified for buyer linked to Clerk user ${data.id}`);
+    }
   }
 }

@@ -1,8 +1,18 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { OrdersController } from './orders.controller';
+import { OrdersService } from './orders.service';
 
 /**
  * Order domain (bulk spreadsheet ordering, Shopify order sync, credit checks).
- * Bootable scaffold — controllers/services added by the Orders feature task.
+ * The controller's guards (MerchantSessionGuard, RolesGuard, ClerkBuyerGuard)
+ * come from AuthModule; Prisma, MerchantContext, Pricing and Shopify are all
+ * global. OrdersService is exported for any future cross-module use.
  */
-@Module({})
+@Module({
+  imports: [AuthModule],
+  controllers: [OrdersController],
+  providers: [OrdersService],
+  exports: [OrdersService],
+})
 export class OrdersModule {}

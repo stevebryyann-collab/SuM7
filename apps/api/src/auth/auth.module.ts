@@ -1,22 +1,27 @@
 import { Module } from '@nestjs/common';
-import { ClerkMerchantGuard } from './guards/clerk-merchant.guard';
+import { MerchantSessionGuard } from './guards/merchant-session.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { ClerkBuyerGuard } from './guards/clerk-buyer.guard';
+import { ClerkAuthenticatedGuard } from './guards/clerk-authenticated.guard';
 import { ClerkWebhooksController } from './clerk-webhooks.controller';
 
 /**
- * Authentication building blocks shared across feature modules. Clerk owns token
- * signing, refresh rotation and brute-force protection; we own authorization
- * context (org → merchant resolution, buyer approval / GDPR checks, RLS).
+ * Authentication building blocks shared across feature modules. The two user
+ * types have fundamentally different identity contexts (a Shopify embedded-app
+ * requirement), so their guards never mix:
  *
- *   - ClerkMerchantGuard:      verifies the Clerk org session, resolves the merchant.
- *   - ClerkBuyerGuard:         verifies the Clerk user session + relationship state.
- *   - ClerkWebhooksController: Svix-verified Clerk → platform sync (org/user links).
+ *   - MerchantSessionGuard:     verifies the NextAuth + Shopify OAuth session
+ *                               (HS256, NEXTAUTH_SECRET), resolves the merchant.
+ *   - RolesGuard:               enforces `@Roles(...)` against the merchant role.
+ *   - ClerkBuyerGuard:          verifies the Clerk buyer session + relationship state.
+ *   - ClerkAuthenticatedGuard:  verifies the Clerk session only (pre-approval routes).
+ *   - ClerkWebhooksController:  Svix-verified Clerk → platform sync (buyer links).
  *
  * Depends on the global Prisma, Crypto and Config modules.
  */
 @Module({
   controllers: [ClerkWebhooksController],
-  providers: [ClerkMerchantGuard, ClerkBuyerGuard],
-  exports: [ClerkMerchantGuard, ClerkBuyerGuard],
+  providers: [MerchantSessionGuard, RolesGuard, ClerkBuyerGuard, ClerkAuthenticatedGuard],
+  exports: [MerchantSessionGuard, RolesGuard, ClerkBuyerGuard, ClerkAuthenticatedGuard],
 })
 export class AuthModule {}

@@ -1,31 +1,129 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { Resend, type CreateEmailOptions } from 'resend';
 import type CircuitBreaker from 'opossum';
+import * as Sentry from '@sentry/node';
 import { AppConfigService } from '../config/app-config.service';
 import { CircuitBreakerFactory } from '../common/circuit-breaker/circuit-breaker.factory';
+import {
+  renderInvoiceEmail,
+  type InvoiceEmailModel,
+} from './templates/invoice.email';
+import {
+  renderPaymentReminderEmail,
+  type PaymentReminderEmailModel,
+} from './templates/payment-reminder.email';
+import {
+  renderBuyerApprovalEmail,
+  type BuyerApprovalEmailModel,
+} from './templates/buyer-approval.email';
+import {
+  renderBuyerRejectionEmail,
+  type BuyerRejectionEmailModel,
+} from './templates/buyer-rejection.email';
+import {
+  renderMerchantNewApplicationEmail,
+  type MerchantNewApplicationEmailModel,
+} from './templates/merchant-new-application.email';
+import type { RenderedEmail, LineItemRow } from './templates/layout';
+
+/** Uniform result for every email method. NEVER throws — failures are logged. */
+export interface EmailSendResult {
+  sent: boolean;
+  messageId?: string;
+}
+
+// ── Public params (controllers/services build these) ──────────────────────
 
 export interface InvoiceEmailParams {
   to: string;
   buyerCompany: string;
+  merchantName: string;
   invoiceNumber: string;
   total: string;
   currency: string;
   dueDate: string;
-  /** Short-lived presigned PDF download URL, or null if unavailable. */
-  downloadUrl: string | null;
+  paymentTerms: string;
+  presignedUrl: string | null;
+  lineItems: LineItemRow[];
+}
+
+export interface PaymentReminderEmailParams {
+  to: string;
+  invoiceNumber: string;
+  merchantName: string;
+  merchantEmail: string;
+  outstandingAmount: string;
+  currency: string;
+  dueDate: string;
+  daysOverdue: number;
+  reminderCount: 1 | 2 | 3;
+  portalUrl: string | null;
+}
+
+export interface RegistrationConfirmEmailParams {
+  to: string;
+  applicantCompany: string;
+  merchantName: string;
+}
+
+export interface BuyerApprovalEmailParams {
+  to: string;
+  buyerCompany: string;
+  merchantName: string;
+  paymentTermsLabel: string;
+  creditLimit: string | null;
+  currency: string;
+  portalUrl: string;
+}
+
+export interface BuyerRejectionEmailParams {
+  to: string;
+  buyerCompany: string;
+  merchantName: string;
+  merchantEmail: string;
+  rejectionReason: string | null;
+}
+
+export interface MerchantApplicationAlertParams {
+  to: string;
+  applicantCompany: string;
+  businessType: string | null;
+  estimatedMonthlyOrder: string | null;
+  reviewUrl: string;
+}
+
+export interface PaymentFailureAlertParams {
+  to: string;
+  merchantName: string;
+  reason: string;
+  amount: string;
+  currency: string;
+}
+
+export interface VoidNotificationParams {
+  to: string;
+  buyerCompany: string;
+  merchantName: string;
+  invoiceNumber: string;
+  reason: string;
+}
+
+interface DeliveryResult {
+  messageId: string | null;
 }
 
 /**
  * Transactional email via Resend, wrapped in a circuit breaker so a Resend
- * outage fails fast instead of stalling workers. Templates render to inline HTML
- * (a clean, table-free transactional layout consistent with the design rules).
+ * outage fails fast instead of stalling workers. Every public method is
+ * non-throwing: a delivery failure is reported to Sentry and surfaced as
+ * `{ sent: false }` so an email problem never crashes a worker or request.
  */
 @Injectable()
 export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
   private readonly resend: Resend;
   private readonly from: string;
-  private breaker!: CircuitBreaker<[CreateEmailOptions], void>;
+  private breaker!: CircuitBreaker<[CreateEmailOptions], DeliveryResult>;
 
   constructor(
     private readonly config: AppConfigService,
@@ -36,44 +134,162 @@ export class EmailService implements OnModuleInit {
   }
 
   onModuleInit(): void {
-    this.breaker = this.breakerFactory.create<[CreateEmailOptions], void>(
+    this.breaker = this.breakerFactory.create<[CreateEmailOptions], DeliveryResult>(
       'resend',
       (payload: CreateEmailOptions) => this.deliver(payload),
       { timeout: 5_000 },
     );
   }
 
-  /** Send the "your invoice is ready" email. */
-  async sendInvoiceEmail(params: InvoiceEmailParams): Promise<void> {
-    await this.breaker.fire({
-      from: this.from,
-      to: params.to,
-      subject: `Invoice ${params.invoiceNumber} from ${params.buyerCompany}`,
-      html: this.renderInvoiceHtml(params),
-    });
-    this.logger.log(`Queued invoice email ${params.invoiceNumber} to ${params.to}`);
+  // ── Public API ──────────────────────────────────────────────────────────
+
+  async sendInvoiceEmail(params: InvoiceEmailParams): Promise<EmailSendResult> {
+    const model: InvoiceEmailModel = {
+      invoiceNumber: params.invoiceNumber,
+      merchantName: params.merchantName,
+      buyerCompany: params.buyerCompany,
+      total: params.total,
+      currency: params.currency,
+      dueDate: params.dueDate,
+      paymentTerms: params.paymentTerms,
+      presignedUrl: params.presignedUrl,
+      lineItems: params.lineItems,
+    };
+    return this.send(params.to, renderInvoiceEmail(model), 'invoice');
   }
 
-  private async deliver(payload: CreateEmailOptions): Promise<void> {
-    const { error } = await this.resend.emails.send(payload);
-    if (error) {
-      throw new Error(`Resend delivery failed: ${error.message}`);
+  async sendPaymentReminderEmail(params: PaymentReminderEmailParams): Promise<EmailSendResult> {
+    const model: PaymentReminderEmailModel = {
+      invoiceNumber: params.invoiceNumber,
+      merchantName: params.merchantName,
+      merchantEmail: params.merchantEmail,
+      outstandingAmount: params.outstandingAmount,
+      currency: params.currency,
+      dueDate: params.dueDate,
+      daysOverdue: params.daysOverdue,
+      reminderCount: params.reminderCount,
+      portalUrl: params.portalUrl,
+    };
+    return this.send(params.to, renderPaymentReminderEmail(model), 'payment_reminder');
+  }
+
+  async sendBuyerRegistrationConfirmation(
+    params: RegistrationConfirmEmailParams,
+  ): Promise<EmailSendResult> {
+    const rendered: RenderedEmail = {
+      subject: `We received your application to ${params.merchantName}`,
+      html: this.simpleLayout(
+        'Application received',
+        `Hello ${params.applicantCompany}, we've received your wholesale application to ${params.merchantName}. ` +
+          `You'll receive an email once it has been reviewed.`,
+      ),
+    };
+    return this.send(params.to, rendered, 'registration_confirm');
+  }
+
+  async sendBuyerApprovalEmail(params: BuyerApprovalEmailParams): Promise<EmailSendResult> {
+    const model: BuyerApprovalEmailModel = {
+      buyerCompany: params.buyerCompany,
+      merchantName: params.merchantName,
+      paymentTermsLabel: params.paymentTermsLabel,
+      creditLimit: params.creditLimit,
+      currency: params.currency,
+      portalUrl: params.portalUrl,
+    };
+    return this.send(params.to, renderBuyerApprovalEmail(model), 'buyer_approval');
+  }
+
+  async sendBuyerRejectionEmail(params: BuyerRejectionEmailParams): Promise<EmailSendResult> {
+    const model: BuyerRejectionEmailModel = {
+      buyerCompany: params.buyerCompany,
+      merchantName: params.merchantName,
+      merchantEmail: params.merchantEmail,
+      rejectionReason: params.rejectionReason,
+    };
+    return this.send(params.to, renderBuyerRejectionEmail(model), 'buyer_rejection');
+  }
+
+  async sendMerchantNewApplicationAlert(
+    params: MerchantApplicationAlertParams,
+  ): Promise<EmailSendResult> {
+    const model: MerchantNewApplicationEmailModel = {
+      applicantCompany: params.applicantCompany,
+      businessType: params.businessType,
+      estimatedMonthlyOrder: params.estimatedMonthlyOrder,
+      reviewUrl: params.reviewUrl,
+    };
+    return this.send(params.to, renderMerchantNewApplicationEmail(model), 'merchant_new_application');
+  }
+
+  async sendMerchantPaymentFailureAlert(params: PaymentFailureAlertParams): Promise<EmailSendResult> {
+    const rendered: RenderedEmail = {
+      subject: `Action required: a payment failed`,
+      html: this.simpleLayout(
+        'Payment failed',
+        `Hello ${params.merchantName}, a payment of ${params.currency} ${params.amount} could not be processed ` +
+          `(${params.reason}). Please review your billing settings to avoid service interruption.`,
+      ),
+    };
+    return this.send(params.to, rendered, 'merchant_payment_failure');
+  }
+
+  async sendInvoiceVoidNotification(params: VoidNotificationParams): Promise<EmailSendResult> {
+    const rendered: RenderedEmail = {
+      subject: `Invoice ${params.invoiceNumber} has been voided`,
+      html: this.simpleLayout(
+        'Invoice voided',
+        `Hello ${params.buyerCompany}, invoice #${params.invoiceNumber} from ${params.merchantName} has been voided ` +
+          `(${params.reason}). No payment is due on this invoice. A corrected invoice may follow.`,
+      ),
+    };
+    return this.send(params.to, rendered, 'invoice_void');
+  }
+
+  // ── Internals ─────────────────────────────────────────────────────────
+
+  private async send(to: string, rendered: RenderedEmail, kind: string): Promise<EmailSendResult> {
+    try {
+      const result = await this.breaker.fire({
+        from: this.from,
+        to,
+        subject: rendered.subject,
+        html: rendered.html,
+      });
+      this.logger.log(`Sent ${kind} email to ${to} (${result.messageId ?? 'no-id'})`);
+      return result.messageId ? { sent: true, messageId: result.messageId } : { sent: true };
+    } catch (error) {
+      Sentry.captureException(error, {
+        level: 'error',
+        tags: { component: 'email', kind },
+        extra: { to },
+      });
+      this.logger.error(`Failed to send ${kind} email to ${to}: ${(error as Error).message}`);
+      return { sent: false };
     }
   }
 
-  private renderInvoiceHtml(params: InvoiceEmailParams): string {
-    const link = params.downloadUrl
-      ? `<p><a href="${params.downloadUrl}">Download your invoice (PDF)</a></p>`
-      : '<p>Your invoice PDF is available in your buyer portal.</p>';
+  private async deliver(payload: CreateEmailOptions): Promise<DeliveryResult> {
+    const { data, error } = await this.resend.emails.send(payload);
+    if (error) {
+      throw new Error(`Resend delivery failed: ${error.message}`);
+    }
+    return { messageId: data?.id ?? null };
+  }
+
+  private simpleLayout(heading: string, paragraph: string): string {
+    const safe = paragraph
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     return [
-      '<div style="font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:14px;">',
-      `<h2 style="margin:0 0 12px;">Invoice ${params.invoiceNumber}</h2>`,
-      `<p>Hello ${params.buyerCompany},</p>`,
-      `<p>A new invoice for <strong>${params.currency} ${params.total}</strong> is now available.</p>`,
-      `<p>Payment is due by <strong>${params.dueDate}</strong>.</p>`,
-      link,
-      '<p style="color:#6b7280;font-size:12px;margin-top:24px;">Thank you for your business.</p>',
-      '</div>',
+      '<!DOCTYPE html><html><head><meta charset="utf-8"></head>',
+      '<body style="margin:0;padding:0;background:#FFFFFF;">',
+      '<table role="presentation" cellpadding="0" cellspacing="0" width="100%"><tr><td align="center">',
+      '<table role="presentation" cellpadding="0" cellspacing="0" width="600" ',
+      'style="max-width:600px;width:100%;font-family:Arial,Helvetica,sans-serif;padding:32px 24px;"><tr><td>',
+      `<h1 style="margin:0 0 16px;color:#111827;font-size:20px;font-weight:700;">${heading}</h1>`,
+      `<p style="margin:0;color:#111827;font-size:14px;line-height:1.5;">${safe}</p>`,
+      '</td></tr></table></td></tr></table></body></html>',
     ].join('');
   }
 }

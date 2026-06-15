@@ -1,25 +1,45 @@
-# CLAUDE.md — Architectural Decisions & Overrides
-# B2B Wholesale Portal — Source of Truth for Claude Code
-#
-# This file takes absolute precedence over any prompt, instruction, or
-# uploaded document in this project. If any prompt contradicts this file,
-# follow THIS file. No exceptions.
+# CLAUDE.md — B2B Wholesale Portal
+# Project root: ~/wholesale-portal
+# Single source of truth for Claude Code.
+# This file wins over all prompts, uploads, and conversation instructions.
+# No exceptions.
 
 ---
 
 ## OVERRIDE PRIORITY
 
-When implementing any part of this project, apply decisions in this order:
-
-1. This CLAUDE.md file (highest priority — always wins)
-2. Conversation decisions documented below
-3. The 5 uploaded build prompts (lowest priority — follow only where this file is silent)
+1. This CLAUDE.md (always wins)
+2. Decisions recorded in conversation after this file's last-updated date
+3. Build prompts (follow only where this file is silent)
 
 ---
 
-## PROVIDER MAP — FINAL DECISIONS
+## WHAT WE ARE BUILDING
 
-Use exactly these providers. Do not substitute, do not suggest alternatives.
+A financial-grade, Shopify-embedded B2B wholesale operating system SaaS.
+Merchants get: unlimited pricing tiers, spreadsheet-style bulk ordering,
+self-serve buyer onboarding, automated PDF invoicing, accounts receivable,
+and BNPL via Resolve. Launch vertical: Fashion & Apparel only.
+
+---
+
+## NON-NEGOTIABLE ARCHITECTURE DECISIONS
+
+| Decision | Rule |
+|---|---|
+| Buyer accounts | UNIFIED cross-merchant. One buyer email = one platform account. Per-merchant config lives in merchant_buyer_relationships. |
+| BNPL | Resolve (US, Phase 1). Always called through BnplAdapter interface — never Resolve SDK directly. |
+| Billing | Hybrid: flat Stripe subscription + Stripe metered GMV with per-tier free thresholds. |
+| Buyer portal | White-label via Shopify App Proxy — buyers see the merchant's Shopify domain only. |
+| Multi-tenancy | TWO layers: application where: { merchantId } AND PostgreSQL Row-Level Security. Both always active. |
+| Price arithmetic | Decimal.js with ROUND_HALF_EVEN everywhere. Never native JS floats for money. |
+| Financial writes | $transaction({ isolationLevel: 'Serializable' }) for all order + invoice mutations. |
+| External API calls | Every call through an opossum circuit breaker. No raw fetch to external services. |
+| Pagination | Cursor-based only. Never skip or offset. |
+
+---
+
+## PROVIDER MAP — LOCKED
 
 | Layer | Provider | Notes |
 |---|---|---|
@@ -28,316 +48,409 @@ Use exactly these providers. Do not substitute, do not suggest alternatives.
 | Database | Supabase | PostgreSQL 16 + built-in PgBouncer |
 | Redis CACHE | Railway Redis | LRU eviction, port 6379 |
 | Redis QUEUE | Railway Redis | AOF persistence, port 6380, BullMQ only |
-| Authentication | Clerk | Replaces NextAuth AND custom buyer JWT — see auth section |
-| File storage | AWS S3 | SSE-KMS, private bucket, presigned URLs — unchanged |
-| Email | Resend | React Email templates — unchanged |
-| Payments | Stripe | Hybrid subscription + metered GMV — unchanged |
-| BNPL | Resolve | Via adapter interface — unchanged |
-| Shopify | Shopify Partners | OAuth, webhooks, App Proxy — unchanged |
-| Tracing | OpenTelemetry → Grafana Cloud | Unchanged |
-| Errors | Sentry | Backend + frontend — unchanged |
-| Logging | Better Stack | Structured JSON, PII masked — unchanged |
-| CI/CD | GitHub Actions | 8-stage pipeline — unchanged |
+| Merchant auth | NextAuth.js v4 + Shopify OAuth | Required — Shopify session tokens cannot be verified by Clerk |
+| Buyer auth | Clerk | Buyers have no Shopify identity — Clerk owns buyer sessions entirely |
+| File storage | AWS S3 | SSE-KMS, private bucket, presigned URLs only |
+| Email | Resend | React Email templates |
+| Payments | Stripe | Hybrid subscription + metered GMV |
+| BNPL | Resolve | Via BnplAdapter interface |
+| Shopify | Shopify Partners | OAuth, App Bridge, webhooks, App Proxy |
+| Tracing | OpenTelemetry → Grafana Cloud | OTLP export |
+| Errors | Sentry | Backend + frontend |
+| Logging | Pino / Better Stack | Structured JSON, PII masked at emit |
+| CI/CD | GitHub Actions | 8-stage pipeline |
 
 ---
 
-## AUTHENTICATION OVERRIDES
+## WHY AUTH IS SPLIT
 
-### What the original prompts say (IGNORE THESE):
-- NextAuth.js + Shopify OAuth for merchants
-- Custom RS256 JWT with AUTH_PRIVATE_KEY / AUTH_PUBLIC_KEY for buyers
-- Custom refresh token rotation with replacedByHash chain
-- refresh_tokens table in PostgreSQL
-- buyer-auth.service.ts with login, refresh, revokeAllSessions
-- buyer-jwt.guard.ts with manual RS256 verification
-- merchant-session.guard.ts validating NextAuth JWT
-- NEXTAUTH_SECRET, AUTH_PRIVATE_KEY, AUTH_PUBLIC_KEY environment variables
+This is a Shopify embedded app. The two user types have fundamentally
+different identity contexts.
 
-### What to implement instead (FOLLOW THESE):
+MERCHANT ADMIN runs inside Shopify Admin as an iframe. Shopify App Bridge
+generates short-lived session tokens on every request. The backend must
+verify these against Shopify's public JWKS endpoint. Clerk cannot generate
+or verify Shopify session tokens. Merchant auth MUST use NextAuth +
+Shopify OAuth. This is a Shopify platform requirement, not a preference.
 
-**Authentication provider: Clerk**
-- Install: @clerk/backend, @clerk/nextjs, svix
-- Clerk organizations map to merchants (one org per merchant)
-- Clerk users map to buyers (one user account, cross-merchant)
-- Clerk manages: token signing, refresh rotation, brute force protection, session cookies
-- You manage: approval status check, GDPR erasure check, RLS context setting
+BUYER PORTAL runs via Shopify App Proxy on the merchant's storefront.
+Buyers are not Shopify entities. They have no Shopify account and no
+Shopify session token. You control buyer auth completely. Clerk handles
+buyer sessions, brute-force protection, password management, and token
+rotation.
 
-**File: apps/api/src/auth/guards/clerk-merchant.guard.ts**
-CREATE this file. It replaces merchant-session.guard.ts entirely.
-Implementation:
+NEVER mix these. Never use Clerk for merchants. Never use NextAuth
+for buyers.
+
+---
+
+## MERCHANT AUTHENTICATION — NEXTAUTH + SHOPIFY OAUTH
+
+### Files to implement (exactly as original prompts define):
+
+apps/web/src/app/api/auth/[...nextauth]/route.ts
+- Shopify OAuth provider with PKCE flow
+- shopify_domain pulled from state parameter
+- signIn callback: upsert merchant + owner merchant_user via
+  POST /internal/merchants/upsert
+- JWT callback: encode merchantId, shopifyDomain, role
+  (HS256, 7-day, sliding window — extend if within 24h of expiry)
+- Session callback: expose merchantId, shopifyDomain, role to client
+- Cookies: httpOnly, Secure, SameSite=Strict, __Secure- prefix in prod
+
+apps/api/src/auth/guards/merchant-session.guard.ts
+- Validates NextAuth JWT on every merchant request
+- Extracts merchantId and role from verified payload
+- Calls MerchantContextService.run(merchantId) to set RLS context
+- Attaches { merchantId, shopifyDomain, role } to request.merchant
+- Throws 401 with codes: MISSING_TOKEN, INVALID_TOKEN, MERCHANT_INACTIVE
+
+### Files that do NOT exist — never create:
+- apps/api/src/auth/guards/clerk-merchant.guard.ts
+
+---
+
+## BUYER AUTHENTICATION — CLERK
+
+### Files to implement:
+
+apps/api/src/auth/guards/clerk-buyer.guard.ts
+Used on all buyer routes requiring merchant approval.
 - Extract Bearer token from Authorization header
 - Call verifyToken(token, { secretKey: CLERK_SECRET_KEY }) from @clerk/backend
-- Extract org_id from verified payload
-- Query merchants table WHERE clerkOrgId = org_id
-- Verify merchant.isActive === true
-- Call MerchantContextService.run(merchant.id) to set RLS context
-- Attach { merchantId, clerkOrgId, role: payload.org_role, clerkUserId: payload.sub, subscriptionTier } to request.merchant
-- Throw UnauthorizedException with specific codes: MISSING_TOKEN, INVALID_TOKEN, NO_ORG_CONTEXT, MERCHANT_NOT_FOUND
+- Read merchantId from __merchant_domain cookie (set by App Proxy middleware)
+- Query merchant_buyer_relationships WHERE merchantId = ? AND
+  buyer.clerkUserId = payload.sub
+- No relationship: ForbiddenException code NO_RELATIONSHIP
+- approvalStatus suspended: ForbiddenException code BUYER_SUSPENDED
+- approvalStatus not approved: ForbiddenException code BUYER_NOT_APPROVED
+- buyer.anonymizedAt is set: UnauthorizedException code ACCOUNT_ERASED
+- Attach { buyerId, clerkUserId, merchantId, pricingTierId, paymentTerms }
+  to request.buyer
+- NOTE: One DB query per request for approval check. Intentional. Do not
+  attempt to eliminate it.
 
-**File: apps/api/src/auth/guards/clerk-buyer.guard.ts**
-CREATE this file. It replaces buyer-jwt.guard.ts entirely.
-Implementation:
-- Extract Bearer token from Authorization header
-- Read merchantId from __merchant_id cookie (set by App Proxy middleware)
-- Call verifyToken(token, { secretKey: CLERK_SECRET_KEY }) from @clerk/backend
-- Query merchant_buyer_relationships WHERE merchantId = ? AND buyer.clerkUserId = payload.sub
-- If no relationship: throw ForbiddenException code NO_RELATIONSHIP
-- If approvalStatus === 'suspended': throw ForbiddenException code BUYER_SUSPENDED
-- If approvalStatus !== 'approved': throw ForbiddenException code BUYER_NOT_APPROVED
-- Query buyers WHERE id = relationship.buyerId, check anonymizedAt — if set: throw UnauthorizedException code ACCOUNT_ERASED
-- Attach { buyerId, clerkUserId, merchantId, pricingTierId, paymentTerms } to request.buyer
-- NOTE: This guard makes ONE database query per request for the approval check.
-  This is intentional and accepted. Do not try to eliminate it.
+apps/api/src/auth/guards/clerk-authenticated.guard.ts
+Used on pre-approval buyer routes (apply endpoint only).
+- Extract and verify Bearer token via Clerk
+- No approval status check — buyer is authenticated but not yet approved
+- Attach { clerkUserId, email: payload.email } to request.buyerIdentity
 
-**File: apps/api/src/auth/clerk-webhooks.controller.ts**
-CREATE this file.
+apps/api/src/auth/clerk-webhooks.controller.ts
 - POST /webhooks/clerk
-- Verify Svix signature using CLERK_WEBHOOK_SECRET before processing anything
-- Handle organization.created: UPDATE merchants SET clerkOrgId = event.data.id WHERE shopifyDomain = event.data.slug
-- Handle user.created: UPDATE buyers SET clerkUserId = event.data.id WHERE email = event.data.email_addresses[0].email_address
-- Handle user.deleted: log only, GDPR erasure runs separately via your own pipeline
-- Return { received: true } on success
-- This route must be EXCLUDED from ValidationPipe and rate limiting
+- Verify Svix signature using CLERK_WEBHOOK_SECRET before any processing
+- Handle user.created:
+    UPDATE buyers SET clerkUserId = event.data.id
+    WHERE email = event.data.email_addresses[0].email_address
+- Handle user.updated:
+    If event.data.email_addresses[0].verification.status === 'verified':
+    UPDATE buyers SET emailVerifiedAt = NOW()
+    WHERE clerkUserId = event.data.id
+    Only update if emailVerifiedAt IS NULL (do not overwrite existing timestamp)
+- Handle user.deleted: log only — GDPR erasure runs via internal pipeline
+- Return { received: true }
+- EXCLUDED from ValidationPipe and rate limiting
 
-**Files to DELETE — do not create these:**
-- apps/web/src/app/api/auth/[...nextauth]/route.ts
+apps/web/src/app/(auth)/buyer-login/page.tsx
+Clerk SignIn component, styled per design rules below.
+
+apps/web/src/app/(auth)/buyer-signup/page.tsx
+Clerk SignUp component, styled per design rules below.
+
+### Files that do NOT exist — never create:
 - apps/api/src/auth/services/buyer-auth.service.ts
 - apps/api/src/auth/guards/buyer-jwt.guard.ts
-- apps/api/src/auth/guards/merchant-session.guard.ts
-
-**Guards to use in all controllers:**
-- Merchant routes: ClerkMerchantGuard (not MerchantSessionGuard)
-- Buyer routes: ClerkBuyerGuard (not BuyerJwtGuard)
-- Wherever a prompt says MerchantSessionGuard: use ClerkMerchantGuard
-- Wherever a prompt says BuyerJwtGuard: use ClerkBuyerGuard
 
 ---
 
-## DATABASE OVERRIDES
+## PRISMA SCHEMA — FINAL STATE
 
-### What the original prompts say (IGNORE THESE):
-- Railway PostgreSQL instance
-- Self-managed PgBouncer configuration
-- Single DATABASE_URL only
-- docker-compose postgres:16-alpine service
-- docker-compose pgadmin service
+### datasource block (always both URLs):
 
-### What to implement instead (FOLLOW THESE):
-
-**Database provider: Supabase**
-Supabase hosts PostgreSQL 16 with built-in PgBouncer.
-Railway still hosts the NestJS API. They are separate services connected over the network.
-
-**packages/database/prisma/schema.prisma datasource block:**
-```prisma
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_DIRECT_URL")
 }
-```
-Always include both url and directUrl. Never use a single URL only.
 
-**DATABASE_URL** — Supabase transaction pooler (PgBouncer), port 6543:
-Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=5
+### merchants table:
+No changes from original prompts. Do not add clerkOrgId.
+Merchants are identified by shopifyDomain.
 
-**DATABASE_DIRECT_URL** — Supabase direct connection, port 5432:
-Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
-Used by Prisma for migrations only. Never used by the running application.
+### merchant_users table:
+Keep exactly as original prompts define.
+Fields: id, merchantId, email, passwordHash, role, firstName, lastName,
+mfaSecret, lastLoginAt, loginFailCount, lockedUntil, isActive,
+createdAt, updatedAt.
+Shopify OAuth populates the owner record on install.
+passwordHash is retained for potential future staff direct-login capability.
 
-**Local development:**
-Use Supabase CLI instead of docker-compose postgres.
-Commands: npx supabase init, npx supabase start
-Local URL: postgresql://postgres:postgres@localhost:54322/postgres
+### buyers table — MODIFIED from original prompts:
 
-**docker-compose.yml — remove these services:**
-- postgres (entire service block)
-- pgadmin (entire service block)
+REMOVE these fields (Clerk owns them):
+- passwordHash
+- loginFailCount
+- lockedUntil
 
-**docker-compose.yml — keep these services unchanged:**
-- redis-cache (port 6379, allkeys-lru)
-- redis-queue (port 6380, appendonly yes, noeviction)
+ADD this field:
+- clerkUserId String? @unique @map("clerk_user_id")
+  Nullable — Clerk webhook may arrive after buyer record is created.
+  The clerk-buyer.guard handles this race condition by checking for null
+  and returning NO_RELATIONSHIP (treated as unapproved, not as an error).
 
-**RLS setup on Supabase:**
-Run this once in the Supabase SQL editor after project creation:
-```sql
-CREATE ROLE app_user;
-CREATE ROLE audit_writer;
-GRANT app_user TO authenticator;
-```
-Then run all migrations via: pnpm db:migrate
-The RLS SQL from packages/database/migrations/003_rls.sql runs unchanged on Supabase.
-Do NOT use Supabase's built-in anon or authenticated roles — they are irrelevant to this stack.
+KEEP all other buyer fields unchanged:
+id, email, companyName, businessType, taxId, taxIdKeyVersion,
+phone, phoneKeyVersion, addressJson, emailVerifiedAt, lastLoginAt,
+anonymizedAt, createdAt, updatedAt.
 
----
+emailVerifiedAt is synced from Clerk via user.updated webhook.
+See clerk-webhooks.controller.ts above.
 
-## PRISMA SCHEMA OVERRIDES
+### refresh_tokens table:
+REMOVE entirely. Clerk manages buyer sessions. NextAuth manages merchant
+sessions. No custom refresh token table is needed or correct.
 
-### Changes to make to the schema the prompts define:
-
-**REMOVE this table entirely:**
-```
-model RefreshToken { ... }
-```
-Clerk manages refresh tokens. This table must not exist.
-
-**ADD clerkOrgId to merchants table:**
-```prisma
-clerkOrgId String? @unique @map("clerk_org_id")
-```
-
-**ADD clerkUserId to buyers table:**
-```prisma
-clerkUserId String? @unique @map("clerk_user_id")
-```
-
-**SIMPLIFY merchant_users table:**
-Remove: passwordHash, mfaSecret, lastLoginAt, loginFailCount, lockedUntil
-Keep: id, merchantId, clerkUserId (new, replaces email+password), role, isActive, createdAt, updatedAt
-Clerk owns the user record. merchant_users is now a role-mapping table only.
-
-**Keep all other tables exactly as the prompts define:**
-merchants, buyers, merchant_buyer_relationships, pricing_tiers,
-pricing_tier_overrides, orders, order_line_items, invoices,
-buyer_registration_applications, webhook_events, idempotency_keys, audit_log
-— all unchanged.
+### All other tables:
+Unchanged from original prompts.
+merchant_buyer_relationships, pricing_tiers, pricing_tier_overrides,
+orders, order_line_items, invoices, buyer_registration_applications,
+webhook_events, idempotency_keys, audit_log — all unchanged.
 
 ---
 
-## ENVIRONMENT VARIABLES OVERRIDES
+## DATABASE — SUPABASE
 
-### Remove these variables (do not add to env.validation.ts or .env.example):
-- NEXTAUTH_SECRET
+DATABASE_URL — Supabase pooler (PgBouncer), port 6543, app runtime:
+postgresql://postgres.[ref]:[pass]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=5
+
+DATABASE_DIRECT_URL — Supabase direct, port 5432, migrations only:
+postgresql://postgres.[ref]:[pass]@aws-0-[region].pooler.supabase.com:5432/postgres
+
+RLS setup — run once in Supabase SQL editor after project creation:
+  CREATE ROLE app_user;
+  CREATE ROLE audit_writer;
+  GRANT app_user TO authenticator;
+Then: pnpm db:migrate
+
+docker-compose.yml:
+  KEEP: redis-cache (6379, allkeys-lru), redis-queue (6380, appendonly, noeviction)
+  REMOVE: postgres service, pgadmin service
+  Local PostgreSQL: npx supabase start
+
+---
+
+## GUARD USAGE — ENFORCED IN ALL CONTROLLERS
+
+| Context | Guard | Import from |
+|---|---|---|
+| Merchant admin route | MerchantSessionGuard | ../auth/guards/merchant-session.guard |
+| Buyer route (requires approval) | ClerkBuyerGuard | ../auth/guards/clerk-buyer.guard |
+| Buyer route (pre-approval only) | ClerkAuthenticatedGuard | ../auth/guards/clerk-authenticated.guard |
+| Shopify webhook route | WebhookHmacGuard | ../webhooks/webhook-hmac.guard |
+| Clerk webhook route | No guard — Svix verified inside controller | — |
+| Stripe webhook route | No guard — Stripe sig verified inside controller | — |
+| Resolve webhook route | No guard — HMAC verified inside controller | — |
+| Health check routes | No guard + @SkipThrottle() | — |
+
+---
+
+## ENVIRONMENT VARIABLES — VALIDATED LIST
+
+Remove (no longer needed):
 - AUTH_PRIVATE_KEY
 - AUTH_PUBLIC_KEY
 
-### Add these variables:
-- CLERK_SECRET_KEY (required) — from Clerk dashboard, starts with sk_
-- CLERK_PUBLISHABLE_KEY (required) — from Clerk dashboard, starts with pk_
-- CLERK_WEBHOOK_SECRET (required) — from Clerk dashboard webhook config, starts with whsec_
-- DATABASE_DIRECT_URL (required) — Supabase direct connection for migrations
+Add:
+- CLERK_SECRET_KEY (required — starts with sk_live_ or sk_test_)
+- CLERK_PUBLISHABLE_KEY (required — starts with pk_live_ or pk_test_)
+- CLERK_WEBHOOK_SECRET (required — starts with whsec_)
+- DATABASE_DIRECT_URL (required — Supabase direct connection for migrations)
 
-### Keep all other variables exactly as the prompts define.
-
-### env.validation.ts — final required variables list:
-DATABASE_URL, DATABASE_DIRECT_URL, REDIS_CACHE_URL, REDIS_QUEUE_URL,
+Complete validated list for env.validation.ts:
+DATABASE_URL, DATABASE_DIRECT_URL,
+REDIS_CACHE_URL, REDIS_QUEUE_URL,
 SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET,
+NEXTAUTH_SECRET,
 CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, CLERK_WEBHOOK_SECRET,
-AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, S3_REGION, S3_KMS_KEY_ARN,
-STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_STARTER_PRICE_ID,
-STRIPE_GROWTH_PRICE_ID, STRIPE_PRO_PRICE_ID, STRIPE_GMV_METERED_PRICE_ID,
+AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+S3_BUCKET_NAME, S3_REGION, S3_KMS_KEY_ARN,
+STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+STRIPE_STARTER_PRICE_ID, STRIPE_GROWTH_PRICE_ID,
+STRIPE_PRO_PRICE_ID, STRIPE_GMV_METERED_PRICE_ID,
 RESEND_API_KEY, RESEND_FROM_ADDRESS,
-ENCRYPTION_KEY_V1, CURRENT_ENCRYPTION_KEY_VERSION,
+ENCRYPTION_KEY_V1, CURRENT_ENCRYPTION_KEY_VERSION (default: 1),
 RESOLVE_API_KEY, RESOLVE_WEBHOOK_SECRET,
-OTEL_EXPORTER_OTLP_ENDPOINT, SENTRY_DSN,
-ALLOWED_ORIGINS, NODE_ENV, PLATFORM_DOMAIN, INTERNAL_API_SECRET
+OTEL_EXPORTER_OTLP_ENDPOINT,
+SENTRY_DSN,
+ALLOWED_ORIGINS,
+NODE_ENV (enum: development | staging | production, default: development),
+PLATFORM_DOMAIN,
+INTERNAL_API_SECRET (min 32 chars)
 
 ---
 
-## WHAT DOES NOT CHANGE
+## UI DESIGN SYSTEM — MINIMALISM WITH FUNCTIONAL DEPTH
 
-Do not modify any of the following. Implement them exactly as the prompts describe.
+### Philosophy:
+Minimalism dominates all layout, spacing, and color decisions.
+Skeuomorphic depth cues are applied only to interactive elements
+where they reduce cognitive load (buttons that look pressable,
+inputs that look writable). If a depth cue does not help the user
+understand what to do, it does not exist.
 
-**Business logic (completely unchanged):**
-- PricingService — Decimal.js, ROUND_HALF_EVEN, all 3 tier types, unit tests
-- OrdersService — optimistic credit locking, compensating transactions, server-side pricing
-- InvoicesService — AR aging CTE, overdue cron, sequence gap audit, payment reminders
-- InvoicePdfService — @react-pdf/renderer, SHA-256 integrity, 15s timeout
-- StorageService — AWS S3, SSE-KMS, presigned URLs, path traversal prevention
-- EmailService — Resend, circuit-breaker wrapped, all 5 React Email templates
-- BuyersService — GDPR erasure, GDPR export, approval flow, suspension
-- BillingService — Stripe hybrid GMV metered model, per-tier thresholds
-- BnplService + ResolveAdapter — circuit breaker, webhook verification
-- CatalogService — stampede prevention, probabilistic early expiration
-- AnalyticsController — all endpoints, GDPR endpoints
+This is accounting software used by wholesale buyers placing large orders
+and merchant staff managing receivables. Every pixel must earn its place.
 
-**Infrastructure (completely unchanged):**
-- EncryptionService — AES-256-GCM, key versioning, reencryptIfNeeded
-- MerchantContextService — AsyncLocalStorage, run(), runAsSystem()
-- PrismaService — RLS middleware, statement_timeout, slow query logging
-- RedisModule — REDIS_CACHE and REDIS_QUEUE tokens, both clients
-- RateLimitGuard — per-IP + per-merchant by subscription tier
-- IdempotencyMiddleware — all POST/PATCH routes
-- CircuitBreakerFactory — opossum, all named breakers
-- ShopifyApiService — rate limit parsing, retry logic, circuit breaker
-- WebhookHmacGuard — HMAC + timestamp replay prevention + domain validation
-- All BullMQ workers — invoice-generate, order-sync, invoice-mark-paid,
-  catalog-sync, merchant-cleanup, merchant-purge-data, buyer-sync
-- OpenTelemetry + correlation middleware
-- All RLS SQL policies
-- Audit log immutability trigger
-- invoice_number_seq sequence
-- GIN trigram index on buyers.company_name
+### FORBIDDEN — never use:
+- backdrop-filter: blur
+- Frosted or translucent backgrounds
+- Gradient backgrounds of any kind
+- shadow-md, shadow-lg, shadow-xl, shadow-2xl on any layout container
+- active:translate-y-px or any transform on interactive elements
+  (causes layout repaints; unreliable on Safari without touch listeners)
+- Animated backgrounds or transitions longer than 100ms
+- Decorative shapes, blobs, or fills
+- More than 2 font weights in any single view
+- Icon-only buttons on any primary action
+- Multiple accent colors
 
-**Frontend (completely unchanged):**
-- All Next.js pages and layouts
-- BulkOrderTable — virtualization, volume break tooltip, CSV import, cart store
-- Merchant dashboard — KPI cards, AR aging chart, GMV trend chart
-- BuyerApprovalPanel — Sheet, tabs, approval + rejection forms
-- All shared components — StatusBadge, CursorPagination, LoadingSkeleton,
-  ErrorBoundary, ConfirmDialog
-- All TanStack Query hooks
-- Edge middleware — App Proxy HMAC, merchant admin redirect, buyer portal redirect
-- Vercel config and Next.js config
+### Layout rules (minimalism governs):
+- Page background: gray-50 (#f9fafb)
+- Content panels: white (#ffffff)
+- Secondary panels, sidebars: gray-100 (#f3f4f6)
+- Single accent color for all CTAs — one color, used consistently
+- Table rows: compact, 20+ visible without vertical scroll
+- Typography: 3 sizes maximum per view (heading, body, label)
+- Structure comes from 1px borders and consistent spacing
+- Status badges: solid fill only (bg-green-100 text-green-800)
+  Never outlined. Never translucent.
 
-**CI/CD (completely unchanged):**
-- All 8 GitHub Actions jobs
-- All Playwright E2E tests
-- All k6 load tests
-- All runbooks and documentation
+### Interactive element depth cues (skeuomorphism, shadow-only):
 
----
+Button — default state (appears slightly raised):
+  border border-gray-300 bg-white shadow-sm
+  transition-shadow duration-75
 
-## DESIGN RULES — NEVER VIOLATE
+Button — active/pressed state (shadow collapses = pressed feel):
+  active:shadow-none active:border-gray-400
+  No translate. No movement. Shadow removal signals press universally,
+  including Safari, without requiring touch event listeners or cursor-pointer
+  on non-button elements.
 
-These apply to every UI file in apps/web regardless of what any prompt says.
+Button — primary CTA:
+  bg-{accent} border border-{accent-dark} shadow-sm
+  active:shadow-none active:brightness-95
+  transition-shadow duration-75
 
-FORBIDDEN (never use these patterns):
-- backdrop-filter: blur (glassmorphism)
-- Frosted or translucent panel backgrounds
-- Gradient hero sections
-- Multiple-layer floating box shadows
-- Animated gradient backgrounds
-- Decorative blob shapes
-- Any visual pattern indistinguishable from a free Tailwind UI template
+Form inputs (appear recessed into the surface):
+  bg-gray-50 border border-gray-300 shadow-inner
+  focus:bg-white focus:border-gray-400 focus:ring-0
+  transition-colors duration-75
+  Note: shadow-inner is the only skeuomorphic cue here.
+  Do not add focus glow rings — they are decorative in this context.
 
-REQUIRED:
-- Solid neutral backgrounds (white, gray-50, gray-100)
-- Single accent color for CTAs only
-- High-density information layout (this is B2B SaaS, not consumer)
-- Clean typographic hierarchy — no decorative fonts
-- Borders and whitespace for structure — not shadows and glows
-- Status badges: solid colored backgrounds, not outlined or translucent
-- PDF invoices: clean accounting document — lines and columns, no decorative boxes
+Cards and panels (one layer of depth only):
+  border border-gray-200 shadow-sm bg-white
+  Never stack shadows. Never add hover:shadow-md.
 
-Target aesthetic: Shopify Admin or NetSuite — not a fintech consumer app.
+Data tables:
+  Alternating bg-white / bg-gray-50 rows
+  border-b border-gray-200 between rows
+  Clickable rows: hover:bg-blue-50 (only if row triggers navigation)
+  No hover effect on non-clickable rows
+
+Invoice PDF:
+  Background: #fafaf8 (paper tone, not pure white)
+  Rule lines: 0.5pt, #d1d5db
+  Numbers: monospace font, right-aligned
+  Labels: regular weight, left-aligned
+  No decorative boxes, colored headers, or rounded corners
+  Looks like a printed accounting document from a reputable firm
+
+### What this combination produces:
+A UI that feels physically real in its interactive elements
+while maintaining the density and clarity of enterprise software.
+The benchmark is a well-designed physical ledger combined with
+Shopify Admin information architecture.
 
 ---
 
 ## CODE QUALITY RULES — ALWAYS ENFORCED
 
-- TypeScript strict mode everywhere — zero any in business logic files
+- TypeScript strict mode — zero any in business logic files
 - Every file 100% complete — zero stubs, zero TODOs, zero ellipses
-- All imports must resolve to real packages in the locked stack
-- All environment variables referenced must exist in env.validation.ts
+- All imports resolve to real packages in the locked stack
+- All env vars referenced must exist in env.validation.ts
 - All error paths handled — no unhandled promise rejections
-- All prices computed with Decimal.js — never JavaScript floating point
-- All financial writes inside Prisma $transaction with appropriate isolation level
-- All external API calls wrapped in circuit breaker
-- All webhook endpoints verify HMAC before any processing
+- All prices computed with Decimal.js — never native JS floats
+- All financial writes inside Prisma $transaction with correct isolation
+- All external API calls wrapped in opossum circuit breaker
+- All webhook endpoints verify HMAC/signature before any processing
 - Audit log written for every state change on financial entities
+- Logger: import createLogger from @wholesale-portal/shared/utils/logger,
+  pass { correlationId } on every structured log call
+- Error codes: snake_case strings exported from
+  packages/shared/constants/error-codes.ts
+
+---
+
+## WHAT DOES NOT CHANGE
+
+Everything below is identical to the original build prompts. Do not modify.
+
+Business logic:
+PricingService, OrdersService, InvoicesService, InvoicePdfService,
+StorageService, EmailService, BuyersService (approval flow + GDPR),
+BillingService, BnplService + ResolveAdapter, CatalogService,
+AnalyticsController
+
+Infrastructure:
+EncryptionService (AES-256-GCM, key versioning),
+MerchantContextService (AsyncLocalStorage),
+PrismaService (RLS middleware, statement_timeout, slow query log),
+RedisModule (REDIS_CACHE + REDIS_QUEUE tokens),
+RateLimitGuard (per-IP + per-merchant by subscription tier),
+IdempotencyMiddleware (all POST/PATCH routes),
+CircuitBreakerFactory (opossum, named breakers),
+ShopifyApiService (rate-limit aware, circuit-breaker wrapped),
+WebhookHmacGuard (HMAC + timestamp replay prevention + domain check),
+All 8 Shopify webhook topics,
+All 5 BullMQ queues, all 7 workers,
+OpenTelemetry + correlation middleware,
+All RLS SQL policies,
+Audit log immutability trigger,
+invoice_number_seq,
+GIN trigram index on buyers.company_name
+
+Frontend (except auth pages):
+All Next.js pages and layouts,
+BulkOrderTable (virtualization, CSV import, volume break tooltip, cart),
+Merchant dashboard (KPI cards, AR aging chart, GMV trend chart),
+BuyerApprovalPanel (Sheet slide-over, approval + rejection tabs),
+All shared components (StatusBadge, CursorPagination, LoadingSkeleton,
+ErrorBoundary, ConfirmDialog),
+All TanStack Query hooks,
+Edge middleware (App Proxy HMAC, merchant redirect, buyer redirect),
+Vercel config, Next.js config
+
+CI/CD:
+All 8 GitHub Actions jobs,
+All Playwright E2E tests,
+All k6 load tests,
+All runbooks in docs/runbooks/
 
 ---
 
 ## PACKAGE VERSIONS — DO NOT UPGRADE OR SUBSTITUTE
 
-nestjs: 10.x
 next: 14.x
-prisma: 5.x
+@nestjs/core and all @nestjs/*: 10.x
+prisma and @prisma/client: 5.x
 bullmq: 5.x
 @clerk/backend: latest stable
 @clerk/nextjs: latest stable
 svix: latest stable
+next-auth: 4.x (NOT v5 — v5 breaks Shopify OAuth PKCE flow)
 @tanstack/react-query: 5.x
 @tanstack/react-virtual: 3.x
 opossum: latest stable
@@ -351,276 +464,99 @@ date-fns: 3.x
 zod: 3.x
 react-hook-form: 7.x
 stripe: 14.x or latest stable
+typescript: 5.x
 
 ---
 
-## QUICK REFERENCE — GUARD USAGE IN CONTROLLERS
+## MONOREPO LAYOUT
 
-Every time a controller uses an auth guard, use these:
-
-| Context | Guard to use | Import from |
-|---|---|---|
-| Merchant admin route | ClerkMerchantGuard | ../auth/guards/clerk-merchant.guard |
-| Buyer portal route | ClerkBuyerGuard | ../auth/guards/clerk-buyer.guard |
-| Shopify webhook route | WebhookHmacGuard | ../webhooks/webhook-hmac.guard |
-| Clerk webhook route | No guard — Svix signature verified inside controller | — |
-| Stripe webhook route | No guard — Stripe signature verified inside controller | — |
-| Resolve webhook route | No guard — HMAC verified inside controller | — |
-| Internal health routes | No guard + @SkipThrottle() | — |
-
----
-
-## MIGRATION PROCEDURE FOR NEW ENGINEERS
-
-1. Clone repo
-2. Copy .env.example to apps/api/.env and fill in values
-3. Install Supabase CLI: npm install -g supabase
-4. Start local services: supabase start && docker-compose up -d
-   (docker-compose now only starts redis-cache and redis-queue)
-5. Run migrations against local Supabase: pnpm db:migrate
-6. Run RLS setup: paste packages/database/migrations/003_rls.sql into Supabase local SQL editor
-7. Generate Prisma client: pnpm db:generate
-8. Seed: pnpm db:seed
-9. Start all apps: pnpm dev
-
----
-
-*Last updated: reflects all architectural decisions made before Prompt 3 was executed.*
-*Auth: Clerk replaces NextAuth + custom buyer JWT*
-*Database: Supabase replaces Railway PostgreSQL*
-*Railway: still hosts NestJS API and both Redis instances*
-# B2B Wholesale Portal — Claude Code Project Context
-
-> This file is read automatically by Claude Code at the start of every session.
-> Never abbreviate, stub, or add TODOs. Every file generated must be complete and runnable.
-> Run `pnpm typecheck` after every prompt before proceeding to the next.
-
----
-
-## What We Are Building
-
-A financial-grade, Shopify-embedded B2B wholesale operating system SaaS. Merchants get: unlimited pricing tiers, spreadsheet-style bulk ordering, self-serve buyer onboarding, automated PDF invoicing, accounts receivable, and BNPL via Resolve.
-
----
-
-## Non-Negotiable Architecture Decisions
-
-| Decision | Rule |
-|---|---|
-| Buyer accounts | UNIFIED cross-merchant. One buyer email = one platform account. Per-merchant config lives in `merchant_buyer_relationships`. |
-| BNPL | Resolve (US, Phase 1). Always called through `BnplAdapter` interface — never Resolve SDK directly. |
-| Billing | Hybrid: flat Stripe subscription + Stripe metered GMV usage records with per-tier free thresholds. |
-| Buyer portal | White-label via Shopify App Proxy — buyers see the merchant's Shopify domain only. |
-| Multi-tenancy | TWO layers: application `where: { merchantId }` AND PostgreSQL Row-Level Security. Both always active. |
-| Price arithmetic | Decimal.js with `ROUND_HALF_EVEN` everywhere. Never native JS floats for money. |
-| Financial writes | `$transaction({ isolationLevel: 'Serializable' })` for all order + invoice mutations. |
-| External API calls | Every call through an `opossum` circuit breaker. No raw fetch to external services. |
-| Launch vertical | Fashion & Apparel only. |
-
----
-
-## Locked Technology Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 14 App Router, TypeScript strict |
-| UI | Tailwind CSS + shadcn/ui |
-| Server state | TanStack Query v5 |
-| Client state | Zustand |
-| Forms | React Hook Form + Zod (shared schemas on client + server) |
-| Backend | NestJS 10, Node.js 20, TypeScript strict |
-| API | REST `/api/v1/` + GraphQL (Apollo, code-first) |
-| ORM | Prisma 5, PostgreSQL 16 |
-| Connection pooling | PgBouncer in transaction mode |
-| Cache | Redis 7 — `REDIS_CACHE` (LRU eviction, port 6379) |
-| Queue storage | Redis 7 — `REDIS_QUEUE` (AOF + RDB persistence, port 6380) |
-| Job queue | BullMQ 5 on REDIS_QUEUE |
-| Merchant auth | NextAuth.js v5 + Shopify OAuth 2.0 |
-| Buyer auth | RS256 JWT (15 min) + rotating refresh tokens (30 day, persisted to DB) |
-| Email | Resend + React Email |
-| PDF | `@react-pdf/renderer` (no headless browser, no Puppeteer) |
-| Storage | AWS S3 with SSE-KMS, presigned URLs only |
-| Billing | Stripe |
-| Tracing | OpenTelemetry → OTLP → Grafana Cloud |
-| Errors | Sentry (backend + frontend) |
-| Logs | Pino (structured JSON, PII masked at emit) |
-| Frontend deploy | Vercel |
-| Backend deploy | Railway |
-
----
-
-## Monorepo Layout
-
-```
-/
-├── apps/
-│   ├── web/           # Next.js 14 (merchant admin + buyer portal)
-│   └── api/           # NestJS 10 backend
-├── packages/
-│   ├── shared/        # TypeScript types, Zod schemas, utils (used by both apps)
-│   └── database/      # Prisma schema, migrations, generated client
-├── tests/
-│   ├── e2e/           # Playwright specs
-│   └── load/          # k6 load test scripts
-├── docs/
-│   └── runbooks/      # Ops runbooks
-├── CLAUDE.md          # ← this file
-├── turbo.json
-├── pnpm-workspace.yaml
-├── package.json       # root (pnpm workspaces)
-├── docker-compose.yml
-└── .github/
+~/wholesale-portal/
+ apps/
+   ├── web/           # Next.js 14 — merchant admin + buyer portal
+   └── api/           # NestJS 10 backend
+ packages/
+   ├── shared/        # TypeScript types, Zod schemas, utils, error codes
+   └── database/      # Prisma schema, migrations, generated client
+ tests/
+   ├── e2e/           # Playwright specs
+   └── load/          # k6 load test scripts
+ docs/
+   └── runbooks/
+ CLAUDE.md
+ turbo.json
+ pnpm-workspace.yaml
+ package.json
+ docker-compose.yml
+ .github/
     ├── workflows/ci.yml
     └── dependabot.yml
-```
 
 ---
 
-## Database Tables (14 total)
+## FILES SUMMARY
 
-| Table | Purpose |
-|---|---|
-| `merchants` | One row per Shopify store. `shopifyAccessToken` AES-256-GCM encrypted with key version prefix. |
-| `merchant_users` | Staff who access the merchant admin. Roles: owner / admin / staff. |
-| `buyers` | Cross-merchant buyer accounts keyed by email. PII fields encrypted. |
-| `merchant_buyer_relationships` | Per-merchant buyer config: pricing tier, payment terms, credit limit with optimistic lock (`creditVersion`). |
-| `pricing_tiers` | Three types: `percentage_off`, `fixed_price_list`, `volume_breaks`. |
-| `pricing_tier_overrides` | Per-product or per-variant price overrides for a tier. |
-| `orders` | Shopify orders synced to platform. |
-| `order_line_items` | Line items for reconciliation and invoice detail. |
-| `invoices` | PDF invoices. `pdfSha256` for integrity. Sequential `invoiceNumber` via DB sequence. |
-| `buyer_registration_applications` | Pending/approved/rejected applications per merchant. |
-| `webhook_events` | Deduplication + audit record for every inbound Shopify webhook. |
-| `refresh_tokens` | Persisted buyer refresh tokens with rotation chain for theft detection. |
-| `idempotency_keys` | 24-hour cache for all POST/PATCH responses. |
-| `audit_log` | Append-only (PostgreSQL trigger blocks UPDATE/DELETE). |
+Create (new — not in original prompts):
+  apps/api/src/auth/guards/clerk-buyer.guard.ts
+  apps/api/src/auth/guards/clerk-authenticated.guard.ts
+  apps/api/src/auth/clerk-webhooks.controller.ts
+  apps/web/src/app/(auth)/buyer-login/page.tsx
+  apps/web/src/app/(auth)/buyer-signup/page.tsx
 
----
+Restore exactly as original prompts define:
+  apps/web/src/app/api/auth/[...nextauth]/route.ts
+  apps/api/src/auth/guards/merchant-session.guard.ts
 
-## Security Requirements (All Must Be Implemented)
-
-- **Encryption**: AES-256-GCM with key version prefix (`v{N}:{iv}:{tag}:{ciphertext}`). `CURRENT_ENCRYPTION_KEY_VERSION` env controls active key. Old key versions kept for decryption during rotation.
-- **JWT**: RS256. Access token 15 min, carries `jti`. Refresh tokens stored as SHA-256 hash in DB. Rotation attack: if a replaced token is reused, revoke ALL tokens for that buyer.
-- **Webhooks**: HMAC-SHA256 signature + timestamp replay prevention (|now − webhookCreatedAt| ≤ 300 s).
-- **RLS**: PostgreSQL `app_user` role. App sets `SET LOCAL app.current_merchant_id` per request. Workers set `SET LOCAL app.bypass_rls = 'true'`.
-- **Rate limiting**: Per-IP (200/min) + per-merchant by subscription tier (Starter 1K/hr, Growth 5K/hr, Pro 20K/hr). Redis-backed via NestJS ThrottlerModule.
-- **Idempotency**: All POST/PATCH read `Idempotency-Key` header. Same key + different body → 422. In-flight duplicate → 409.
-- **GraphQL**: Depth ≤ 8. Complexity ≤ 200. Introspection disabled in production. APQ in production.
-- **GDPR**: `buyers.anonymizedAt` field. Erasure anonymizes PII, retains financial records.
+Never create:
+  apps/api/src/auth/services/buyer-auth.service.ts
+  apps/api/src/auth/guards/buyer-jwt.guard.ts
+  apps/api/src/auth/guards/clerk-merchant.guard.ts
 
 ---
 
-## Code Conventions
+## LOCAL DEVELOPMENT SETUP
 
-```typescript
-// ✅ Correct — no any, explicit return types, Decimal for money
-async getOrderTotal(orderId: string): Promise<Decimal> {
-  const result = await this.prisma.orderLineItem.aggregate({
-    where: { orderId },
-    _sum: { lineTotal: true },
-  });
-  return new Decimal(result._sum.lineTotal ?? 0);
-}
-
-// ❌ Wrong — any type, implicit return, native float math
-async getOrderTotal(orderId) {
-  const items = await this.prisma.orderLineItem.findMany({ where: { orderId } });
-  return items.reduce((sum, i) => sum + Number(i.lineTotal), 0);
-}
-```
-
-- All TypeScript files: `"strict": true`, no `any` in business logic
-- All prices: `Decimal` type (Prisma + Decimal.js), never `number`
-- All DB mutations: wrapped in `$transaction`
-- All external API calls: circuit-breaker wrapped
-- Logger: import `createLogger` from `packages/shared/utils/logger`, pass `{ correlationId }` on every structured log
-- Error codes: snake_case strings exported from `packages/shared/constants/error-codes.ts`
-- Pagination: cursor-based only. Never `skip`/`offset`.
+1. npx supabase init && npx supabase start
+2. docker-compose up -d
+   (only starts redis-cache and redis-queue — no postgres, no pgadmin)
+3. pnpm install
+4. pnpm db:generate
+5. pnpm db:migrate
+6. Paste packages/database/migrations/003_rls.sql into Supabase local
+   SQL editor at http://localhost:54323
+7. pnpm db:seed
+8. pnpm dev
 
 ---
 
-## Key Environment Variables
+## VERIFICATION — RUN AFTER EVERY PROMPT
 
-```bash
-# Database
-DATABASE_URL=postgresql://b2bapp:localdev@localhost:5432/b2b_wholesale?schema=public
-REDIS_CACHE_URL=redis://localhost:6379
-REDIS_QUEUE_URL=redis://localhost:6380
+After any backend change:
+  pnpm --filter=@wholesale-portal/api build
+  pnpm typecheck
 
-# Auth
-NEXTAUTH_SECRET=<32-byte random hex>
-AUTH_PRIVATE_KEY=<RS256 PEM>
-AUTH_PUBLIC_KEY=<RS256 PEM>
+After pricing or financial logic:
+  pnpm --filter=@wholesale-portal/api test:unit -- --testPathPattern=pricing
+  pnpm typecheck
 
-# Encryption
-ENCRYPTION_KEY_V1=<64 hex chars = 32 bytes>
-CURRENT_ENCRYPTION_KEY_VERSION=1
+After any frontend change:
+  pnpm --filter=@wholesale-portal/web build
+  pnpm typecheck
 
-# Shopify
-SHOPIFY_CLIENT_ID=
-SHOPIFY_CLIENT_SECRET=
+After schema changes:
+  pnpm db:generate
+  pnpm typecheck
 
-# AWS
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-S3_BUCKET_NAME=
-S3_REGION=us-east-1
-S3_KMS_KEY_ARN=
+Full verification (run before declaring any prompt done):
+  pnpm typecheck
 
-# Stripe
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-STRIPE_STARTER_PRICE_ID=
-STRIPE_GROWTH_PRICE_ID=
-STRIPE_PRO_PRICE_ID=
-STRIPE_GMV_METERED_PRICE_ID=
-
-# Email
-RESEND_API_KEY=
-RESEND_FROM_ADDRESS=invoices@platform.com
-
-# BNPL
-RESOLVE_API_KEY=
-RESOLVE_WEBHOOK_SECRET=
-
-# Observability
-OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-us-central-0.grafana.net/otlp
-SENTRY_DSN=
-
-# App
-ALLOWED_ORIGINS=https://admin.yourdomain.com
-PLATFORM_DOMAIN=yourdomain.com
-INTERNAL_API_SECRET=<32-byte random hex>
-NODE_ENV=development
-```
+Zero errors required. Do not proceed until verification passes.
 
 ---
 
-## Verification Commands
-
-After each prompt, Claude Code MUST run these before declaring done:
-
-```bash
-# After Prompt 1 (Foundation):
-pnpm db:generate          # Prisma client generates without error
-pnpm typecheck            # Zero TS errors across all packages
-
-# After Prompt 2 (NestJS Core):
-pnpm --filter=api build   # NestJS compiles
-pnpm typecheck
-
-# After Prompt 3 (Integrations):
-pnpm --filter=api test:unit -- --testPathPattern=pricing
-pnpm typecheck
-
-# After Prompt 4 (Business Logic):
-pnpm --filter=api test:unit
-pnpm typecheck
-
-# After Prompt 5 (Frontend + CI/CD):
-pnpm --filter=web build   # Next.js builds without error
-pnpm typecheck
-```
-
-If any verification fails, fix the errors before outputting "done." Do not move to the next prompt until verification passes.
-root@localhost:~/wholesale-portal#
+Last updated: Hybrid auth locked — NextAuth v4 + Shopify OAuth for merchants
+(Shopify embedded app requirement), Clerk for buyers. Supabase replaces
+Railway PostgreSQL. buyers table cleaned of Clerk-owned auth fields.
+refresh_tokens table removed. emailVerifiedAt synced via Clerk user.updated
+webhook. Minimalism dominates layout. Skeuomorphic depth cues use
+shadow-only press states — no translate transforms (Safari compatibility,
+no layout repaints).

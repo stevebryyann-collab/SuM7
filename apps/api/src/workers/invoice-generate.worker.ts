@@ -13,7 +13,13 @@ import { StorageService } from '../storage/storage.service';
 import { EmailService } from '../email/email.service';
 import { InvoiceMarkPaidService } from './invoice-mark-paid.worker';
 import { JOB_INVOICE_GENERATE, JOB_INVOICE_MARK_PAID, QUEUE_INVOICE } from '../queues/queue.module';
-import { PAYMENT_TERMS_DAYS, asShopifyId, isFinalAttempt, type WebhookJobData } from './worker-helpers';
+import {
+  PAYMENT_TERMS_DAYS,
+  PAYMENT_TERMS_LABELS,
+  asShopifyId,
+  isFinalAttempt,
+  type WebhookJobData,
+} from './worker-helpers';
 
 const ROUND = Decimal.ROUND_HALF_EVEN;
 const money = (value: string | null | undefined): string =>
@@ -255,11 +261,18 @@ export class InvoiceWorker extends WorkerHost {
     await this.email.sendInvoiceEmail({
       to: email,
       buyerCompany: buyer.companyName,
+      merchantName: merchant.shopifyDomain,
       invoiceNumber,
       total,
       currency: order.currency,
       dueDate: format(dueDate, 'yyyy-MM-dd'),
-      downloadUrl,
+      paymentTerms: PAYMENT_TERMS_LABELS[relationship.paymentTerms],
+      presignedUrl: downloadUrl,
+      lineItems: lineItems.map((li) => ({
+        description: li.productTitle + (li.variantTitle ? ` — ${li.variantTitle}` : ''),
+        quantity: li.quantity,
+        lineTotal: li.lineTotal,
+      })),
     });
 
     await this.markProcessed(webhookEventId);

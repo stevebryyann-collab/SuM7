@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Observable } from 'rxjs';
 import { MerchantContextService } from '../../prisma/merchant-context.service';
-import type { MerchantAuthenticatedRequest } from '../../auth/guards/clerk-merchant.guard';
+import type { MerchantAuthenticatedRequest } from '../../auth/guards/merchant-session.guard';
 
 /**
  * Opens the RLS AsyncLocalStorage scope for the duration of the request handler.

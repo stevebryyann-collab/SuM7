@@ -21,6 +21,8 @@ export interface AppConfig {
   SHOPIFY_CLIENT_ID: string;
   SHOPIFY_CLIENT_SECRET: string;
 
+  NEXTAUTH_SECRET: string;
+
   CLERK_SECRET_KEY: string;
   CLERK_PUBLISHABLE_KEY: string;
   CLERK_WEBHOOK_SECRET: string;
@@ -91,7 +93,12 @@ export const envValidationSchema = Joi.object({
   SHOPIFY_CLIENT_ID: Joi.string().required(),
   SHOPIFY_CLIENT_SECRET: Joi.string().required(),
 
-  // ── Authentication (Clerk) ──
+  // ── Merchant authentication (NextAuth + Shopify OAuth) ──
+  // The web app signs merchant session tokens (HS256) with this secret; the API
+  // MerchantSessionGuard verifies them against the same value.
+  NEXTAUTH_SECRET: Joi.string().min(32).required(),
+
+  // ── Buyer authentication (Clerk) ──
   CLERK_SECRET_KEY: Joi.string().pattern(/^sk_/, 'clerk secret key').required(),
   CLERK_PUBLISHABLE_KEY: Joi.string().pattern(/^pk_/, 'clerk publishable key').required(),
   CLERK_WEBHOOK_SECRET: Joi.string().pattern(/^whsec_/, 'clerk webhook secret').required(),

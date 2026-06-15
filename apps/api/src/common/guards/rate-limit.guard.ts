@@ -9,7 +9,7 @@ import {
 import { Redis } from 'ioredis';
 import type { SubscriptionTier } from '@b2b/shared';
 import { REDIS_CACHE } from '../../redis/redis.module';
-import type { MerchantAuthenticatedRequest } from '../../auth/guards/clerk-merchant.guard';
+import type { MerchantAuthenticatedRequest } from '../../auth/guards/merchant-session.guard';
 import type { BuyerAuthenticatedRequest } from '../../auth/guards/clerk-buyer.guard';
 
 interface Limit {
