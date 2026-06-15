@@ -17,7 +17,8 @@ export type InvoiceStatus =
   | 'partially_paid'
   | 'paid'
   | 'overdue'
-  | 'void';
+  | 'void'
+  | 'defaulted';
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 

@@ -80,6 +80,7 @@ enum InvoiceStatus {
   paid
   overdue
   void
+  defaulted
 }
 
 enum RegistrationStatus {

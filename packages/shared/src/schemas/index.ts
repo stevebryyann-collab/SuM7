@@ -126,6 +126,56 @@ export const CreatePricingTierSchema = z
   });
 export type CreatePricingTierInput = z.infer<typeof CreatePricingTierSchema>;
 
+// ── Pricing tier overrides (bulk upsert) ───────────────────────────────
+
+/** A single per-variant price override within a bulk upsert. */
+export const PricingOverrideSchema = z.object({
+  shopifyProductId: z.string().trim().min(1).max(100),
+  shopifyVariantId: z.string().trim().min(1).max(100).nullable().optional(),
+  /** Must be strictly greater than 0.01 — enforced server-side with Decimal too. */
+  price: moneyString,
+  compareAtPrice: moneyString.nullable().optional(),
+  currency: z.string().trim().length(3).default('USD'),
+});
+export type PricingOverrideInput = z.infer<typeof PricingOverrideSchema>;
+
+/** Bulk override payload — at most 500 overrides per request. */
+export const BulkPricingOverrideSchema = z.object({
+  overrides: z.array(PricingOverrideSchema).min(1).max(500),
+});
+export type BulkPricingOverrideInput = z.infer<typeof BulkPricingOverrideSchema>;
+
+/** Partial update for a pricing tier (PATCH). All fields optional. */
+export const UpdatePricingTierSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    baseDiscountPct: z.number().min(0).max(100).nullable().optional(),
+    isDefault: z.boolean().optional(),
+    minOrderAmount: moneyString.nullable().optional(),
+    priority: z.number().int().min(0).optional(),
+    isActive: z.boolean().optional(),
+    conditionsJson: z
+      .object({
+        brackets: z.array(VolumeBreakConditionSchema).min(1),
+      })
+      .nullable()
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided',
+  });
+export type UpdatePricingTierInput = z.infer<typeof UpdatePricingTierSchema>;
+
+// ── Billing ────────────────────────────────────────────────────────────
+
+export const SubscriptionTierSchema = z.enum(['starter', 'growth', 'pro']);
+
+/** Body for POST /billing/subscribe and POST /billing/change-tier. */
+export const BillingTierSchema = z.object({
+  tier: SubscriptionTierSchema,
+});
+export type BillingTierInput = z.infer<typeof BillingTierSchema>;
+
 // ── Bulk ordering (spreadsheet-style) ──────────────────────────────────
 
 export const BulkOrderLineItemSchema = z.object({
