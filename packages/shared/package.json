@@ -32,8 +32,8 @@
     "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
-    "pino": "9.4.0",
-    "zod": "3.23.8"
+    "pino": "9.14.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "20.16.5",
