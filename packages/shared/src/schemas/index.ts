@@ -219,6 +219,24 @@ export const RejectBuyerSchema = z.object({
 });
 export type RejectBuyerInput = z.infer<typeof RejectBuyerSchema>;
 
+/**
+ * Partial update for an approved buyer's per-merchant relationship (PATCH
+ * /buyers/:buyerId). All fields optional; at least one required. `pricingTierId`
+ * nullable to clear the tier (fall back to the merchant default); `creditLimit`
+ * nullable to remove a limit; `notes` nullable to clear internal notes.
+ */
+export const UpdateBuyerSchema = z
+  .object({
+    pricingTierId: uuid.nullable().optional(),
+    paymentTerms: PaymentTermsSchema.optional(),
+    creditLimit: moneyString.nullable().optional(),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided',
+  });
+export type UpdateBuyerInput = z.infer<typeof UpdateBuyerSchema>;
+
 // ── Invoicing ──────────────────────────────────────────────────────────
 
 export const MarkPaidSchema = z.object({

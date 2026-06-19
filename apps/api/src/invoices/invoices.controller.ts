@@ -10,12 +10,20 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { z } from 'zod';
-import { MarkPaidSchema, type MarkPaidInput, type InvoiceStatus } from '@b2b/shared';
+import {
+  CursorPaginationSchema,
+  MarkPaidSchema,
+  type CursorPaginationInput,
+  type MarkPaidInput,
+  type InvoiceStatus,
+  type PaginatedResponse,
+} from '@b2b/shared';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { REDIS_CACHE } from '../redis/redis.module';
 import { MerchantSessionGuard, type MerchantAuthenticatedRequest } from '../auth/guards/merchant-session.guard';
@@ -26,6 +34,7 @@ import {
   InvoicesService,
   type ArAgingResult,
   type IntegrityResult,
+  type InvoiceSummary,
 } from './invoices.service';
 
 /** Body of `PATCH /invoices/:id/void` — a required, human-readable reason. */
@@ -40,6 +49,7 @@ const RESEND_WINDOW_SECONDS = 300; // one resend per invoice per 5 minutes
  * Invoicing & AR HTTP surface.
  *
  *   Merchant admin (NextAuth):
+ *     GET   /invoices                   invoice list (cursor; status/aging/buyer)
  *     GET   /invoices/ar-aging          AR-aging report (5 zero-filled buckets)
  *     GET   /invoices/:id/integrity     verify the stored PDF SHA-256
  *     PATCH /invoices/:id/mark-paid     record a (partial) payment
@@ -47,6 +57,7 @@ const RESEND_WINDOW_SECONDS = 300; // one resend per invoice per 5 minutes
  *     POST  /invoices/:id/resend        re-send the invoice email (rate-limited)
  *
  *   Buyer portal (Clerk):
+ *     GET   /buyer/invoices                the buyer's own invoices (cursor)
  *     GET   /buyer/invoices/:id/download   presigned PDF URL (ownership-checked)
  *
  * Mutating + void actions require an elevated merchant role; the buyer download
@@ -60,6 +71,23 @@ export class InvoicesController {
   ) {}
 
   // ── Merchant admin ──────────────────────────────────────────────────────
+
+  @Get('invoices')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  listInvoices(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Query(new ZodValidationPipe(CursorPaginationSchema)) page: CursorPaginationInput,
+    @Query('status') status?: string,
+    @Query('agingBucket') agingBucket?: string,
+    @Query('buyerId') buyerId?: string,
+  ): Promise<PaginatedResponse<InvoiceSummary>> {
+    return this.invoices.listInvoicesForMerchant(req.merchant!.merchantId, {
+      ...page,
+      status,
+      agingBucket,
+      buyerId,
+    });
+  }
 
   @Get('invoices/ar-aging')
   @UseGuards(MerchantSessionGuard, RolesGuard)
@@ -136,6 +164,17 @@ export class InvoicesController {
   }
 
   // ── Buyer portal ────────────────────────────────────────────────────────
+
+  @Get('buyer/invoices')
+  @UseGuards(ClerkBuyerGuard)
+  listBuyerInvoices(
+    @Req() req: BuyerAuthenticatedRequest,
+    @Query(new ZodValidationPipe(CursorPaginationSchema)) page: CursorPaginationInput,
+    @Query('status') status?: string,
+  ): Promise<PaginatedResponse<InvoiceSummary>> {
+    const buyer = req.buyer!;
+    return this.invoices.listInvoicesForBuyer(buyer.buyerId, buyer.merchantId, { ...page, status });
+  }
 
   @Get('buyer/invoices/:id/download')
   @UseGuards(ClerkBuyerGuard)

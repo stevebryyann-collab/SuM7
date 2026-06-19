@@ -1,0 +1,269 @@
+import type {
+  ApprovalStatus,
+  InvoiceStatus,
+  PaginatedResponse,
+  PaymentTerms,
+  PricingTierType,
+} from '@b2b/shared/types';
+
+/**
+ * Frontend mirrors of the API's response DTOs. These are NOT re-exported from
+ * `@b2b/shared` because they are server response shapes (service return types),
+ * not shared request schemas. Kept in lockstep with the controllers in apps/api.
+ */
+
+// ── Merchant dashboard (GraphQL) ────────────────────────────────────────
+
+export interface MerchantDashboard {
+  gmvCurrentMonth: string;
+  gmvPreviousMonth: string;
+  gmvChangePercent: string | null;
+  outstandingArBalance: string;
+  overdueInvoiceCount: number;
+  overdueInvoiceAmount: string;
+  newBuyersThisMonth: number;
+  pendingApplicationCount: number;
+}
+
+export interface ArAgingBucket {
+  bucket: string;
+  invoiceCount: number;
+  outstandingAmount: string;
+}
+
+export interface ArAgingReport {
+  current: ArAgingBucket;
+  overdue_1_30: ArAgingBucket;
+  overdue_31_60: ArAgingBucket;
+  overdue_61_90: ArAgingBucket;
+  overdue_90_plus: ArAgingBucket;
+}
+
+/** One point of the 30-day GMV trend (derived client-side from paid invoices). */
+export interface GmvTrendPoint {
+  date: string;
+  gmv: string;
+}
+
+// ── Buyers (merchant admin list + approval) ─────────────────────────────
+
+export interface BuyerSummary {
+  buyerId: string;
+  companyName: string;
+  email: string;
+  approvalStatus: ApprovalStatus | string;
+  pricingTierName: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: string | null;
+  orderCount: number;
+  outstandingInvoiceTotal: string;
+  lastOrderAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * A pending registration application surfaced in the approval panel.
+ *
+ * PII (taxId, phone) is NOT part of this payload — it is fetched on demand via
+ * the audited reveal endpoint ({@link ApplicationPii}). `hasTaxId` / `hasPhone`
+ * indicate whether a reveal would return a value.
+ */
+export interface BuyerApplication {
+  id: string;
+  email: string;
+  companyName: string;
+  businessType: string | null;
+  website: string | null;
+  estimatedMonthlyOrder: string | null;
+  message: string | null;
+  hasTaxId: boolean;
+  hasPhone: boolean;
+  status: ApprovalStatus | string;
+  createdAt: string;
+}
+
+/** Decrypted/plaintext application PII, returned only by the audited reveal endpoint. */
+export interface ApplicationPii {
+  taxId: string | null;
+  phone: string | null;
+}
+
+/**
+ * Full per-buyer detail (merchant View panel + approved-buyer inline edit).
+ * Carries the relationship config plus the same aggregates as {@link BuyerSummary}.
+ */
+export interface BuyerDetail {
+  buyerId: string;
+  companyName: string;
+  email: string;
+  businessType: string | null;
+  approvalStatus: ApprovalStatus | string;
+  pricingTierId: string | null;
+  pricingTierName: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: string | null;
+  notes: string | null;
+  orderCount: number;
+  outstandingInvoiceTotal: string;
+  lastOrderAt: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+}
+
+// ── Pricing tiers ───────────────────────────────────────────────────────
+
+export interface PricingTierSummary {
+  id: string;
+  name: string;
+  type: PricingTierType | string;
+  baseDiscountPct: string | null;
+  isDefault: boolean;
+  minOrderAmount: string | null;
+  priority: number;
+  isActive: boolean;
+  buyerCount: number;
+  createdAt: string;
+}
+
+/** A volume-break bracket (qty threshold → discount %). Stored in conditionsJson. */
+export interface VolumeBreakBracket {
+  minQty: number;
+  discountPct: number;
+}
+
+/** Tier `conditionsJson` shape (only meaningful for `volume_breaks` tiers). */
+export interface PricingTierConditions {
+  brackets: VolumeBreakBracket[];
+}
+
+/** A per-variant price override row in the tier-detail list. */
+export interface PricingOverrideSummary {
+  id: string;
+  shopifyProductId: string;
+  shopifyVariantId: string | null;
+  price: string;
+  compareAtPrice: string | null;
+  currency: string;
+  createdAt: string;
+}
+
+/** Tier detail = summary header + conditions + first page of overrides. */
+export interface PricingTierDetail extends PricingTierSummary {
+  conditionsJson: PricingTierConditions | null;
+  overrides: PaginatedResponse<PricingOverrideSummary>;
+}
+
+// ── Orders ──────────────────────────────────────────────────────────────
+
+export interface OrderSummary {
+  id: string;
+  shopifyOrderNumber: string | null;
+  buyerCompanyName: string | null;
+  status: string;
+  subtotal: string;
+  total: string;
+  currency: string;
+  paymentTerms: PaymentTerms | null;
+  dueDate: string | null;
+  createdAt: string;
+  invoiceStatus: string | null;
+  invoiceDueDate: string | null;
+}
+
+export interface OrderLineDetail {
+  shopifyVariantId: string | null;
+  shopifyProductId: string | null;
+  productTitle: string;
+  variantTitle: string | null;
+  sku: string | null;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+  appliedTierType: string | null;
+  discountPct: string | null;
+  currency: string;
+}
+
+export interface OrderDetail {
+  id: string;
+  shopifyOrderId: string | null;
+  shopifyOrderNumber: string | null;
+  buyerId: string;
+  buyerCompanyName: string | null;
+  status: string;
+  syncStatus: string;
+  subtotal: string;
+  taxAmount: string;
+  shippingAmount: string;
+  total: string;
+  currency: string;
+  paymentTerms: PaymentTerms | null;
+  dueDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  lineItems: OrderLineDetail[];
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    status: string;
+    dueDate: string;
+    total: string;
+    amountPaid: string;
+  } | null;
+}
+
+export interface OrderCreatedResult {
+  orderId: string;
+  shopifyOrderNumber: string;
+  subtotal: string;
+  total: string;
+  currency: string;
+  paymentTerms: PaymentTerms;
+  dueDate: string | null;
+  estimatedInvoiceDelivery: string;
+}
+
+// ── Invoices ────────────────────────────────────────────────────────────
+
+export interface InvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  buyerCompanyName: string | null;
+  status: InvoiceStatus | string;
+  total: string;
+  amountPaid: string;
+  dueDate: string;
+  issuedAt: string | null;
+  lastReminderAt: string | null;
+  createdAt: string;
+}
+
+// ── Catalog (buyer portal) ──────────────────────────────────────────────
+
+export interface CatalogVariant {
+  shopifyVariantId: string;
+  sku: string | null;
+  color: string | null;
+  size: string | null;
+  basePrice: string;
+  resolvedPrice: string;
+  appliedTierType: PricingTierType | null;
+  available: boolean;
+}
+
+export interface CatalogProduct {
+  shopifyProductId: string;
+  title: string;
+  handle: string;
+  vendor: string;
+  productType: string;
+  colors: string[];
+  sizes: string[];
+  variants: CatalogVariant[];
+}
+
+export interface CatalogPage {
+  products: CatalogProduct[];
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  stale: boolean;
+}

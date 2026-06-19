@@ -1,18 +1,189 @@
 # CONTEXT_HANDOFF_FINAL.md
 
-_Generated: 2026-06-15. Updated: 2026-06-15 (Session 2). Single source of truth for resuming this project in a brand-new session._
+_Generated: 2026-06-15. Updated: 2026-06-16 (Session 3). Single source of truth for resuming this project in a brand-new session._
 
-> **READ FIRST (Session 2 update):** The repository now **compiles, builds, and the pricing
-> unit tests pass**. The two known compile errors are fixed, the two Prompt-3 controllers are
-> written, and the Orders/Invoices modules are wired. See **SESSION 2 — COMPLETED** immediately
-> below for the authoritative current state; the original Session-1 sections that follow are
-> retained for history but their "BROKEN / not wired / NOT RUN" statuses are now **superseded**.
+> **READ FIRST (Session 3 update):** Session 3 began **Prompt 5 — the web frontend** (`apps/web`).
+> The entire `apps/web/src` tree was bootstrapped from empty: Tailwind + design system, the API
+> client layer, NextAuth (merchant) + Clerk (buyer) auth wiring, all shared/UI/feature components,
+> all TanStack Query hooks, every merchant + buyer + auth page, and the edge middleware. **TypeScript
+> typecheck passes (`tsc --noEmit`, exit 0)** and **webpack compiles successfully**, but the
+> production build currently **fails during "Collecting page data" on `/merchant-login`** (a NextAuth
+> `atob` decode error — see SESSION 3 → KNOWN ISSUES). Prompt 5 is **NOT finished**: Tasks 11–16
+> (vercel/next config, CI/CD, k6, Playwright, build config, runbooks/README) are **not started**.
+> See **SESSION 3** immediately below for the authoritative current state. Sessions 1–2 (the API)
+> remain valid and are retained below for history.
 >
-> Verified this session (all exit 0):
-> - `pnpm --filter @b2b/database exec prisma generate`
-> - `./node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit`
-> - `pnpm --filter @b2b/api build` (`nest build`)
-> - `pnpm --filter @b2b/api test --testPathPattern=pricing` → **19/19 passed**
+> Verified Session 3:
+> - `pnpm --filter @b2b/web typecheck` (`tsc --noEmit`) → **exit 0, clean**
+> - `pnpm --filter @b2b/web build` → **compiles ✓ but FAILS at page-data collection** (see Known Issues)
+> - Sessions 1–2 API verifications still hold (see SESSION 2 below).
+
+---
+
+## SESSION 3 — IN PROGRESS (Prompt 5: web frontend / `apps/web`)
+
+**Goal:** implement Prompt 5 — the complete Next.js 14 App Router frontend (merchant admin +
+buyer portal), shared/UI components, TanStack Query hooks, auth pages, plus the CI/CD, load
+tests, Playwright suite, build config and runbooks. **Frontend application code is largely done;
+the surrounding infra/test/doc tasks are not started.**
+
+### What was DONE this session (all files under `apps/web/`)
+
+**Dependencies** — rewrote `apps/web/package.json` with the full locked stack and ran
+`pnpm install` (succeeded via the `registry.npmmirror.com` mirror in `.npmrc`). Added: `@clerk/nextjs@5.7.5`,
+`@tanstack/react-query@5.59.0`, `@tanstack/react-virtual@3.10.8`, `recharts@2.12.7`,
+`react-hook-form@7.53.0` + `@hookform/resolvers@3.9.0`, `zustand@4.5.5`, `date-fns@3.6.0`,
+`lucide-react@0.446.0`, `graphql@16.9.0` + `graphql-request@7.1.0`, `sonner@1.5.0`,
+`class-variance-authority`/`clsx`/`tailwind-merge`/`tailwindcss-animate`, Radix primitives
+(`react-dialog`, `react-alert-dialog`, `react-tabs`, `react-select`, `react-slot`, `react-label`),
+and devDeps `tailwindcss@3.4.13`/`postcss`/`autoprefixer`/`eslint`/`eslint-config-next`.
+
+**Tooling / design system**
+- `apps/web/tailwind.config.ts` — single accent color (blue `#2563eb`), `accent`/`border`/`panel`/`muted`
+  tokens, `text-label` (11px), 100ms-max animations, `tailwindcss-animate` plugin.
+- `apps/web/postcss.config.mjs`
+- `apps/web/src/app/globals.css` — base styles + `.btn-base`/`.btn-primary`/`.btn-destructive`/`.input-base`/`.panel`
+  utility classes implementing the CLAUDE.md skeuomorphic (shadow-only, no-transform) rules.
+
+**Lib layer (`apps/web/src/lib/`)**
+- `cn.ts` (clsx+tailwind-merge), `env.ts` (non-throwing public-env reader — warns in dev, never
+  throws at build), `format.ts` (money/date/percent formatters — money stays string-based),
+  `query-client.ts` (TanStack defaults; never retries 4xx).
+- `api/core.ts` (the single `apiRequest` fetch primitive; Bearer-only, no cookies, parses the API
+  `{code,message,errors}` envelope into a typed `ApiClientError`), `api/error.ts`,
+  `api/merchant.ts` (`merchantFetch` — attaches NextAuth `session.accessToken`),
+  `api/buyer.ts` (`buyerFetch` — Clerk token via a registerable getter bridge),
+  `api/graphql.ts` (`merchantGraphQL` via graphql-request to `/graphql`).
+- `auth/shopify-provider.ts` (NextAuth v4 Shopify OAuth+PKCE provider) and
+  `auth/auth-options.ts` (signIn → calls `POST /internal/merchants/upsert` with `X-Internal-Secret`;
+  jwt callback **signs an HS256 token with `NEXTAUTH_SECRET`** carrying
+  `merchantId/merchantUserId/shopifyDomain/role/email` — exactly what the API's
+  `MerchantSessionGuard` verifies — on a 7-day sliding window; session exposes it as `accessToken`).
+
+**Types** — `src/types/api.ts` (frontend mirrors of API response DTOs: dashboard, AR aging,
+buyers, applications, pricing tiers, orders, invoices, catalog) and `src/types/next-auth.d.ts`
+(module augmentation: `session.accessToken/merchantId/shopifyDomain/role`).
+
+**UI primitives (`src/components/ui/`)** — `button`, `input`, `textarea`, `label`, `spinner`,
+`tabs`, `select`, `sheet` (right slide-over), `alert-dialog`, `table` (all Radix-based, design-system styled).
+
+**Shared components (`src/components/shared/`)** — `StatusBadge` (solid fills, status→tone map),
+`CursorPagination` (prev/next only, no page numbers), `LoadingSkeleton`, `ErrorBoundary` (class
+component), `ConfirmDialog` (destructive + isLoading), `PageHeader`.
+
+**Providers (`src/components/providers/`)** — `QueryProvider` (+ sonner Toaster),
+`MerchantSessionProvider` (NextAuth), `BuyerProviders` (ClerkProvider + token bridge + a
+`useBuyerMerchantId()` context fed from the `__merchant_id` cookie), `ClerkTokenBridge`.
+
+**Feature components**
+- Merchant: `DashboardKpiCard`, `ArAgingChart` (Recharts vertical bars, 5 fixed colors, click→filter),
+  `GmvTrendChart` (Recharts area, flat 8% fill — not a gradient), `InvoiceTable` (mark-paid confirm,
+  resend with 7-day cooldown), `BuyerApprovalPanel` (Sheet, Details/Decision tabs, PII reveal,
+  approve/reject via shared Zod schemas), `PiiField`, `MerchantNav`.
+- Buyer: `BulkOrderTable` (virtualized via `@tanstack/react-virtual`, CSV import, volume-break
+  hint, cart, idempotency-key order submit), `BuyerNav`.
+
+**Hooks (`src/hooks/`)** — `useMerchantDashboard` (+`useArAging`), `useBuyerCatalog` (infinite),
+`useInvoices` + `useOrders` (infinite, `mode:'merchant'|'buyer'` discriminator),
+`usePricingTiers`, `useBuyers` (+`usePendingApplications`/`useApproveBuyer`/`useRejectBuyer`/`useSuspendBuyer`),
+`useInvoiceActions` (mark-paid/void/resend/download), `useCreateOrder`.
+
+**App router pages/layouts (`src/app/`)**
+- `layout.tsx` (root: QueryProvider + ErrorBoundary), `page.tsx` (redirects → `/merchant-login`), `globals.css`.
+- `(merchant)/layout.tsx` + pages: `dashboard`, `buyers`, `invoices`, `orders`, `pricing`.
+- `(buyer)/layout.tsx` (reads `__merchant_id` cookie) + **pages live under `(buyer)/portal/`**:
+  `portal/catalog`, `portal/orders`, `portal/invoices`, `portal/apply` (URLs `/portal/*`).
+- `(auth)/layout.tsx` (Clerk) + `buyer-login`, `buyer-signup` (Clerk `<SignIn>/<SignUp>`),
+  `merchant-login` (NextAuth `signIn('shopify')`).
+- `api/auth/[...nextauth]/route.ts`.
+- `middleware.ts` — App-Proxy HMAC verify (sets `__merchant_domain`/`__merchant_id` cookies),
+  merchant gating via `getToken`, buyer gating via Clerk session-cookie presence.
+
+### KEY DECISIONS made this session (important — read before changing things)
+1. **Package scope is `@b2b/*`, not `@wholesale-portal/*`.** CLAUDE.md uses the latter name in
+   prose but the actual workspace packages are `@b2b/web`, `@b2b/api`, `@b2b/shared`, `@b2b/database`.
+2. **`@b2b/shared` barrel is server-poisoned.** `@b2b/shared` (index) re-exports `utils/logger`
+   (`node:async_hooks`) and `utils/crypto` (`node:crypto`), which **cannot be bundled into client/edge
+   code**. Frontend code MUST import from the subpaths **`@b2b/shared/types`** (pure types) and
+   **`@b2b/shared/schemas`** (zod only). Every web file already follows this — keep it that way.
+3. **Buyer routes are under `/portal/*`, NOT root.** Next.js forbids two route groups resolving the
+   same URL; `(buyer)/orders` collided with `(merchant)/orders`. Resolution: merchant pages at root,
+   ALL buyer pages under `/portal/*`. The App-Proxy rewrite must therefore be
+   `"/apps/wholesale/:path*" → "/portal/:path*"` (NOT `→ /(buyer)/:path*` as the original prompt text
+   says — that target is impossible in Next).
+4. **Merchant API token is an HS256 JWT signed with `NEXTAUTH_SECRET`** (not the default NextAuth
+   JWE), minted in the jwt callback and surfaced as `session.accessToken`, because that is exactly
+   what the existing API `MerchantSessionGuard` verifies.
+5. **New public env vars the frontend needs:** `NEXT_PUBLIC_API_BASE_URL`,
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, plus server-side `API_BASE_URL`, `NEXTAUTH_SECRET`,
+   `NEXTAUTH_URL`, `SHOPIFY_CLIENT_ID/SECRET`, `INTERNAL_API_SECRET`. (`.env.example` already lists the
+   server ones; the two `NEXT_PUBLIC_*` are new and should be added there + to `env.validation` docs.)
+
+### KNOWN ISSUES / BLOCKERS (fix these FIRST next session)
+1. **`next build` fails at page-data collection on `/merchant-login`** with
+   `DOMException [InvalidCharacterError]: The string to be decoded is not correctly encoded` thrown by
+   `atob` inside a NextAuth chunk. typecheck is clean and webpack **compiles** — this is a
+   build-time/runtime data-collection failure, not a type error. The build was run with **dummy**
+   env values (`NEXTAUTH_SECRET=dummy_build_secret_…`, `SHOPIFY_CLIENT_SECRET=dummy`, etc.). Likely
+   causes to investigate, in order: (a) NextAuth/Shopify provider doing a base64 decode of a
+   malformed dummy secret at module-eval during static collection of `/merchant-login`; try a
+   realistic base64 `NEXTAUTH_SECRET` (e.g. `openssl rand -base64 32`) and a non-"dummy"
+   client secret; (b) force `/merchant-login` (and possibly the NextAuth route) to be dynamic
+   (`export const dynamic = 'force-dynamic'`) so Next doesn't pre-collect it; (c) confirm the custom
+   `ShopifyProvider` `authorization`/`token` URL placeholders aren't being base64-processed at build.
+   **Until this is resolved the production build is red.** (Dev server `pnpm --filter @b2b/web dev`
+   was not tested this session.)
+2. **Reproduce the build with the exact dummy env block used this session** (see "How to verify" below).
+
+### NOT STARTED — remaining Prompt 5 work (Tasks 11–16 + handoff)
+These were never begun this session. Implement per the Prompt 5 spec the user pasted:
+- **Task 11 — `apps/web/vercel.json`** (security headers + the CSP that whitelists Clerk domains,
+  HSTS, X-Frame-Options DENY, COOP/COEP, etc.) and **`apps/web/next.config`** (the spec asks for
+  `next.config.ts` with `images.remotePatterns` for `*.shopifycdn.com` + `img.clerk.com`,
+  `output:'standalone'`, `poweredByHeader:false`, `experimental.serverActions.allowedOrigins`,
+  env passthrough). **NOTE the current file is `apps/web/next.config.mjs`** (minimal:
+  `transpilePackages:['@b2b/shared']`) — decide whether to convert to `.ts` or extend the `.mjs`.
+  The rewrite must be `"/apps/wholesale/:path*" → "/portal/:path*"` (see Decision #3).
+- **Task 12 — `.github/workflows/ci.yml`** (8-job pipeline) and **`.github/dependabot.yml`**.
+- **Task 13 — `tests/load/*.k6.js`** (catalog / order-creation / invoice-download).
+- **Task 14 — `playwright.config.ts` + `tests/e2e/*.spec.ts` + global setup/teardown.**
+- **Task 15 — build config:** the spec wants `turbo.json`, `pnpm-workspace.yaml`, root
+  `package.json`, `.lighthouse-budget.json`. `turbo.json`/`pnpm-workspace.yaml`/root `package.json`
+  **already exist** from Sessions 1–2 — only ADD what's missing (e.g. lint scripts, lighthouse
+  budget), do not clobber.
+- **Task 16 — `docs/runbooks/secrets-rotation.md`, `docs/runbooks/disaster-recovery.md`,
+  `docs/deployment-checklist.md`, and a real `README.md`** (current `README.md` is a 45-byte stub).
+- **Final handoff requirements** (handoff summary table, platform summary, launch-readiness checklist).
+
+### API-contract gaps the frontend assumes but the API may NOT yet expose
+The hooks/pages call these endpoints; confirm they exist in `apps/api` or add them:
+- `GET /invoices` (merchant invoice list, cursor) — **no merchant invoice LIST endpoint existed** in
+  the API as of Session 2 (only ar-aging, integrity, mark-paid, void, resend, buyer download). The
+  `useInvoices({mode:'merchant'})` hook + merchant `InvoiceTable` depend on it.
+- `GET /buyer/invoices` (buyer invoice list, cursor) — used by `useInvoices({mode:'buyer'})`.
+- `GET /buyer/catalog` (cursor + `search`) — `CatalogService` exists; confirm a controller route is wired.
+- `GET /buyers/applications?status=pending` (pending applications list) — `usePendingApplications`
+  expects an array; the controller had approve/reject but confirm the LIST route exists.
+- `GET /orders` and `GET /buyer/orders` lists — exist per Session 2 (orders controller).
+- GraphQL `getMerchantDashboard` + `getArAging` — exist (resolvers present).
+- The merchant dashboard **GMV trend** is currently derived client-side from current/previous month
+  (a 2-point series) because there is no daily-series endpoint; replace when one is added.
+
+### HOW TO VERIFY (Session 3 state) — copy/paste
+```bash
+cd /root/wholesale-portal
+# typecheck (currently CLEAN):
+pnpm --filter @b2b/web typecheck
+# build (currently RED at page-data collection — see Known Issue #1):
+export NEXTAUTH_SECRET=dummy_build_secret_0123456789abcdef \
+  SHOPIFY_CLIENT_ID=dummy SHOPIFY_CLIENT_SECRET=dummy \
+  NEXT_PUBLIC_API_BASE_URL=https://api.example.com \
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_dummy \
+  NEXTAUTH_URL=https://app.example.com PLATFORM_DOMAIN=app.example.com
+pnpm --filter @b2b/web build
+```
+Note: `.npmrc` points pnpm at `registry.npmmirror.com` (the default registry is unreachable here);
+keep it for installs in this environment.
 
 ---
 

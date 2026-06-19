@@ -9,9 +9,14 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { Decimal } from 'decimal.js';
-import { addDays, format } from 'date-fns';
+import { addDays, format, subDays } from 'date-fns';
 import * as Sentry from '@sentry/node';
-import type { InvoiceStatus } from '@b2b/shared';
+import type {
+  CursorPaginationInput,
+  DecodedCursor,
+  InvoiceStatus,
+  PaginatedResponse,
+} from '@b2b/shared';
 import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { InvoicePdfService } from './invoice-pdf.service';
@@ -60,6 +65,47 @@ export interface MarkPaidDto {
   reference?: string;
 }
 
+/** Compact invoice row for the merchant AR list + buyer portal invoice list. */
+export interface InvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  buyerCompanyName: string | null;
+  status: InvoiceStatus;
+  total: string;
+  amountPaid: string;
+  dueDate: string;
+  issuedAt: string | null;
+  lastReminderAt: string | null;
+  createdAt: string;
+}
+
+/** Filters for the merchant invoice list (status, AR-aging bucket, buyer). */
+export interface MerchantInvoiceFilters {
+  status?: string;
+  /** One of: `current`, `1-30`, `31-60`, `61-90`, `90-plus`. */
+  agingBucket?: string;
+  buyerId?: string;
+}
+
+/**
+ * AR-aging bucket → due-date window expressed as day-offsets from "now",
+ * matching the getArAging CTE exactly: `gteDays`/`ltDays` are the inclusive
+ * lower / exclusive upper bounds as `subDays(now, n)` (null = open-ended).
+ */
+const AGING_BUCKET_WINDOWS: Record<string, { gteDays: number | null; ltDays: number | null }> = {
+  current: { gteDays: 0, ltDays: null }, // due_date >= now
+  '1-30': { gteDays: 30, ltDays: 0 }, // now-30 <= due_date < now
+  '31-60': { gteDays: 60, ltDays: 30 },
+  '61-90': { gteDays: 90, ltDays: 60 },
+  '90-plus': { gteDays: null, ltDays: 90 }, // due_date < now-90
+};
+
+/** Statuses considered outstanding for AR-aging (mirror of the getArAging CTE). */
+const OUTSTANDING_STATUSES: InvoiceStatus[] = ['sent', 'viewed', 'partially_paid', 'overdue'];
+
+// Single source of truth for the aging-bucket keys; `AgingBucketKey` is derived
+// from it, so the value is referenced only at the type level (hence the disable).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const AGING_BUCKETS = [
   'current',
   'overdue_1_30',
@@ -79,6 +125,20 @@ interface CreditRow {
   id: string;
   creditUsed: Prisma.Decimal;
   creditVersion: number;
+}
+
+/** Selected columns for the invoice list (merchant + buyer). */
+interface InvoiceListRow {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  total: Prisma.Decimal;
+  amountPaid: Prisma.Decimal;
+  dueDate: Date;
+  sentAt: Date | null;
+  lastReminderAt: Date | null;
+  createdAt: Date;
+  buyer: { companyName: string };
 }
 
 /**
@@ -466,6 +526,155 @@ export class InvoicesService {
       overdue_61_90: build('overdue_61_90'),
       overdue_90_plus: build('overdue_90_plus'),
     };
+  }
+
+  // ── Invoice lists (cursor paginated) ──────────────────────────────────
+
+  /**
+   * Merchant AR invoice list. Cursor-paginated (createdAt+id, newest first),
+   * filterable by status, buyer, and AR-aging bucket. The aging-bucket filter
+   * derives a due-date window matching the getArAging CTE and (unless an
+   * explicit status is given) restricts to outstanding invoices.
+   */
+  async listInvoicesForMerchant(
+    merchantId: string,
+    params: CursorPaginationInput & MerchantInvoiceFilters,
+  ): Promise<PaginatedResponse<InvoiceSummary>> {
+    this.assertUuid(merchantId);
+    if (params.buyerId) this.assertUuid(params.buyerId);
+    const cursor = this.decodeCursor(params.cursor);
+
+    const where: Prisma.InvoiceWhereInput = { merchantId };
+    if (params.buyerId) where.buyerId = params.buyerId;
+    if (params.status) where.status = params.status as InvoiceStatus;
+
+    if (params.agingBucket) {
+      const window = AGING_BUCKET_WINDOWS[params.agingBucket];
+      if (!window) {
+        throw new BadRequestException({
+          code: 'INVALID_AGING_BUCKET',
+          message: `Unknown aging bucket: ${params.agingBucket}`,
+        });
+      }
+      const now = new Date();
+      const dueDate: Prisma.DateTimeFilter = {};
+      if (window.gteDays !== null) dueDate.gte = subDays(now, window.gteDays);
+      if (window.ltDays !== null) dueDate.lt = subDays(now, window.ltDays);
+      where.dueDate = dueDate;
+      // Aging is only meaningful for outstanding invoices.
+      if (!params.status) where.status = { in: OUTSTANDING_STATUSES };
+    }
+
+    if (cursor) {
+      where.OR = [
+        { createdAt: { lt: new Date(cursor.createdAt) } },
+        { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
+      ];
+    }
+
+    const rows = await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: params.limit + 1,
+        select: this.invoiceListSelect,
+      }),
+    );
+
+    return this.toInvoicePage(rows, params.limit);
+  }
+
+  /**
+   * Buyer portal invoice list — the buyer's own invoices for the current
+   * merchant tenant only. Cursor-paginated, optionally status-filtered. Tenant +
+   * buyer are taken from the guard, never from the client.
+   */
+  async listInvoicesForBuyer(
+    buyerId: string,
+    merchantId: string,
+    params: CursorPaginationInput & { status?: string },
+  ): Promise<PaginatedResponse<InvoiceSummary>> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+    const cursor = this.decodeCursor(params.cursor);
+
+    const where: Prisma.InvoiceWhereInput = { merchantId, buyerId };
+    if (params.status) where.status = params.status as InvoiceStatus;
+    if (cursor) {
+      where.OR = [
+        { createdAt: { lt: new Date(cursor.createdAt) } },
+        { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
+      ];
+    }
+
+    const rows = await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: params.limit + 1,
+        select: this.invoiceListSelect,
+      }),
+    );
+
+    return this.toInvoicePage(rows, params.limit);
+  }
+
+  /** Shared column projection for invoice-list reads. */
+  private readonly invoiceListSelect = {
+    id: true,
+    invoiceNumber: true,
+    status: true,
+    total: true,
+    amountPaid: true,
+    dueDate: true,
+    sentAt: true,
+    lastReminderAt: true,
+    createdAt: true,
+    buyer: { select: { companyName: true } },
+  } satisfies Prisma.InvoiceSelect;
+
+  /** Map raw invoice rows into a cursor-paginated InvoiceSummary page. */
+  private toInvoicePage(rows: InvoiceListRow[], limit: number): PaginatedResponse<InvoiceSummary> {
+    const hasNextPage = rows.length > limit;
+    const page = hasNextPage ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    const endCursor =
+      hasNextPage && last
+        ? this.encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+        : null;
+
+    return {
+      data: page.map((row) => ({
+        id: row.id,
+        invoiceNumber: row.invoiceNumber,
+        buyerCompanyName: row.buyer?.companyName ?? null,
+        status: row.status,
+        total: new Money(row.total.toString()).toFixed(2),
+        amountPaid: new Money(row.amountPaid.toString()).toFixed(2),
+        dueDate: row.dueDate.toISOString(),
+        issuedAt: row.sentAt ? row.sentAt.toISOString() : null,
+        lastReminderAt: row.lastReminderAt ? row.lastReminderAt.toISOString() : null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      pageInfo: { hasNextPage, endCursor },
+    };
+  }
+
+  private encodeCursor(cursor: DecodedCursor): string {
+    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
+  }
+
+  private decodeCursor(raw: string | undefined): DecodedCursor | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Partial<DecodedCursor>;
+      if (typeof parsed.createdAt === 'string' && typeof parsed.id === 'string') {
+        return { createdAt: parsed.createdAt, id: parsed.id };
+      }
+    } catch {
+      // fall through to the invalid-cursor error
+    }
+    throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Malformed pagination cursor' });
   }
 
   // ── Scheduled jobs ────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -18,11 +19,13 @@ import {
   BuyerRegisterApplicationSchema,
   CursorPaginationSchema,
   RejectBuyerSchema,
+  UpdateBuyerSchema,
   type ApproveBuyerInput,
   type BuyerRegisterApplicationInput,
   type CursorPaginationInput,
   type PaginatedResponse,
   type RejectBuyerInput,
+  type UpdateBuyerInput,
 } from '@b2b/shared';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import {
@@ -37,7 +40,10 @@ import {
 } from '../auth/guards/clerk-authenticated.guard';
 import {
   BuyersService,
+  type ApplicationListItem,
+  type ApplicationPii,
   type ApplicationResult,
+  type BuyerDetail,
   type BuyerSummary,
 } from './buyers.service';
 
@@ -67,6 +73,7 @@ interface BuyerListQuery {
  *
  *   Merchant admin (NextAuth):
  *     GET  /buyers                            list buyers with aggregates
+ *     GET  /buyers/applications               list registration applications
  *     POST /buyers/applications/:id/approve   approve a pending application
  *     POST /buyers/applications/:id/reject    reject a pending application
  *     POST /buyers/:buyerId/suspend           suspend an approved buyer
@@ -129,6 +136,16 @@ export class BuyersController {
 
   // ── Merchant: approval workflow ──────────────────────────────────────────
 
+  @Get('buyers/applications')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  listApplications(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Query('status') status?: string,
+  ): Promise<ApplicationListItem[]> {
+    return this.buyers.listApplicationsForMerchant(req.merchant!.merchantId, status);
+  }
+
   @Post('buyers/applications/:id/approve')
   @UseGuards(MerchantSessionGuard, RolesGuard)
   @Roles('owner', 'admin')
@@ -153,6 +170,22 @@ export class BuyersController {
     return this.buyers.rejectApplication(id, req.merchant!.merchantId, dto, req.merchant!.userId);
   }
 
+  /**
+   * Reveal an application's PII (taxId, phone) on demand. The list payload omits
+   * these values; every reveal writes a `pii_revealed` audit row. POST (not GET)
+   * so the audited access is never cached or logged in a URL.
+   */
+  @Post('buyers/applications/:id/reveal')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  @HttpCode(HttpStatus.OK)
+  revealApplicationPii(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<ApplicationPii> {
+    return this.buyers.revealApplicationPii(id, req.merchant!.merchantId, req.merchant!.userId);
+  }
+
   // ── Merchant: suspension ─────────────────────────────────────────────────
 
   @Post('buyers/:buyerId/suspend')
@@ -164,5 +197,40 @@ export class BuyersController {
     @Param('buyerId', new ParseUUIDPipe({ version: '4' })) buyerId: string,
   ): Promise<void> {
     return this.buyers.suspendBuyer(buyerId, req.merchant!.merchantId, req.merchant!.userId);
+  }
+
+  @Post('buyers/:buyerId/reinstate')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  reinstate(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('buyerId', new ParseUUIDPipe({ version: '4' })) buyerId: string,
+  ): Promise<void> {
+    return this.buyers.reinstateBuyer(buyerId, req.merchant!.merchantId, req.merchant!.userId);
+  }
+
+  // ── Merchant: buyer detail + approved-buyer edit ─────────────────────────
+
+  @Get('buyers/:buyerId')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  getBuyer(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('buyerId', new ParseUUIDPipe({ version: '4' })) buyerId: string,
+  ): Promise<BuyerDetail> {
+    return this.buyers.getBuyerDetail(buyerId, req.merchant!.merchantId);
+  }
+
+  @Patch('buyers/:buyerId')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  updateBuyer(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('buyerId', new ParseUUIDPipe({ version: '4' })) buyerId: string,
+    @Body(new ZodValidationPipe(UpdateBuyerSchema)) dto: UpdateBuyerInput,
+  ): Promise<void> {
+    return this.buyers.updateBuyer(buyerId, req.merchant!.merchantId, dto, req.merchant!.userId);
   }
 }

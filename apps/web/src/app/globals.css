@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Global base styles. Minimalism governs: a single gray-50 page background,
+ * white content panels, one accent color. No gradients, no frosted/translucent
+ * surfaces, no decorative shadows on layout containers (see CLAUDE.md).
+ */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-gray-900 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* 1px borders are the primary structural device. */
+  * {
+    border-color: theme('colors.border');
+  }
+
+  /* Tabular numerals everywhere money or counts are shown. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /*
+   * Skeuomorphic interactive depth cues — shadow-only, no transforms (Safari
+   * repaint safety). These mirror the exact rules in CLAUDE.md so feature code
+   * can opt into them by class name.
+   */
+
+  /* Default button: appears slightly raised; shadow collapses on press. */
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-gray-300
+      bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm
+      transition-shadow duration-75
+      hover:bg-gray-50
+      active:border-gray-400 active:shadow-none
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  /* Primary CTA: the single accent color. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-accent-dark
+      bg-accent px-3 py-2 text-sm font-medium text-accent-fg shadow-sm
+      transition-shadow duration-75
+      active:shadow-none active:brightness-95
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  /* Destructive variant (reuses red, not a second accent — destructive is semantic). */
+  .btn-destructive {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-red-700
+      bg-red-600 px-3 py-2 text-sm font-medium text-white shadow-sm
+      transition-shadow duration-75
+      active:shadow-none active:brightness-95
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40
+      disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  /* Recessed form input. shadow-inner is the only depth cue; no focus glow ring. */
+  .input-base {
+    @apply w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900
+      shadow-inner transition-colors duration-75 placeholder:text-gray-400
+      focus:border-gray-400 focus:bg-white focus:outline-none focus:ring-0
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* One layer of depth only — never stacked, never hover:shadow-md. */
+  .panel {
+    @apply rounded-lg border border-gray-200 bg-white shadow-sm;
+  }
+}
