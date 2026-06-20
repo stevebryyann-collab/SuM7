@@ -61,6 +61,8 @@ const PAYMENT_TERMS_LABELS: Record<PaymentTerms, string> = {
 const REJECTION_MAX = 2000;
 const NOTES_MAX = 2000;
 const DEFAULT_TIER = '__default__';
+/** Revealed PII auto-masks after this long, bounding on-screen exposure. */
+const PII_REVEAL_MS = 30_000;
 
 /**
  * What the panel is operating on:
@@ -186,6 +188,15 @@ function ApplicationPanel({
     if (!open) setRevealed(null);
   }, [open]);
 
+  // Plaintext PII auto-masks 30s after a reveal — bounds on-screen exposure and
+  // matches the audited-reveal model (re-revealing writes a fresh audit row).
+  // setRevealed mints a new object per reveal, so this re-arms on each reveal.
+  useEffect(() => {
+    if (!revealed) return;
+    const timer = setTimeout(() => setRevealed(null), PII_REVEAL_MS);
+    return () => clearTimeout(timer);
+  }, [revealed]);
+
   const onApprove = approveForm.handleSubmit((values) => {
     approve.mutate(values, {
       onSuccess: () => {
@@ -269,6 +280,11 @@ function ApplicationPanel({
               <Detail label="Est. Monthly Order" value={application.estimatedMonthlyOrder ?? '—'} />
               <Detail label="Status" value={application.status} />
             </dl>
+            {isRevealed ? (
+              <p className="mt-3 text-xs text-gray-400">
+                Sensitive fields auto-hide 30 seconds after reveal.
+              </p>
+            ) : null}
             {application.message ? (
               <div className="mt-4">
                 <span className="text-label uppercase tracking-wider text-gray-500">Message</span>
