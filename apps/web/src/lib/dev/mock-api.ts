@@ -3,8 +3,11 @@ import type {
   ApproveBuyerInput,
   BulkPricingOverrideInput,
   CreatePricingTierInput,
+  InviteTeamMemberInput,
   UpdateBuyerInput,
+  UpdateMerchantSettingsInput,
   UpdatePricingTierInput,
+  UpdateTeamMemberInput,
 } from '@b2b/shared/schemas';
 import type { ApiRequestOptions } from '@/lib/api/core';
 import { ApiClientError } from '@/lib/api/error';
@@ -18,17 +21,23 @@ import type {
   PricingTierSummary,
 } from '@/types/api';
 import {
+  DEMO_ANALYTICS,
   DEMO_APPLICATION_PII,
   DEMO_APPLICATIONS,
   DEMO_AR_AGING,
+  DEMO_BILLING_PLAN,
+  DEMO_BILLING_USAGE,
   DEMO_BUYER_DETAILS,
   DEMO_BUYERS,
   DEMO_DASHBOARD,
+  DEMO_DASHBOARD_DATA,
   DEMO_INVOICE_DETAILS,
   DEMO_INVOICES,
   DEMO_ORDER_DETAILS,
   DEMO_ORDERS,
   DEMO_PRICING_TIERS,
+  DEMO_SETTINGS,
+  DEMO_TEAM,
   DEMO_TIER_CONDITIONS,
   DEMO_TIER_OVERRIDES,
 } from './mock-data';
@@ -468,7 +477,145 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
     return undefined as T;
   }
 
+  // ── Dashboard aggregator (Stage 4) ───────────────────────────────────────────
+  if (url === '/api/v1/dashboard' && method === 'GET') {
+    // Recompute the live bits so approvals / payments reflect in the demo.
+    return {
+      ...DEMO_DASHBOARD_DATA,
+      recentInvoices: DEMO_INVOICES.slice(0, 10),
+      pendingApplications: DEMO_APPLICATIONS.slice(0, 5).map((app) => ({
+        id: app.id,
+        companyName: app.companyName,
+        businessType: app.businessType,
+        createdAt: app.createdAt,
+      })),
+      kpis: { ...DEMO_DASHBOARD_DATA.kpis, pendingApplicationCount: DEMO_APPLICATIONS.length },
+    } as T;
+  }
+
+  // ── Analytics (Stage 4) — export is the static two-segment path, match first ──
+  if (url === '/api/v1/analytics/export' && method === 'GET') {
+    const type = query.get('type') ?? 'orders';
+    if (type === 'gdpr') {
+      return {
+        queued: true,
+        type: 'gdpr',
+        message: 'Your data export is being prepared. We will email you when it is ready.',
+      } as T;
+    }
+    return analyticsExportCsv(type) as T;
+  }
+  if (url === '/api/v1/analytics' && method === 'GET') {
+    return DEMO_ANALYTICS as T;
+  }
+
+  // ── Settings (Stage 4) ───────────────────────────────────────────────────────
+  if (url === '/api/v1/settings' && method === 'GET') {
+    return DEMO_SETTINGS as T;
+  }
+  if (url === '/api/v1/settings' && method === 'PUT') {
+    const dto = options.body as UpdateMerchantSettingsInput;
+    DEMO_SETTINGS.invoicePrefix = dto.invoicePrefix;
+    DEMO_SETTINGS.paymentInstructions = dto.paymentInstructions ?? null;
+    DEMO_SETTINGS.notifications = { ...dto.notifications };
+    return DEMO_SETTINGS as T;
+  }
+
+  // ── Team (Stage 4) — static /invite must precede the /:id matchers ────────────
+  if (url === '/api/v1/team' && method === 'GET') {
+    return DEMO_TEAM as unknown as T;
+  }
+  if (url === '/api/v1/team/invite' && method === 'POST') {
+    const dto = options.body as InviteTeamMemberInput;
+    return { invited: false, comingSoon: true, email: dto.email } as T;
+  }
+  if (method === 'PATCH' && /^\/api\/v1\/team\/[^/]+$/.test(url)) {
+    const id = segment(url, 3);
+    const member = DEMO_TEAM.find((m) => m.id === id);
+    if (!member) return notFound(`PATCH ${url}`);
+    if (member.role === 'owner') conflict('CANNOT_MODIFY_OWNER', 'The owner role cannot be changed');
+    const dto = options.body as UpdateTeamMemberInput;
+    member.role = dto.role;
+    return member as T;
+  }
+  if (method === 'DELETE' && /^\/api\/v1\/team\/[^/]+$/.test(url)) {
+    const id = segment(url, 3);
+    const idx = DEMO_TEAM.findIndex((m) => m.id === id);
+    if (idx < 0) return notFound(`DELETE ${url}`);
+    const member = DEMO_TEAM[idx]!;
+    if (member.role === 'owner') conflict('CANNOT_REMOVE_OWNER', 'The owner cannot be removed');
+    DEMO_TEAM.splice(idx, 1);
+    return undefined as T;
+  }
+
+  // ── Billing (Stage 4) ────────────────────────────────────────────────────────
+  if (url === '/api/v1/billing/plan' && method === 'GET') {
+    return DEMO_BILLING_PLAN as T;
+  }
+  if (url === '/api/v1/billing/usage' && method === 'GET') {
+    return DEMO_BILLING_USAGE as T;
+  }
+  if (url === '/api/v1/billing/change-plan' && method === 'POST') {
+    const dto = options.body as { tier: 'starter' | 'growth' | 'pro' };
+    applyDemoPlanChange(dto.tier);
+    return { subscriptionId: 'sub_demo_0001', tier: dto.tier } as T;
+  }
+  if (url === '/api/v1/billing/create-portal-session' && method === 'POST') {
+    return { url: 'https://billing.stripe.com/p/session/demo' } as T;
+  }
+
   return notFound(`${method} ${url}`);
+}
+
+/** Build the analytics CSV export (orders / invoices / buyers) from fixtures. */
+function analyticsExportCsv(type: string): string {
+  const cell = (v: string): string => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  let lines: string[];
+  if (type === 'invoices') {
+    lines = ['Invoice Number,Buyer,Status,Total,Amount Paid,Due Date,Created At'];
+    for (const i of DEMO_INVOICES) {
+      lines.push(
+        [cell(i.invoiceNumber), cell(i.buyerCompanyName ?? ''), i.status, i.total, i.amountPaid, i.dueDate.slice(0, 10), i.createdAt].join(','),
+      );
+    }
+  } else if (type === 'buyers') {
+    lines = ['Company,Email,Status,Payment Terms,Credit Limit,Created At'];
+    for (const b of DEMO_BUYERS) {
+      lines.push(
+        [cell(b.companyName), cell(b.email), b.approvalStatus, b.paymentTerms, b.creditLimit ?? '', b.createdAt].join(','),
+      );
+    }
+  } else {
+    lines = ['Order Number,Buyer,Status,Total,Currency,Created At'];
+    for (const o of DEMO_ORDERS) {
+      lines.push(
+        [cell(o.shopifyOrderNumber ?? ''), cell(o.buyerCompanyName ?? ''), o.status, o.total, o.currency, o.createdAt].join(','),
+      );
+    }
+  }
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+/** Per-tier billing constants mirrored from the API (BillingService). */
+const DEMO_TIER_PRICE: Record<string, string> = { starter: '29.00', growth: '79.00', pro: '199.00' };
+const DEMO_TIER_FREE: Record<string, string> = { starter: '20000.00', growth: '50000.00', pro: '150000.00' };
+const DEMO_TIER_RATE: Record<string, number> = { starter: 0.005, growth: 0.004, pro: 0.003 };
+
+/** Apply a plan change to the billing fixtures (moves the demo out of trial). */
+function applyDemoPlanChange(tier: string): void {
+  const price = DEMO_TIER_PRICE[tier] ?? '29.00';
+  DEMO_BILLING_PLAN.tier = tier;
+  DEMO_BILLING_PLAN.amount = price;
+  DEMO_BILLING_PLAN.priceLabel = `$${Number(price)}/mo`;
+  DEMO_BILLING_PLAN.status = 'active';
+  DEMO_BILLING_PLAN.isTrial = false;
+
+  const free = DEMO_TIER_FREE[tier] ?? '20000.00';
+  const billable = Math.max(Number(DEMO_BILLING_USAGE.gmvCurrentMonth) - Number(free), 0);
+  DEMO_BILLING_USAGE.tier = tier;
+  DEMO_BILLING_USAGE.freeThreshold = free;
+  DEMO_BILLING_USAGE.billableGmv = billable.toFixed(2);
+  DEMO_BILLING_USAGE.estimatedFee = (billable * (DEMO_TIER_RATE[tier] ?? 0.005)).toFixed(2);
 }
 
 /** Flip a buyer's approval status on both the summary row and the detail row. */

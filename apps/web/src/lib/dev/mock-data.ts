@@ -1,24 +1,32 @@
 import type { PaymentTerms } from '@b2b/shared/types';
 import type {
+  AnalyticsData,
+  AnalyticsMonthlyRow,
+  AnalyticsTopBuyer,
   ApplicationPii,
   ArAgingReport,
+  BillingPlan,
+  BillingUsage,
   BuyerApplication,
   BuyerDetail,
   BuyerSummary,
+  DashboardData,
   InvoiceAuditEntry,
   InvoiceDetail,
   InvoiceLineDetail,
   InvoicePayment,
   InvoiceSummary,
   MerchantDashboard,
+  MerchantSettings,
   OrderDetail,
   OrderLineDetail,
   OrderSummary,
   PricingOverrideSummary,
   PricingTierConditions,
   PricingTierSummary,
+  TeamMember,
 } from '@/types/api';
-import { DEMO_SHOP_DOMAIN } from './demo';
+import { DEMO_EMAIL, DEMO_MERCHANT_USER_ID, DEMO_SHOP_DOMAIN } from './demo';
 
 /**
  * Deterministic Fashion & Apparel sample data for the dev-only demo merchant.
@@ -670,3 +678,165 @@ function buildInvoiceDetail(summary: InvoiceSummary): InvoiceDetail {
 export const DEMO_INVOICE_DETAILS: Record<string, InvoiceDetail> = Object.fromEntries(
   DEMO_INVOICES.map((inv): [string, InvoiceDetail] => [inv.id, buildInvoiceDetail(inv)]),
 );
+
+// ── Stage 4: dashboard aggregator / analytics / settings / team / billing ────
+//
+// These mirror the new REST DTOs (DashboardData, AnalyticsData, MerchantSettings,
+// TeamMember, BillingPlan, BillingUsage). Figures reconcile with the existing
+// KPI / AR-aging fixtures above so the dashboard, analytics and billing pages
+// stay internally consistent in the demo session.
+
+/** `YYYY-MM-DD` key `offset` days from today. */
+function dayKey(offset: number): string {
+  return iso(offset).slice(0, 10);
+}
+
+/** `YYYY-MM` key `offset` months from this month. */
+function monthKey(offset: number): string {
+  const now = new Date();
+  const m = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Deterministic 30-day daily GMV + order-count series (no RNG — index waves). */
+function buildDailyTrend(): { date: string; gmv: string; orderCount: number }[] {
+  return Array.from({ length: 30 }, (_, i) => {
+    const wave = Math.sin(i / 3) * 700 + Math.cos(i / 5) * 450;
+    const gmv = Math.max(0, Math.round(1900 + wave + (i % 7) * 130));
+    const orderCount = Math.max(0, Math.round(3 + Math.sin(i / 2) * 2));
+    return { date: dayKey(-(29 - i)), gmv: gmv.toFixed(2), orderCount };
+  });
+}
+
+const DEMO_DAILY_TREND = buildDailyTrend();
+
+/** Trailing-12-month GMV table with a stand-in YoY for the recent half. */
+function buildMonthly(): AnalyticsMonthlyRow[] {
+  const base = [42000, 38500, 51000, 47800, 53200, 60100, 58700, 64900, 71980, 69500, 78400, 84250];
+  return base.map((gmv, i) => {
+    const orders = 24 + ((i * 5) % 17);
+    const avg = orders > 0 ? gmv / orders : 0;
+    const prior = i >= 6 ? base[i - 6] : null;
+    const yoy = prior && prior > 0 ? (((gmv - prior) / prior) * 100).toFixed(2) : null;
+    return {
+      month: monthKey(-(11 - i)),
+      gmv: gmv.toFixed(2),
+      orders,
+      avgOrder: avg.toFixed(2),
+      yoyChangePct: yoy,
+    };
+  });
+}
+
+export const DEMO_DASHBOARD_DATA: DashboardData = {
+  kpis: {
+    gmvCurrentMonth: DEMO_DASHBOARD.gmvCurrentMonth,
+    gmvPreviousMonth: DEMO_DASHBOARD.gmvPreviousMonth,
+    gmvChangePercent: DEMO_DASHBOARD.gmvChangePercent,
+    outstandingArBalance: DEMO_DASHBOARD.outstandingArBalance,
+    outstandingInvoiceCount: 7,
+    overdueInvoiceCount: DEMO_DASHBOARD.overdueInvoiceCount,
+    overdueInvoiceAmount: DEMO_DASHBOARD.overdueInvoiceAmount,
+    newBuyersThisMonth: DEMO_DASHBOARD.newBuyersThisMonth,
+    pendingApplicationCount: DEMO_DASHBOARD.pendingApplicationCount,
+  },
+  aging: DEMO_AR_AGING,
+  gmvTrend: DEMO_DAILY_TREND.map(({ date, gmv }) => ({ date, gmv })),
+  recentInvoices: DEMO_INVOICES.slice(0, 10),
+  pendingApplications: DEMO_APPLICATIONS.slice(0, 5).map((app) => ({
+    id: app.id,
+    companyName: app.companyName,
+    businessType: app.businessType,
+    createdAt: app.createdAt,
+  })),
+  // hasSubscription false so the demo shows the trial banner + billing checklist step.
+  setup: { hasTier: true, hasApprovedBuyer: true, hasSubscription: false },
+};
+
+function topBuyer(buyer: BuyerSummary, gmv: number, orderCount: number): AnalyticsTopBuyer {
+  const avg = orderCount > 0 ? gmv / orderCount : 0;
+  return {
+    buyerId: buyer.buyerId,
+    companyName: buyer.companyName,
+    gmv: gmv.toFixed(2),
+    orderCount,
+    avgOrderValue: avg.toFixed(2),
+  };
+}
+
+export const DEMO_ANALYTICS: AnalyticsData = {
+  range: { from: iso(-29), to: iso(0) },
+  kpis: { gmv: '84250.00', orders: 47, avgOrderValue: '1792.55', activeBuyers: 7 },
+  trend: DEMO_DAILY_TREND,
+  topBuyers: [
+    topBuyer(DEMO_BUYERS[2]!, 22300, 41), // Northwind Outfitters
+    topBuyer(DEMO_BUYERS[1]!, 18640, 27), // Coastline Apparel Co.
+    topBuyer(DEMO_BUYERS[0]!, 9840, 12), // Maple & Thread Boutique
+    topBuyer(DEMO_BUYERS[4]!, 8400, 18), // Harbor Lane Denim
+    topBuyer(DEMO_BUYERS[3]!, 7130, 6), // Velvet & Oak
+    topBuyer(DEMO_BUYERS[5]!, 1890, 4), // Solstice Knitwear
+  ],
+  monthly: buildMonthly(),
+};
+
+export const DEMO_SETTINGS: MerchantSettings = {
+  storeName: DEMO_SHOP_DOMAIN.split('.')[0] ?? DEMO_SHOP_DOMAIN,
+  shopifyDomain: DEMO_SHOP_DOMAIN,
+  platformDomain: 'app.wholesaleportal.dev',
+  applicationLink: `https://${DEMO_SHOP_DOMAIN}/apps/wholesale`,
+  invoicePrefix: 'INV',
+  paymentInstructions:
+    'Remit by ACH to Account 0123456789 / Routing 110000000, or by check to Demo Fashion Co., 128 Market Street, San Francisco, CA 94105. Reference your invoice number.',
+  notifications: { newApplication: true, invoiceOverdue: true, paymentReceived: false },
+};
+
+export const DEMO_TEAM: TeamMember[] = [
+  {
+    id: DEMO_MERCHANT_USER_ID,
+    email: DEMO_EMAIL,
+    firstName: 'Demo',
+    lastName: 'Owner',
+    role: 'owner',
+    lastLoginAt: iso(0),
+    isActive: true,
+    createdAt: iso(-210),
+  },
+  {
+    id: '7c9e1a40-0001-4001-8001-000000000001',
+    email: 'ops@demo-fashion.myshopify.com',
+    firstName: 'Riley',
+    lastName: 'Chen',
+    role: 'admin',
+    lastLoginAt: iso(-1),
+    isActive: true,
+    createdAt: iso(-120),
+  },
+  {
+    id: '7c9e1a40-0002-4002-8002-000000000002',
+    email: 'warehouse@demo-fashion.myshopify.com',
+    firstName: 'Sam',
+    lastName: 'Okafor',
+    role: 'staff',
+    lastLoginAt: iso(-5),
+    isActive: true,
+    createdAt: iso(-60),
+  },
+];
+
+export const DEMO_BILLING_PLAN: BillingPlan = {
+  tier: 'starter',
+  status: 'trial',
+  isTrial: true,
+  amount: '29.00',
+  priceLabel: '$29/mo',
+  nextBillingDate: iso(9),
+  trialEndsAt: iso(9),
+};
+
+export const DEMO_BILLING_USAGE: BillingUsage = {
+  tier: 'starter',
+  gmvCurrentMonth: '84250.00',
+  freeThreshold: '20000.00',
+  billableGmv: '64250.00',
+  estimatedFee: '321.25',
+};

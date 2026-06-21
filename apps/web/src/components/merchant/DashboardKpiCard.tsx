@@ -19,6 +19,10 @@ export interface DashboardKpiCardProps {
   link?: string;
   badgeCount?: number;
   badgePulse?: boolean;
+  /** Secondary line under the value (e.g. "across 7 invoices"). */
+  subLabel?: string;
+  /** Badge/pulse color. `danger` = red (overdue); default `accent`. */
+  tone?: 'accent' | 'danger';
 }
 
 function parseChange(value: number | string | null | undefined): number | null {
@@ -35,9 +39,12 @@ export function DashboardKpiCard({
   link,
   badgeCount,
   badgePulse = false,
+  subLabel,
+  tone = 'accent',
 }: DashboardKpiCardProps): JSX.Element {
   const change = parseChange(changePercent);
   const isUp = change !== null && change >= 0;
+  const danger = tone === 'danger';
 
   const body = (
     <div
@@ -51,9 +58,19 @@ export function DashboardKpiCard({
         {typeof badgeCount === 'number' && badgeCount > 0 ? (
           <span className="relative inline-flex">
             {badgePulse ? (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/40" />
+              <span
+                className={cn(
+                  'absolute inline-flex h-full w-full animate-ping rounded-full',
+                  danger ? 'bg-red-500/40' : 'bg-accent/40',
+                )}
+              />
             ) : null}
-            <span className="relative inline-flex items-center rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-fg">
+            <span
+              className={cn(
+                'relative inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                danger ? 'bg-red-100 text-red-800' : 'bg-accent text-accent-fg',
+              )}
+            >
               {badgeCount}
             </span>
           </span>
@@ -73,6 +90,8 @@ export function DashboardKpiCard({
           {changePeriod ? <span className="text-gray-400">{changePeriod}</span> : null}
         </div>
       ) : null}
+
+      {subLabel ? <span className="text-xs text-gray-500">{subLabel}</span> : null}
     </div>
   );
 

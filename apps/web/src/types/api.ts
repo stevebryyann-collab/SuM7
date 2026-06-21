@@ -1,9 +1,11 @@
 import type {
   ApprovalStatus,
   InvoiceStatus,
+  MerchantRole,
   PaginatedResponse,
   PaymentTerms,
   PricingTierType,
+  SubscriptionTier,
 } from '@b2b/shared/types';
 
 /**
@@ -330,4 +332,135 @@ export interface CatalogPage {
   products: CatalogProduct[];
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
   stale: boolean;
+}
+
+// ── Dashboard aggregator (REST GET /api/v1/dashboard) ───────────────────
+
+export interface DashboardKpis {
+  gmvCurrentMonth: string;
+  gmvPreviousMonth: string;
+  gmvChangePercent: string | null;
+  outstandingArBalance: string;
+  outstandingInvoiceCount: number;
+  overdueInvoiceCount: number;
+  overdueInvoiceAmount: string;
+  newBuyersThisMonth: number;
+  pendingApplicationCount: number;
+}
+
+export interface DashboardTrendPoint {
+  date: string;
+  gmv: string;
+}
+
+export interface DashboardPendingApp {
+  id: string;
+  companyName: string;
+  businessType: string | null;
+  createdAt: string;
+}
+
+export interface DashboardSetup {
+  hasTier: boolean;
+  hasApprovedBuyer: boolean;
+  hasSubscription: boolean;
+}
+
+export interface DashboardData {
+  kpis: DashboardKpis;
+  aging: ArAgingReport;
+  gmvTrend: DashboardTrendPoint[];
+  recentInvoices: InvoiceSummary[];
+  pendingApplications: DashboardPendingApp[];
+  setup: DashboardSetup;
+}
+
+// ── Analytics (REST GET /api/v1/analytics) ──────────────────────────────
+
+export interface AnalyticsKpis {
+  gmv: string;
+  orders: number;
+  avgOrderValue: string;
+  activeBuyers: number;
+}
+
+export interface AnalyticsTrendPoint {
+  date: string;
+  gmv: string;
+  orderCount: number;
+}
+
+export interface AnalyticsTopBuyer {
+  buyerId: string;
+  companyName: string;
+  gmv: string;
+  orderCount: number;
+  avgOrderValue: string;
+}
+
+export interface AnalyticsMonthlyRow {
+  month: string;
+  gmv: string;
+  orders: number;
+  avgOrder: string;
+  yoyChangePct: string | null;
+}
+
+export interface AnalyticsData {
+  range: { from: string; to: string };
+  kpis: AnalyticsKpis;
+  trend: AnalyticsTrendPoint[];
+  topBuyers: AnalyticsTopBuyer[];
+  monthly: AnalyticsMonthlyRow[];
+}
+
+// ── Settings (REST /api/v1/settings) ────────────────────────────────────
+
+export interface NotificationPrefs {
+  newApplication: boolean;
+  invoiceOverdue: boolean;
+  paymentReceived: boolean;
+}
+
+export interface MerchantSettings {
+  storeName: string;
+  shopifyDomain: string;
+  platformDomain: string;
+  applicationLink: string;
+  invoicePrefix: string;
+  paymentInstructions: string | null;
+  notifications: NotificationPrefs;
+}
+
+// ── Team (REST /api/v1/team) ────────────────────────────────────────────
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  role: MerchantRole | string;
+  lastLoginAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+// ── Billing (REST /api/v1/billing) ──────────────────────────────────────
+
+export interface BillingPlan {
+  tier: SubscriptionTier | string;
+  status: 'active' | 'trial' | 'inactive' | string;
+  isTrial: boolean;
+  amount: string;
+  priceLabel: string;
+  nextBillingDate: string | null;
+  trialEndsAt: string | null;
+}
+
+export interface BillingUsage {
+  tier: SubscriptionTier | string;
+  gmvCurrentMonth: string;
+  freeThreshold: string;
+  billableGmv: string;
+  estimatedFee: string;
 }

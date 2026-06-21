@@ -17,53 +17,50 @@ import {
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
-import { useMerchantDashboard, useArAging } from '@/hooks/useMerchantDashboard';
-import { usePricingTiers } from '@/hooks/usePricingTiers';
-import { useBuyers, usePendingApplications } from '@/hooks/useBuyers';
-import { useInvoices } from '@/hooks/useInvoices';
-import { formatMoney, formatRelative } from '@/lib/format';
+import { useDashboard } from '@/hooks/useDashboard';
+import { formatMoney, formatDate, formatRelative } from '@/lib/format';
 import { cn } from '@/lib/cn';
-import type { GmvTrendPoint, InvoiceSummary } from '@/types/api';
 
 /**
- * Merchant dashboard. For a freshly-installed store it leads with a welcome +
- * Get Started checklist and a trial banner; once there's real activity it shows
- * KPI cards, AR aging, GMV trend, Recent Invoices and Pending Applications. The
- * checklist steps reflect live data (a tier exists, a buyer is approved) so they
- * tick off as the merchant completes setup.
+ * Merchant dashboard. A single aggregator request (`GET /api/v1/dashboard`)
+ * powers the KPI cards, AR-aging chart, 30-day GMV trend, recent invoices and
+ * pending-applications panels. For a freshly-installed store the trial banner +
+ * Get Started checklist lead (the checklist steps reflect live onboarding
+ * flags); once subscribed the checklist retires. KPI figures fall back to $0
+ * cleanly, so the empty state is just the zeroed dashboard plus the checklist.
  */
 export default function DashboardPage(): JSX.Element {
-  const { data: kpis, isLoading: kpisLoading, isError } = useMerchantDashboard();
-  const { data: aging, isLoading: agingLoading } = useArAging();
-  const { data: tiers } = usePricingTiers();
-  const applications = usePendingApplications();
-  const approvedBuyers = useBuyers({ approvalStatus: 'approved' });
-  const recentInvoices = useInvoices({ mode: 'merchant' });
+  const { data, isLoading, isError } = useDashboard();
 
-  const hasTier = (tiers?.length ?? 0) > 0;
-  const hasApprovedBuyer =
-    (approvedBuyers.data?.pages ?? []).some((page) => page.data.length > 0) ?? false;
-  // Subscription state is not part of the Group 1 data set; treat it as pending
-  // so the checklist surfaces the billing step (links to /settings/billing).
-  const hasSubscription = false;
+  const kpis = data?.kpis;
+  const setup = data?.setup;
+  const hasTier = setup?.hasTier ?? false;
+  const hasApprovedBuyer = setup?.hasApprovedBuyer ?? false;
+  const hasSubscription = setup?.hasSubscription ?? false;
   const setupComplete = hasTier && hasApprovedBuyer && hasSubscription;
 
-  const invoices: InvoiceSummary[] = (recentInvoices.data?.pages[0]?.data ?? []).slice(0, 5);
-  const pending = applications.data ?? [];
+  const invoices = data?.recentInvoices ?? [];
+  const pending = data?.pendingApplications ?? [];
+  const trend = data?.gmvTrend ?? [];
+  const aging = data?.aging;
 
-  const trend: GmvTrendPoint[] = kpis
-    ? [
-        { date: monthStartIso(-1), gmv: kpis.gmvPreviousMonth },
-        { date: monthStartIso(0), gmv: kpis.gmvCurrentMonth },
-      ]
-    : [];
+  if (isError) {
+    return (
+      <>
+        <PageHeader title="Dashboard" description="Receivables and order activity at a glance." />
+        <div className="panel p-8 text-center text-sm text-red-700">
+          Dashboard failed to load. Refresh to try again.
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader title="Dashboard" description="Receivables and order activity at a glance." />
 
-      {/* Trial banner */}
-      {!hasSubscription ? (
+      {/* Trial banner — until the merchant subscribes. */}
+      {!isLoading && !hasSubscription ? (
         <div className="panel mb-6 flex flex-col gap-3 border-accent-dark/30 bg-accent/5 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-medium text-gray-900">You&apos;re on the 14-day free trial.</p>
@@ -78,171 +75,155 @@ export default function DashboardPage(): JSX.Element {
         </div>
       ) : null}
 
-      {/* Get Started checklist (until setup is complete) */}
-      {!setupComplete ? (
+      {/* Get Started checklist (until setup is complete). */}
+      {!isLoading && !setupComplete ? (
         <section className="panel mb-6 p-5">
           <h2 className="text-base font-semibold text-gray-900">Get started</h2>
-          <p className="mt-0.5 text-sm text-gray-500">
-            A few steps to start taking wholesale orders.
-          </p>
+          <p className="mt-0.5 text-sm text-gray-500">A few steps to start taking wholesale orders.</p>
           <ol className="mt-4 space-y-2">
-            <ChecklistItem
-              done={hasTier}
-              label="Create your first pricing tier"
-              href="/pricing"
-              cta="Set up pricing"
-            />
-            <ChecklistItem
-              done={hasApprovedBuyer}
-              label="Approve your first buyer"
-              href="/buyers"
-              cta="Review applications"
-            />
-            <ChecklistItem
-              done={hasSubscription}
-              label="Choose a subscription plan"
-              href="/settings/billing"
-              cta="Choose a plan"
-            />
+            <ChecklistItem done={hasTier} label="Create your first pricing tier" href="/pricing" cta="Set up pricing" />
+            <ChecklistItem done={hasApprovedBuyer} label="Approve your first buyer" href="/buyers" cta="Review applications" />
+            <ChecklistItem done={hasSubscription} label="Choose a subscription plan" href="/settings/billing" cta="Choose a plan" />
           </ol>
         </section>
       ) : null}
 
-      {isError ? (
-        <div className="panel p-6 text-sm text-red-700">Failed to load dashboard metrics.</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {kpisLoading || !kpis ? (
-              <KpiSkeletons />
-            ) : (
-              <>
-                <DashboardKpiCard
-                  title="GMV This Month"
-                  value={formatMoney(kpis.gmvCurrentMonth)}
-                  changePercent={kpis.gmvChangePercent}
-                  changePeriod="vs last month"
-                />
-                <DashboardKpiCard
-                  title="Outstanding AR"
-                  value={formatMoney(kpis.outstandingArBalance)}
-                  link="/invoices"
-                />
-                <DashboardKpiCard
-                  title="Overdue Invoices"
-                  value={formatMoney(kpis.overdueInvoiceAmount)}
-                  badgeCount={kpis.overdueInvoiceCount}
-                  badgePulse={kpis.overdueInvoiceCount > 0}
-                  link="/invoices?agingBucket=1-30"
-                />
-                <DashboardKpiCard
-                  title="New Buyers"
-                  value={String(kpis.newBuyersThisMonth)}
-                  badgeCount={kpis.pendingApplicationCount}
-                  badgePulse={kpis.pendingApplicationCount > 0}
-                  link="/buyers"
-                />
-              </>
-            )}
-          </div>
+      {/* KPI cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {isLoading || !kpis ? (
+          <KpiSkeletons />
+        ) : (
+          <>
+            <DashboardKpiCard
+              title="GMV This Month"
+              value={formatMoney(kpis.gmvCurrentMonth)}
+              changePercent={kpis.gmvChangePercent}
+              changePeriod="vs last month"
+              link="/analytics"
+            />
+            <DashboardKpiCard
+              title="Outstanding AR"
+              value={formatMoney(kpis.outstandingArBalance)}
+              subLabel={`across ${kpis.outstandingInvoiceCount} invoice${kpis.outstandingInvoiceCount === 1 ? '' : 's'}`}
+              link="/invoices"
+            />
+            <DashboardKpiCard
+              title="Overdue Invoices"
+              value={formatMoney(kpis.overdueInvoiceAmount)}
+              badgeCount={kpis.overdueInvoiceCount}
+              badgePulse={kpis.overdueInvoiceCount > 0}
+              tone="danger"
+              link="/invoices?agingBucket=1-30"
+            />
+            <DashboardKpiCard
+              title="New Buyers"
+              value={String(kpis.newBuyersThisMonth)}
+              subLabel={`${kpis.pendingApplicationCount} application${kpis.pendingApplicationCount === 1 ? '' : 's'} pending`}
+              link="/buyers"
+            />
+          </>
+        )}
+      </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section className="panel p-5">
-              <h2 className="mb-4 text-label uppercase tracking-wider text-gray-500">AR Aging</h2>
-              {agingLoading || !aging ? (
-                <LoadingSkeleton rows={5} columns={[2, 5]} />
-              ) : (
-                <ArAgingChart data={aging} />
-              )}
-            </section>
-            <section className="panel p-5">
-              <h2 className="mb-4 text-label uppercase tracking-wider text-gray-500">GMV Trend</h2>
-              {kpisLoading || !kpis ? (
-                <LoadingSkeleton rows={6} columns={[1]} />
-              ) : (
-                <GmvTrendChart data={trend} />
-              )}
-            </section>
+      {/* AR aging + GMV trend */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="panel p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-label uppercase tracking-wider text-gray-500">AR Aging</h2>
+            <Link href="/invoices/ar-aging" className="text-xs text-accent hover:underline">
+              View full AR report →
+            </Link>
           </div>
+          {isLoading || !aging ? <LoadingSkeleton rows={5} columns={[2, 5]} /> : <ArAgingChart data={aging} />}
+        </section>
+        <section className="panel p-5">
+          <h2 className="mb-4 text-label uppercase tracking-wider text-gray-500">GMV Trend</h2>
+          {isLoading ? <LoadingSkeleton rows={6} columns={[1]} /> : <GmvTrendChart data={trend} />}
+        </section>
+      </div>
 
-          {/* Recent Invoices + Pending Applications */}
-          <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section className="panel">
-              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                <h2 className="text-label uppercase tracking-wider text-gray-500">Recent Invoices</h2>
-                <Link href="/invoices" className="text-xs text-accent hover:underline">
-                  View all
-                </Link>
-              </div>
-              {recentInvoices.isLoading ? (
-                <LoadingSkeleton rows={5} columns={[2, 3, 1, 2]} />
-              ) : invoices.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-gray-500">No invoices yet.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Buyer</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoices.map((inv) => (
-                      <TableRow key={inv.id}>
-                        <TableCell className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</TableCell>
-                        <TableCell className="max-w-[160px] truncate text-gray-700">
-                          {inv.buyerCompanyName ?? '—'}
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={inv.status} />
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatMoney(inv.total)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </section>
-
-            <section className="panel">
-              <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-                <h2 className="text-label uppercase tracking-wider text-gray-500">Pending Applications</h2>
-                <Link href="/buyers" className="text-xs text-accent hover:underline">
-                  View all
-                </Link>
-              </div>
-              {applications.isLoading ? (
-                <LoadingSkeleton rows={3} columns={[3, 2, 2]} />
-              ) : pending.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-gray-500">No applications awaiting review.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Submitted</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pending.slice(0, 5).map((app) => (
-                      <TableRow key={app.id}>
-                        <TableCell className="font-medium text-gray-900">{app.companyName}</TableCell>
-                        <TableCell className="max-w-[160px] truncate text-gray-600">{app.email}</TableCell>
-                        <TableCell className="text-gray-600">{formatRelative(app.createdAt)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </section>
+      {/* Recent Invoices + Pending Applications */}
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="panel">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <h2 className="text-label uppercase tracking-wider text-gray-500">Recent Invoices</h2>
+            <Link href="/invoices" className="text-xs text-accent hover:underline">
+              View all
+            </Link>
           </div>
-        </>
-      )}
+          {isLoading ? (
+            <LoadingSkeleton rows={5} columns={[2, 3, 1, 2]} />
+          ) : invoices.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-gray-500">No invoices yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Buyer</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Due</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoices.map((inv) => (
+                  <TableRow key={inv.id}>
+                    <TableCell className="font-mono text-xs text-gray-700">{inv.invoiceNumber}</TableCell>
+                    <TableCell className="max-w-[140px] truncate text-gray-700">{inv.buyerCompanyName ?? '—'}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatMoney(inv.total)}</TableCell>
+                    <TableCell className="text-gray-600">{formatDate(inv.dueDate)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={inv.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="default" size="sm" asChild>
+                        <Link href={`/invoices/${inv.id}`}>View</Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </section>
+
+        <section className="panel">
+          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <h2 className="text-label uppercase tracking-wider text-gray-500">Pending Applications</h2>
+            <Link href="/buyers" className="text-xs text-accent hover:underline">
+              View all pending →
+            </Link>
+          </div>
+          {isLoading ? (
+            <LoadingSkeleton rows={3} columns={[3, 2, 2]} />
+          ) : pending.length === 0 ? (
+            <div className="flex items-center gap-2 px-4 py-6 text-sm text-gray-500">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-green-700">
+                <Check className="h-3.5 w-3.5" />
+              </span>
+              No pending applications
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-200">
+              {pending.map((app) => (
+                <li key={app.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900">{app.companyName}</p>
+                    <p className="truncate text-xs text-gray-500">
+                      {app.businessType ?? 'Business'} · Applied {formatRelative(app.createdAt)}
+                    </p>
+                  </div>
+                  <Button variant="primary" size="sm" asChild>
+                    <Link href="/buyers">Review</Link>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
     </>
   );
 }
@@ -269,9 +250,7 @@ function ChecklistItem({
         >
           {done ? <Check className="h-3.5 w-3.5" /> : <CircleDashed className="h-3.5 w-3.5" />}
         </span>
-        <span className={cn('text-sm', done ? 'text-gray-500 line-through' : 'text-gray-900')}>
-          {label}
-        </span>
+        <span className={cn('text-sm', done ? 'text-gray-500 line-through' : 'text-gray-900')}>{label}</span>
       </div>
       {!done ? (
         <Button variant="default" size="sm" asChild>
@@ -292,10 +271,4 @@ function KpiSkeletons(): JSX.Element {
       ))}
     </>
   );
-}
-
-/** ISO timestamp for the first day of the month, `offset` months from now. */
-function monthStartIso(offset: number): string {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + offset, 1).toISOString();
 }

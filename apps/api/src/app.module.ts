@@ -31,6 +31,7 @@ import { PricingModule } from './pricing/pricing.module';
 import { OrdersModule } from './orders/orders.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { BillingModule } from './billing/billing.module';
 import { BnplModule } from './bnpl/bnpl.module';
 
@@ -109,6 +110,7 @@ import { IdempotencyMiddleware } from './common/middleware/idempotency.middlewar
     OrdersModule,
     InvoicesModule,
     AnalyticsModule,
+    DashboardModule,
     BillingModule,
     BnplModule,
 

@@ -170,11 +170,69 @@ export type UpdatePricingTierInput = z.infer<typeof UpdatePricingTierSchema>;
 
 export const SubscriptionTierSchema = z.enum(['starter', 'growth', 'pro']);
 
-/** Body for POST /billing/subscribe and POST /billing/change-tier. */
+/** Body for POST /billing/subscribe, /billing/change-tier and /billing/change-plan. */
 export const BillingTierSchema = z.object({
   tier: SubscriptionTierSchema,
 });
 export type BillingTierInput = z.infer<typeof BillingTierSchema>;
+
+/** Alias used by the Stage 4 billing page (`POST /billing/change-plan`). */
+export const ChangePlanSchema = BillingTierSchema;
+export type ChangePlanInput = BillingTierInput;
+
+// ── Merchant settings (Stage 4) ────────────────────────────────────────
+
+/** Owner email-notification preferences. */
+export const NotificationPrefsSchema = z.object({
+  newApplication: z.boolean(),
+  invoiceOverdue: z.boolean(),
+  paymentReceived: z.boolean(),
+});
+export type NotificationPrefsInput = z.infer<typeof NotificationPrefsSchema>;
+
+/**
+ * Body for `PUT /api/v1/settings`. The whole settings object is sent on every
+ * save (both the Invoice and Notifications save buttons submit the full set),
+ * so all fields are required. `invoicePrefix` affects future invoices only and
+ * is limited to 8 chars of letters/digits/dashes; `paymentInstructions` (≤500)
+ * is rendered on every invoice and may be cleared to null.
+ */
+export const UpdateMerchantSettingsSchema = z.object({
+  invoicePrefix: z
+    .string()
+    .trim()
+    .min(1)
+    .max(8)
+    .regex(/^[A-Za-z0-9-]+$/, 'Use letters, digits and dashes only (max 8)'),
+  paymentInstructions: z.string().trim().max(500).nullable().default(null),
+  notifications: NotificationPrefsSchema,
+});
+export type UpdateMerchantSettingsInput = z.infer<typeof UpdateMerchantSettingsSchema>;
+
+// ── Team management (Stage 4 — owner only) ─────────────────────────────
+
+/** Assignable (non-owner) team roles. Ownership cannot be reassigned via the UI. */
+export const TeamMemberRoleSchema = z.enum(['admin', 'staff']);
+export type TeamMemberRole = z.infer<typeof TeamMemberRoleSchema>;
+
+/** Body for `PATCH /api/v1/team/:id` — change a member's role. */
+export const UpdateTeamMemberSchema = z.object({
+  role: TeamMemberRoleSchema,
+});
+export type UpdateTeamMemberInput = z.infer<typeof UpdateTeamMemberSchema>;
+
+/** Body for `POST /api/v1/team/invite` (v1 stub — no email is actually sent). */
+export const InviteTeamMemberSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(255),
+  role: TeamMemberRoleSchema,
+});
+export type InviteTeamMemberInput = z.infer<typeof InviteTeamMemberSchema>;
+
+// ── Analytics export ───────────────────────────────────────────────────
+
+/** Allowed `?type=` values for `GET /api/v1/analytics/export`. */
+export const AnalyticsExportTypeSchema = z.enum(['orders', 'invoices', 'buyers', 'gdpr']);
+export type AnalyticsExportType = z.infer<typeof AnalyticsExportTypeSchema>;
 
 // ── Bulk ordering (spreadsheet-style) ──────────────────────────────────
 

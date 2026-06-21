@@ -23,7 +23,7 @@ import {
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { AppConfigService } from '../config/app-config.service';
-import { BillingService } from './billing.service';
+import { BillingService, type BillingPlan } from './billing.service';
 
 /**
  * Stripe billing HTTP surface.
@@ -95,6 +95,42 @@ export class BillingController {
     estimatedFee: string;
   }> {
     return this.billing.getUsage(req.merchant!.merchantId);
+  }
+
+  // ── Stage 4 billing-page aliases ────────────────────────────────────────
+
+  @Get('plan')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  plan(@Req() req: MerchantAuthenticatedRequest): Promise<BillingPlan> {
+    return this.billing.getPlan(req.merchant!.merchantId);
+  }
+
+  /** Alias for the billing page's "Change plan" action (proration applied). */
+  @Post('change-plan')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner')
+  @HttpCode(HttpStatus.OK)
+  async changePlan(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Body(new ZodValidationPipe(BillingTierSchema)) dto: BillingTierInput,
+  ): Promise<{ subscriptionId: string; tier: SubscriptionTier }> {
+    const subscription = await this.billing.changeTier(
+      req.merchant!.merchantId,
+      dto.tier,
+      req.merchant!.userId,
+    );
+    return { subscriptionId: subscription.id, tier: dto.tier };
+  }
+
+  /** Alias for the billing page's "Manage billing" button (Stripe portal URL). */
+  @Post('create-portal-session')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner')
+  @HttpCode(HttpStatus.OK)
+  async createPortalSession(@Req() req: MerchantAuthenticatedRequest): Promise<{ url: string }> {
+    const returnUrl = `https://${this.config.get('PLATFORM_DOMAIN')}/settings/billing`;
+    const url = await this.billing.createBillingPortalSession(req.merchant!.merchantId, returnUrl);
+    return { url };
   }
 
   @Post('webhook')

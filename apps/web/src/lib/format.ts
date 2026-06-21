@@ -68,6 +68,14 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   return date ? format(date, 'MMM d, yyyy, h:mm a') : '—';
 }
 
+/** A `YYYY-MM` month key as `Mon yyyy` (e.g. `Jun 2026`). */
+export function formatMonth(value: string | null | undefined): string {
+  if (!value) return '—';
+  const [year, month] = value.split('-').map((part) => Number(part));
+  if (!year || !month) return value;
+  return format(new Date(year, month - 1, 1), 'MMM yyyy');
+}
+
 /** Relative age for "last activity" columns, e.g. `3 days ago`. */
 export function formatRelative(value: string | Date | null | undefined): string {
   const date = toDate(value);
