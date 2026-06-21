@@ -24,12 +24,20 @@ import {
   DEMO_BUYER_DETAILS,
   DEMO_BUYERS,
   DEMO_DASHBOARD,
+  DEMO_INVOICE_DETAILS,
   DEMO_INVOICES,
+  DEMO_ORDER_DETAILS,
   DEMO_ORDERS,
   DEMO_PRICING_TIERS,
   DEMO_TIER_CONDITIONS,
   DEMO_TIER_OVERRIDES,
 } from './mock-data';
+
+/**
+ * One designated demo invoice whose PDF "fails" the integrity check, so the
+ * amber integrity-failure toast + blocked-download path can be exercised offline.
+ */
+const DEMO_INTEGRITY_FAIL_INVOICE_ID = 'invoice-05';
 
 /**
  * In-app mock backend for the dev-only demo merchant. {@link merchantFetch} and
@@ -255,37 +263,91 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
   // ── Orders ──────────────────────────────────────────────────────────────────
   if (url === '/orders' && method === 'GET') {
     const status = query.get('status') ?? '';
-    const rows = status ? DEMO_ORDERS.filter((o) => o.status === status) : DEMO_ORDERS;
+    const search = query.get('search')?.toLowerCase() ?? '';
+    const buyerId = query.get('buyerId') ?? '';
+    const buyerName = buyerId ? DEMO_BUYERS.find((b) => b.buyerId === buyerId)?.companyName ?? null : null;
+    const dateFrom = query.get('dateFrom');
+    const dateTo = query.get('dateTo');
+    let rows = [...DEMO_ORDERS];
+    if (status) rows = rows.filter((o) => o.status === status);
+    if (buyerName) rows = rows.filter((o) => o.buyerCompanyName === buyerName);
+    if (search) {
+      rows = rows.filter((o) => (o.shopifyOrderNumber ?? '').toLowerCase().includes(search));
+    }
+    if (dateFrom) rows = rows.filter((o) => o.createdAt >= dateFrom);
+    if (dateTo) rows = rows.filter((o) => o.createdAt <= `${dateTo}T23:59:59.999Z`);
     return paginate(rows, cursor) as T;
   }
 
+  if (method === 'GET' && /^\/orders\/[^/]+$/.test(url)) {
+    const id = segment(url, 1);
+    const detail = DEMO_ORDER_DETAILS[id];
+    if (!detail) return notFound(`GET ${url}`);
+    return detail as T;
+  }
+
   // ── Invoices ────────────────────────────────────────────────────────────────
+
+  // AR-aging CSV export (static, two-segment — must precede /invoices/:id).
+  if (url === '/invoices/ar-aging/export' && method === 'GET') {
+    return arAgingCsv() as T;
+  }
+
   if (url === '/invoices' && method === 'GET') {
     const status = query.get('status') ?? '';
     const bucket = query.get('agingBucket') ?? '';
+    const search = query.get('search')?.toLowerCase() ?? '';
+    const buyerId = query.get('buyerId') ?? '';
+    const buyerName = buyerId ? DEMO_BUYERS.find((b) => b.buyerId === buyerId)?.companyName ?? null : null;
     let rows: InvoiceSummary[] = [...DEMO_INVOICES];
     if (status) rows = rows.filter((i) => i.status === status);
     if (bucket) rows = rows.filter((i) => i.status === 'overdue' || i.status === 'partially_paid');
+    if (buyerName) rows = rows.filter((i) => i.buyerCompanyName === buyerName);
+    if (search) rows = rows.filter((i) => i.invoiceNumber.toLowerCase().includes(search));
     return paginate(rows, cursor) as T;
   }
 
   if (method === 'PATCH' && /^\/invoices\/[^/]+\/mark-paid$/.test(url)) {
     const id = segment(url, 1);
-    const found = DEMO_INVOICES.find((i) => i.id === id);
-    return {
-      id,
-      status: 'paid' as InvoiceStatus,
-      amountPaid: found?.total ?? '0.00',
-    } as T;
+    const dto = options.body as { amount?: string; reference?: string; paidAt?: string };
+    return markInvoicePaid(id, dto) as T;
   }
 
   if (method === 'PATCH' && /^\/invoices\/[^/]+\/void$/.test(url)) {
     const id = segment(url, 1);
-    return { id, status: 'void' as InvoiceStatus } as T;
+    const reason = (options.body as { reason?: string } | undefined)?.reason ?? 'Voided in demo';
+    return voidInvoice(id, reason) as T;
   }
 
   if (method === 'POST' && /^\/invoices\/[^/]+\/resend$/.test(url)) {
     return { sent: true } as T;
+  }
+
+  if (method === 'POST' && /^\/invoices\/[^/]+\/send-reminder$/.test(url)) {
+    const id = segment(url, 1);
+    return sendInvoiceReminder(id) as T;
+  }
+
+  // Integrity-gated PDF download. The designated demo invoice fails the check.
+  if (method === 'GET' && /^\/invoices\/[^/]+\/pdf$/.test(url)) {
+    const id = segment(url, 1);
+    if (!DEMO_INVOICE_DETAILS[id]) return notFound(`GET ${url}`);
+    if (id === DEMO_INTEGRITY_FAIL_INVOICE_ID) {
+      throw new ApiClientError({
+        statusCode: 422,
+        code: 'INVOICE_INTEGRITY_FAILED',
+        message: 'Invoice PDF integrity check failed. Contact support.',
+      });
+    }
+    return { url: `https://example.com/demo/${id}.pdf` } as T;
+  }
+
+  // Invoice detail (single segment; exclude the static `ar-aging` path).
+  if (method === 'GET' && /^\/invoices\/(?!ar-aging$)[^/]+$/.test(url)) {
+    const id = segment(url, 1);
+    const detail = DEMO_INVOICE_DETAILS[id];
+    if (!detail) return notFound(`GET ${url}`);
+    return detail as T;
   }
 
   // ── Pricing tiers ─────────────────────────────────────────────────────────────
@@ -415,6 +477,115 @@ function setBuyerStatus(buyerId: string, status: string): void {
   if (detail) detail.approvalStatus = status;
   const summary = DEMO_BUYERS.find((b) => b.buyerId === buyerId);
   if (summary) summary.approvalStatus = status;
+}
+
+/** Record a (partial) payment on an invoice, mutating summary + detail in lockstep. */
+function markInvoicePaid(
+  id: string,
+  dto: { amount?: string; reference?: string; paidAt?: string },
+): { id: string; status: InvoiceStatus; amountPaid: string } {
+  const summary = DEMO_INVOICES.find((i) => i.id === id);
+  const detail = DEMO_INVOICE_DETAILS[id];
+  if (!summary && !detail) return notFound(`PATCH /invoices/${id}/mark-paid`);
+  const total = Number(summary?.total ?? detail?.total ?? '0');
+  const prevPaid = Number(summary?.amountPaid ?? detail?.amountPaid ?? '0');
+  const payment = Number(dto.amount ?? '0');
+  const newPaid = Math.min(prevPaid + (Number.isFinite(payment) ? payment : 0), total);
+  const fullyPaid = newPaid >= total - 0.005;
+  const status: InvoiceStatus = fullyPaid ? 'paid' : 'partially_paid';
+  const paidAtIso = dto.paidAt ?? new Date().toISOString();
+  const amountPaidStr = newPaid.toFixed(2);
+
+  if (summary) {
+    summary.status = status;
+    summary.amountPaid = amountPaidStr;
+  }
+  if (detail) {
+    detail.status = status;
+    detail.amountPaid = amountPaidStr;
+    detail.outstanding = Math.max(total - newPaid, 0).toFixed(2);
+    detail.paidAt = fullyPaid ? paidAtIso : detail.paidAt;
+    detail.payments = [
+      ...detail.payments,
+      {
+        amount: (newPaid - prevPaid).toFixed(2),
+        paidAt: paidAtIso,
+        reference: dto.reference ?? null,
+        recordedBy: 'Demo Owner',
+      },
+    ];
+    detail.auditTrail = [
+      { id: `aud-${id}-paid-${detail.payments.length}`, action: 'paid', actorType: 'merchant_user', actorLabel: 'Demo Owner', createdAt: paidAtIso },
+      ...detail.auditTrail,
+    ];
+  }
+  return { id, status, amountPaid: amountPaidStr };
+}
+
+/** Void an invoice, mutating summary + detail in lockstep. */
+function voidInvoice(id: string, reason: string): { id: string; status: InvoiceStatus } {
+  const summary = DEMO_INVOICES.find((i) => i.id === id);
+  const detail = DEMO_INVOICE_DETAILS[id];
+  if (!summary && !detail) return notFound(`PATCH /invoices/${id}/void`);
+  if (summary?.status === 'paid' || summary?.status === 'void') {
+    conflict('INVOICE_NOT_VOIDABLE', `Invoice is ${summary.status} and cannot be voided`);
+  }
+  const nowIso = new Date().toISOString();
+  if (summary) summary.status = 'void';
+  if (detail) {
+    detail.status = 'void';
+    detail.voidedAt = nowIso;
+    detail.voidReason = reason;
+    detail.auditTrail = [
+      { id: `aud-${id}-void`, action: 'voided', actorType: 'merchant_user', actorLabel: 'Demo Owner', createdAt: nowIso },
+      ...detail.auditTrail,
+    ];
+  }
+  return { id, status: 'void' };
+}
+
+/** Send the next reminder for an invoice, enforcing the 3-max rule in the demo. */
+function sendInvoiceReminder(id: string): { sent: boolean; reminderCount: number } {
+  const summary = DEMO_INVOICES.find((i) => i.id === id);
+  const detail = DEMO_INVOICE_DETAILS[id];
+  if (!summary && !detail) return notFound(`POST /invoices/${id}/send-reminder`);
+  const current = summary?.reminderCount ?? detail?.reminderCount ?? 0;
+  if (current >= 3) {
+    conflict('REMINDER_LIMIT_REACHED', 'The maximum of 3 reminders has already been sent');
+  }
+  const next = current + 1;
+  const nowIso = new Date().toISOString();
+  if (summary) {
+    summary.reminderCount = next;
+    summary.lastReminderAt = nowIso;
+  }
+  if (detail) {
+    detail.reminderCount = next;
+    detail.lastReminderAt = nowIso;
+    detail.auditTrail = [
+      { id: `aud-${id}-reminder-${next}`, action: 'reminder_sent', actorType: 'merchant_user', actorLabel: 'Demo Owner', createdAt: nowIso },
+      ...detail.auditTrail,
+    ];
+  }
+  return { sent: true, reminderCount: next };
+}
+
+/** Build the AR-aging CSV from the demo aging fixture (mirrors the API export). */
+function arAgingCsv(): string {
+  const rows: Array<[string, number, string]> = [
+    ['Current (not yet due)', DEMO_AR_AGING.current.invoiceCount, DEMO_AR_AGING.current.outstandingAmount],
+    ['1–30 days overdue', DEMO_AR_AGING.overdue_1_30.invoiceCount, DEMO_AR_AGING.overdue_1_30.outstandingAmount],
+    ['31–60 days overdue', DEMO_AR_AGING.overdue_31_60.invoiceCount, DEMO_AR_AGING.overdue_31_60.outstandingAmount],
+    ['61–90 days overdue', DEMO_AR_AGING.overdue_61_90.invoiceCount, DEMO_AR_AGING.overdue_61_90.outstandingAmount],
+    ['90+ days overdue', DEMO_AR_AGING.overdue_90_plus.invoiceCount, DEMO_AR_AGING.overdue_90_plus.outstandingAmount],
+  ];
+  const totalCount = rows.reduce((acc, [, count]) => acc + count, 0);
+  const totalAmount = rows.reduce((acc, [, , amount]) => acc + Number(amount), 0).toFixed(2);
+  const cell = (v: string): string => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const lines = ['Bucket,Invoices,Outstanding'];
+  for (const [label, count, amount] of rows) lines.push(`${cell(label)},${count},${amount}`);
+  lines.push(`${cell('Total')},${totalCount},${totalAmount}`);
+  return `${lines.join('\r\n')}\r\n`;
 }
 
 /**

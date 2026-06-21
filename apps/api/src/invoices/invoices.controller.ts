@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpException,
   HttpStatus,
@@ -34,7 +35,9 @@ import {
   InvoicesService,
   type ArAgingResult,
   type IntegrityResult,
+  type InvoiceDetail,
   type InvoiceSummary,
+  type SendReminderResult,
 } from './invoices.service';
 
 /** Body of `PATCH /invoices/:id/void` — a required, human-readable reason. */
@@ -95,6 +98,14 @@ export class InvoicesController {
     return this.invoices.getArAging(req.merchant!.merchantId);
   }
 
+  @Get('invoices/ar-aging/export')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="ar-aging.csv"')
+  getArAgingExport(@Req() req: MerchantAuthenticatedRequest): Promise<string> {
+    return this.invoices.exportArAgingCsv(req.merchant!.merchantId);
+  }
+
   @Get('invoices/:id/integrity')
   @UseGuards(MerchantSessionGuard, RolesGuard)
   @Roles('owner', 'admin')
@@ -102,6 +113,26 @@ export class InvoicesController {
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
   ): Promise<IntegrityResult> {
     return this.invoices.verifyPdfIntegrity(id);
+  }
+
+  @Get('invoices/:id/pdf')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  getInvoicePdf(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<{ url: string }> {
+    return this.invoices.getInvoicePdfUrl(id, req.merchant!.merchantId);
+  }
+
+  // One-segment param route — declared AFTER the static `invoices/ar-aging*`
+  // routes so Express does not match `ar-aging` as an `:id`.
+  @Get('invoices/:id')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  getInvoice(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<InvoiceDetail> {
+    return this.invoices.getInvoiceDetail(req.merchant!.merchantId, id);
   }
 
   @Patch('invoices/:id/mark-paid')
@@ -161,6 +192,18 @@ export class InvoicesController {
       );
     }
     return this.invoices.resendInvoiceEmail(id, req.merchant!.merchantId);
+  }
+
+  @Post('invoices/:id/send-reminder')
+  @UseGuards(MerchantSessionGuard, RolesGuard)
+  @Roles('owner', 'admin')
+  @HttpCode(HttpStatus.OK)
+  sendReminder(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<SendReminderResult> {
+    const merchant = req.merchant!;
+    return this.invoices.sendReminder(id, merchant.merchantId, merchant.userId);
   }
 
   // ── Buyer portal ────────────────────────────────────────────────────────

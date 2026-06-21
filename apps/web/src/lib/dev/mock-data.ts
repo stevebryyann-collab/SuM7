@@ -5,13 +5,20 @@ import type {
   BuyerApplication,
   BuyerDetail,
   BuyerSummary,
+  InvoiceAuditEntry,
+  InvoiceDetail,
+  InvoiceLineDetail,
+  InvoicePayment,
   InvoiceSummary,
   MerchantDashboard,
+  OrderDetail,
+  OrderLineDetail,
   OrderSummary,
   PricingOverrideSummary,
   PricingTierConditions,
   PricingTierSummary,
 } from '@/types/api';
+import { DEMO_SHOP_DOMAIN } from './demo';
 
 /**
  * Deterministic Fashion & Apparel sample data for the dev-only demo merchant.
@@ -345,6 +352,8 @@ function order(
   placedDaysAgo: number,
   invoiceStatus: string | null,
   dueInDays: number | null,
+  syncStatus: OrderSummary['syncStatus'],
+  itemCount: number,
 ): OrderSummary {
   const subtotal = (Number(total) / 1.08).toFixed(2);
   const due = dueInDays === null ? null : iso(dueInDays);
@@ -353,6 +362,8 @@ function order(
     shopifyOrderNumber: `#WS-${1000 + n}`,
     buyerCompanyName: company,
     status,
+    syncStatus,
+    itemCount,
     subtotal,
     total,
     currency: 'USD',
@@ -365,22 +376,22 @@ function order(
 }
 
 export const DEMO_ORDERS: OrderSummary[] = [
-  order(1, 'Northwind Outfitters', 'fulfilled', '6480.00', 'net30', 5, 'paid', -25),
-  order(2, 'Coastline Apparel Co.', 'fulfilled', '12450.00', 'net60', 1, 'sent', 59),
-  order(3, 'Maple & Thread Boutique', 'confirmed', '3240.00', 'net30', 3, 'sent', 27),
-  order(4, 'Harbor Lane Denim', 'fulfilled', '4200.00', 'net30', 2, 'partially_paid', 28),
-  order(5, 'Velvet & Oak', 'confirmed', '2150.50', 'net15', 9, 'overdue', -3),
-  order(6, 'Bramble Street Goods', 'pending', '15800.00', 'net30', 47, 'overdue', -17),
-  order(7, 'Solstice Knitwear', 'fulfilled', '1890.00', 'immediate', 21, 'paid', -21),
-  order(8, 'Northwind Outfitters', 'fulfilled', '9120.00', 'net30', 12, 'paid', -18),
-  order(9, 'Coastline Apparel Co.', 'fulfilled', '7380.00', 'net60', 18, 'paid', 12),
-  order(10, 'Aurora Linen Supply', 'confirmed', '1450.00', 'net30', 14, 'draft', 16),
-  order(11, 'Maple & Thread Boutique', 'fulfilled', '3600.00', 'net30', 22, 'paid', -8),
-  order(12, 'Harbor Lane Denim', 'cancelled', '2750.00', 'net30', 30, null, null),
-  order(13, 'Velvet & Oak', 'fulfilled', '4980.00', 'net15', 26, 'paid', -11),
-  order(14, 'Northwind Outfitters', 'confirmed', '11200.00', 'net30', 6, 'sent', 24),
-  order(15, 'Solstice Knitwear', 'pending', '980.00', 'immediate', 1, 'draft', 1),
-  order(16, 'Coastline Apparel Co.', 'fulfilled', '8640.00', 'net60', 33, 'paid', 27),
+  order(1, 'Northwind Outfitters', 'fulfilled', '6480.00', 'net30', 5, 'paid', -25, 'synced', 4),
+  order(2, 'Coastline Apparel Co.', 'fulfilled', '12450.00', 'net60', 1, 'sent', 59, 'synced', 6),
+  order(3, 'Maple & Thread Boutique', 'confirmed', '3240.00', 'net30', 3, 'sent', 27, 'synced', 3),
+  order(4, 'Harbor Lane Denim', 'fulfilled', '4200.00', 'net30', 2, 'partially_paid', 28, 'synced', 5),
+  order(5, 'Velvet & Oak', 'confirmed', '2150.50', 'net15', 9, 'overdue', -3, 'synced', 2),
+  order(6, 'Bramble Street Goods', 'pending', '15800.00', 'net30', 47, 'overdue', -17, 'shopify_orphan', 8),
+  order(7, 'Solstice Knitwear', 'fulfilled', '1890.00', 'immediate', 21, 'paid', -21, 'synced', 2),
+  order(8, 'Northwind Outfitters', 'fulfilled', '9120.00', 'net30', 12, 'paid', -18, 'synced', 5),
+  order(9, 'Coastline Apparel Co.', 'fulfilled', '7380.00', 'net60', 18, 'paid', 12, 'synced', 4),
+  order(10, 'Aurora Linen Supply', 'confirmed', '1450.00', 'net30', 14, 'draft', 16, 'sync_pending', 2),
+  order(11, 'Maple & Thread Boutique', 'fulfilled', '3600.00', 'net30', 22, 'paid', -8, 'synced', 3),
+  order(12, 'Harbor Lane Denim', 'cancelled', '2750.00', 'net30', 30, null, null, 'synced', 3),
+  order(13, 'Velvet & Oak', 'fulfilled', '4980.00', 'net15', 26, 'paid', -11, 'synced', 4),
+  order(14, 'Northwind Outfitters', 'confirmed', '11200.00', 'net30', 6, 'sent', 24, 'synced', 7),
+  order(15, 'Solstice Knitwear', 'pending', '980.00', 'immediate', 1, 'draft', 1, 'sync_pending', 1),
+  order(16, 'Coastline Apparel Co.', 'fulfilled', '8640.00', 'net60', 33, 'paid', 27, 'synced', 5),
 ];
 
 // ── Invoices (REST /invoices) ───────────────────────────────────────────────
@@ -394,6 +405,7 @@ function invoice(
   dueInDays: number,
   issuedDaysAgo: number | null,
   lastReminderDaysAgo: number | null,
+  reminderCount: number,
 ): InvoiceSummary {
   return {
     id: `invoice-${String(n).padStart(2, '0')}`,
@@ -405,25 +417,256 @@ function invoice(
     dueDate: iso(dueInDays),
     issuedAt: issuedDaysAgo === null ? null : iso(-issuedDaysAgo),
     lastReminderAt: lastReminderDaysAgo === null ? null : iso(-lastReminderDaysAgo),
+    reminderCount,
     createdAt: iso(-(issuedDaysAgo ?? 1)),
   };
 }
 
 export const DEMO_INVOICES: InvoiceSummary[] = [
-  invoice(1, 'Coastline Apparel Co.', 'sent', '12450.00', '0.00', 59, 1, null),
-  invoice(2, 'Maple & Thread Boutique', 'sent', '3240.00', '0.00', 27, 3, null),
-  invoice(3, 'Harbor Lane Denim', 'partially_paid', '4200.00', '2000.00', 28, 2, 9),
-  invoice(4, 'Velvet & Oak', 'overdue', '2150.50', '0.00', -3, 18, 4),
-  invoice(5, 'Bramble Street Goods', 'overdue', '15800.00', '0.00', -17, 47, 12),
-  invoice(6, 'Northwind Outfitters', 'paid', '6480.00', '6480.00', -25, 30, null),
-  invoice(7, 'Solstice Knitwear', 'paid', '1890.00', '1890.00', -14, 21, null),
-  invoice(8, 'Northwind Outfitters', 'paid', '9120.00', '9120.00', -3, 18, null),
-  invoice(9, 'Coastline Apparel Co.', 'viewed', '7380.00', '0.00', 12, 18, null),
-  invoice(10, 'Aurora Linen Supply', 'draft', '1450.00', '0.00', 16, null, null),
-  invoice(11, 'Maple & Thread Boutique', 'paid', '3600.00', '3600.00', -8, 22, null),
-  invoice(12, 'Velvet & Oak', 'paid', '4980.00', '4980.00', -11, 26, null),
-  invoice(13, 'Northwind Outfitters', 'sent', '11200.00', '0.00', 24, 6, null),
-  invoice(14, 'Solstice Knitwear', 'draft', '980.00', '0.00', 1, null, null),
-  invoice(15, 'Coastline Apparel Co.', 'paid', '8640.00', '8640.00', -6, 33, null),
-  invoice(16, 'Harbor Lane Denim', 'void', '2750.00', '0.00', -2, 30, null),
+  invoice(1, 'Coastline Apparel Co.', 'sent', '12450.00', '0.00', 59, 1, null, 0),
+  invoice(2, 'Maple & Thread Boutique', 'sent', '3240.00', '0.00', 27, 3, null, 0),
+  invoice(3, 'Harbor Lane Denim', 'partially_paid', '4200.00', '2000.00', 28, 2, 9, 1),
+  invoice(4, 'Velvet & Oak', 'overdue', '2150.50', '0.00', -3, 18, 4, 1),
+  invoice(5, 'Bramble Street Goods', 'overdue', '15800.00', '0.00', -17, 47, 12, 2),
+  invoice(6, 'Northwind Outfitters', 'paid', '6480.00', '6480.00', -25, 30, null, 0),
+  invoice(7, 'Solstice Knitwear', 'paid', '1890.00', '1890.00', -14, 21, null, 0),
+  invoice(8, 'Northwind Outfitters', 'paid', '9120.00', '9120.00', -3, 18, null, 0),
+  invoice(9, 'Coastline Apparel Co.', 'viewed', '7380.00', '0.00', 12, 18, null, 0),
+  invoice(10, 'Aurora Linen Supply', 'draft', '1450.00', '0.00', 16, null, null, 0),
+  invoice(11, 'Maple & Thread Boutique', 'paid', '3600.00', '3600.00', -8, 22, null, 0),
+  invoice(12, 'Velvet & Oak', 'paid', '4980.00', '4980.00', -11, 26, null, 0),
+  invoice(13, 'Northwind Outfitters', 'sent', '11200.00', '0.00', 24, 6, null, 0),
+  invoice(14, 'Solstice Knitwear', 'draft', '980.00', '0.00', 1, null, null, 0),
+  invoice(15, 'Coastline Apparel Co.', 'paid', '8640.00', '8640.00', -6, 33, null, 0),
+  invoice(16, 'Harbor Lane Denim', 'void', '2750.00', '0.00', -2, 30, null, 0),
 ];
+
+// ── Order + invoice detail (REST GET /orders/:id, GET /invoices/:id) ─────────
+//
+// The list endpoints return summaries; the detail endpoints add line items and
+// (for invoices) the derived payment history + audit trail. Everything is built
+// deterministically from the summary fixtures so the totals reconcile with the
+// list and the order ⇆ invoice cross-links resolve to real ids in the demo.
+
+/** A tiny apparel catalog used to synthesize believable line items. */
+const CATALOG: Array<{ product: string; variant: string; sku: string }> = [
+  { product: 'Merino Crew Sweater', variant: 'Oatmeal / M', sku: 'MCS-OAT-M' },
+  { product: 'Tailored Oxford Shirt', variant: 'White / L', sku: 'TOS-WHT-L' },
+  { product: 'Selvedge Denim Jean', variant: 'Indigo / 32', sku: 'SDJ-IND-32' },
+  { product: 'Lambswool Beanie', variant: 'Charcoal', sku: 'LWB-CHR' },
+  { product: 'Cotton Chino', variant: 'Stone / 34', sku: 'CCH-STN-34' },
+  { product: 'Linen Camp Shirt', variant: 'Sage / M', sku: 'LCS-SAG-M' },
+  { product: 'Cashmere Scarf', variant: 'Camel', sku: 'CSF-CAM' },
+  { product: 'Quilted Field Jacket', variant: 'Olive / L', sku: 'QFJ-OLV-L' },
+];
+
+const ORDER_TIER_TYPES: ReadonlyArray<string | null> = [
+  'percentage_off',
+  'volume_breaks',
+  'fixed_price_list',
+  null,
+];
+
+/** Split `subtotal` into `count` line totals (2dp) that sum exactly to it. */
+function splitTotal(subtotal: number, count: number): number[] {
+  const n = Math.max(1, count);
+  const cents = Math.round(subtotal * 100);
+  const base = Math.floor(cents / n);
+  const parts: number[] = Array.from({ length: n }, () => base);
+  let remainder = cents - base * n;
+  let i = 0;
+  while (remainder > 0) {
+    parts[i] = (parts[i] ?? 0) + 1;
+    i = (i + 1) % n;
+    remainder -= 1;
+  }
+  return parts.map((c) => c / 100);
+}
+
+function buildOrderLines(subtotal: number, count: number, seed: number, currency: string): OrderLineDetail[] {
+  return splitTotal(subtotal, count).map((lineTotal, i) => {
+    const item = CATALOG[(seed + i) % CATALOG.length] ?? CATALOG[0]!;
+    const quantity = 6 + ((seed + i) % 4) * 6; // 6, 12, 18 or 24
+    const unitPrice = quantity > 0 ? lineTotal / quantity : lineTotal;
+    const tierType = ORDER_TIER_TYPES[(seed + i) % ORDER_TIER_TYPES.length] ?? null;
+    const discountPct =
+      tierType === 'percentage_off' ? '20.00' : tierType === 'volume_breaks' ? '12.00' : null;
+    return {
+      shopifyVariantId: `gid://shopify/ProductVariant/${42000 + seed * 10 + i}`,
+      shopifyProductId: `gid://shopify/Product/${8900 + seed * 10 + i}`,
+      productTitle: item.product,
+      variantTitle: item.variant,
+      sku: item.sku,
+      quantity,
+      unitPrice: unitPrice.toFixed(2),
+      lineTotal: lineTotal.toFixed(2),
+      appliedTierType: tierType,
+      discountPct,
+      currency,
+    };
+  });
+}
+
+function buyerIdForCompany(company: string | null): string {
+  return DEMO_BUYERS.find((b) => b.companyName === company)?.buyerId ?? 'buyer-01';
+}
+
+function buyerEmailForCompany(company: string | null): string | null {
+  return DEMO_BUYERS.find((b) => b.companyName === company)?.email ?? null;
+}
+
+/** Generic bill-to address lines (no PII) for the demo detail views. */
+const DEMO_ADDRESS_LINES = ['128 Market Street, Suite 400', 'San Francisco, CA, 94105', 'United States'];
+
+function seedFromId(id: string): number {
+  const n = Number.parseInt(id.replace(/\D/g, ''), 10);
+  return Number.isFinite(n) ? n : 1;
+}
+
+function invoiceLinkForOrder(summary: OrderSummary): OrderDetail['invoice'] {
+  const match = DEMO_INVOICES.find(
+    (inv) => inv.buyerCompanyName === summary.buyerCompanyName && inv.total === summary.total,
+  );
+  if (!match) return null;
+  return {
+    id: match.id,
+    invoiceNumber: match.invoiceNumber,
+    status: match.status,
+    dueDate: match.dueDate,
+    total: match.total,
+    amountPaid: match.amountPaid,
+  };
+}
+
+function buildOrderDetail(summary: OrderSummary): OrderDetail {
+  const subtotal = Number(summary.subtotal);
+  const tax = (Number(summary.total) - subtotal).toFixed(2);
+  const seed = seedFromId(summary.id);
+  return {
+    id: summary.id,
+    shopifyOrderId: String(5500000000 + seed),
+    shopifyOrderNumber: summary.shopifyOrderNumber,
+    buyerId: buyerIdForCompany(summary.buyerCompanyName),
+    buyerCompanyName: summary.buyerCompanyName,
+    status: summary.status,
+    syncStatus: summary.syncStatus,
+    subtotal: summary.subtotal,
+    taxAmount: tax,
+    shippingAmount: '0.00',
+    total: summary.total,
+    currency: summary.currency,
+    paymentTerms: summary.paymentTerms,
+    dueDate: summary.dueDate,
+    notes: null,
+    createdAt: summary.createdAt,
+    lineItems: buildOrderLines(subtotal, summary.itemCount, seed, summary.currency),
+    invoice: invoiceLinkForOrder(summary),
+  };
+}
+
+export const DEMO_ORDER_DETAILS: Record<string, OrderDetail> = Object.fromEntries(
+  DEMO_ORDERS.map((o): [string, OrderDetail] => [o.id, buildOrderDetail(o)]),
+);
+
+function buildInvoiceDetail(summary: InvoiceSummary): InvoiceDetail {
+  const subtotal = Number(summary.total) / 1.08;
+  const tax = (Number(summary.total) - subtotal).toFixed(2);
+  const seed = seedFromId(summary.id);
+  const order = DEMO_ORDERS.find(
+    (o) => o.buyerCompanyName === summary.buyerCompanyName && o.total === summary.total,
+  );
+  const itemCount = order?.itemCount ?? 3;
+  const lineItems: InvoiceLineDetail[] = buildOrderLines(subtotal, itemCount, seed, 'USD').map((li) => ({
+    productTitle: li.productTitle,
+    variantTitle: li.variantTitle,
+    sku: li.sku,
+    quantity: li.quantity,
+    unitPrice: li.unitPrice,
+    lineTotal: li.lineTotal,
+  }));
+
+  const paidAtIso = summary.lastReminderAt ?? summary.issuedAt ?? summary.createdAt;
+  const payments: InvoicePayment[] = [];
+  if (Number(summary.amountPaid) > 0) {
+    payments.push({
+      amount: summary.amountPaid,
+      paidAt: paidAtIso,
+      reference: summary.status === 'partially_paid' ? 'ACH-PARTIAL-0098' : 'WIRE-7741',
+      recordedBy: 'Demo Owner',
+    });
+  }
+
+  const audit: InvoiceAuditEntry[] = [
+    { id: `aud-${seed}-created`, action: 'created', actorType: 'system', actorLabel: null, createdAt: summary.createdAt },
+  ];
+  if (summary.issuedAt) {
+    audit.push({ id: `aud-${seed}-sent`, action: 'sent', actorType: 'system', actorLabel: null, createdAt: summary.issuedAt });
+  }
+  if (summary.reminderCount > 0 && summary.lastReminderAt) {
+    audit.push({
+      id: `aud-${seed}-reminder`,
+      action: 'reminder_sent',
+      actorType: 'merchant_user',
+      actorLabel: 'Demo Owner',
+      createdAt: summary.lastReminderAt,
+    });
+  }
+  if (payments.length > 0) {
+    audit.push({
+      id: `aud-${seed}-paid`,
+      action: 'paid',
+      actorType: 'merchant_user',
+      actorLabel: 'Demo Owner',
+      createdAt: paidAtIso,
+    });
+  }
+  if (summary.status === 'void') {
+    audit.push({
+      id: `aud-${seed}-void`,
+      action: 'voided',
+      actorType: 'merchant_user',
+      actorLabel: 'Demo Owner',
+      createdAt: summary.issuedAt ?? summary.createdAt,
+    });
+  }
+  audit.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+  const outstanding = Math.max(Number(summary.total) - Number(summary.amountPaid), 0).toFixed(2);
+
+  return {
+    id: summary.id,
+    invoiceNumber: summary.invoiceNumber,
+    status: summary.status,
+    orderId: order?.id ?? null,
+    shopifyOrderNumber: order?.shopifyOrderNumber ?? null,
+    buyerId: buyerIdForCompany(summary.buyerCompanyName),
+    buyerCompanyName: summary.buyerCompanyName,
+    buyerEmail: buyerEmailForCompany(summary.buyerCompanyName),
+    buyerAddressLines: DEMO_ADDRESS_LINES,
+    merchantName: DEMO_SHOP_DOMAIN,
+    invoiceDate: summary.issuedAt ?? summary.createdAt,
+    dueDate: summary.dueDate,
+    paymentTerms: order?.paymentTerms ?? 'net30',
+    subtotal: subtotal.toFixed(2),
+    taxAmount: tax,
+    total: summary.total,
+    amountPaid: summary.amountPaid,
+    outstanding,
+    currency: 'USD',
+    sentAt: summary.issuedAt,
+    firstViewedAt: summary.status === 'viewed' || summary.status === 'paid' ? summary.issuedAt : null,
+    paidAt: summary.status === 'paid' ? paidAtIso : null,
+    voidedAt: summary.status === 'void' ? (summary.issuedAt ?? summary.createdAt) : null,
+    voidReason: summary.status === 'void' ? 'Duplicate of a corrected invoice.' : null,
+    reminderCount: summary.reminderCount,
+    lastReminderAt: summary.lastReminderAt,
+    createdAt: summary.createdAt,
+    lineItems,
+    payments,
+    auditTrail: audit,
+  };
+}
+
+export const DEMO_INVOICE_DETAILS: Record<string, InvoiceDetail> = Object.fromEntries(
+  DEMO_INVOICES.map((inv): [string, InvoiceDetail] => [inv.id, buildInvoiceDetail(inv)]),
+);

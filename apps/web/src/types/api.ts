@@ -160,6 +160,8 @@ export interface OrderSummary {
   shopifyOrderNumber: string | null;
   buyerCompanyName: string | null;
   status: string;
+  syncStatus: string;
+  itemCount: number;
   subtotal: string;
   total: string;
   currency: string;
@@ -235,7 +237,69 @@ export interface InvoiceSummary {
   dueDate: string;
   issuedAt: string | null;
   lastReminderAt: string | null;
+  reminderCount: number;
   createdAt: string;
+}
+
+/** One line item rendered on the invoice detail / preview. */
+export interface InvoiceLineDetail {
+  productTitle: string;
+  variantTitle: string | null;
+  sku: string | null;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+}
+
+/** One recorded payment against an invoice (derived from the audit trail). */
+export interface InvoicePayment {
+  amount: string;
+  paidAt: string;
+  reference: string | null;
+  recordedBy: string | null;
+}
+
+/** One audit-trail entry on the invoice detail view. */
+export interface InvoiceAuditEntry {
+  id: string;
+  action: string;
+  actorType: string;
+  actorLabel: string | null;
+  createdAt: string;
+}
+
+/** Full invoice detail (`GET /invoices/:id`). */
+export interface InvoiceDetail {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus | string;
+  orderId: string | null;
+  shopifyOrderNumber: string | null;
+  buyerId: string;
+  buyerCompanyName: string | null;
+  buyerEmail: string | null;
+  buyerAddressLines: string[];
+  merchantName: string;
+  invoiceDate: string;
+  dueDate: string;
+  paymentTerms: PaymentTerms | null;
+  subtotal: string;
+  taxAmount: string;
+  total: string;
+  amountPaid: string;
+  outstanding: string;
+  currency: string;
+  sentAt: string | null;
+  firstViewedAt: string | null;
+  paidAt: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  reminderCount: number;
+  lastReminderAt: string | null;
+  createdAt: string;
+  lineItems: InvoiceLineDetail[];
+  payments: InvoicePayment[];
+  auditTrail: InvoiceAuditEntry[];
 }
 
 // ── Catalog (buyer portal) ──────────────────────────────────────────────

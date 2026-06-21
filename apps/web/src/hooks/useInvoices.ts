@@ -1,10 +1,16 @@
 'use client';
 
-import { useInfiniteQuery, type UseInfiniteQueryResult, type InfiniteData } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useQuery,
+  type InfiniteData,
+  type UseInfiniteQueryResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import type { PaginatedResponse } from '@b2b/shared/types';
 import { merchantFetch } from '@/lib/api/merchant';
 import { buyerFetch } from '@/lib/api/buyer';
-import type { InvoiceSummary } from '@/types/api';
+import type { InvoiceDetail, InvoiceSummary } from '@/types/api';
 
 export type PortalMode = 'merchant' | 'buyer';
 
@@ -20,6 +26,7 @@ export const invoiceKeys = {
   all: ['invoices'] as const,
   list: (params: UseInvoicesParams) =>
     [...invoiceKeys.all, params.mode, params.status ?? '', params.agingBucket ?? '', params.buyerId ?? ''] as const,
+  detail: (id: string) => [...invoiceKeys.all, 'detail', id] as const,
 };
 
 /** Compose the cursor-paginated invoices path for the chosen portal/filters. */
@@ -53,5 +60,18 @@ export function useInvoices(
       client<PaginatedResponse<InvoiceSummary>>(invoicesPath(params, pageParam), { signal }),
     getNextPageParam: (lastPage) =>
       lastPage.pageInfo.hasNextPage ? lastPage.pageInfo.endCursor : undefined,
+  });
+}
+
+/**
+ * Single invoice detail for the merchant admin (`GET /invoices/:id`). Carries the
+ * header, line items, derived payment history and the recent audit trail.
+ * Disabled until an id is present.
+ */
+export function useInvoice(id: string | undefined): UseQueryResult<InvoiceDetail, Error> {
+  return useQuery({
+    queryKey: invoiceKeys.detail(id ?? ''),
+    enabled: Boolean(id),
+    queryFn: ({ signal }) => merchantFetch<InvoiceDetail>(`/invoices/${id}`, { signal }),
   });
 }

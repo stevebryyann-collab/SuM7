@@ -62,6 +62,12 @@ export function formatDateShort(value: string | Date | null | undefined): string
   return date ? format(date, 'MMM d') : '';
 }
 
+/** Date + time for audit trails / payment history, e.g. `Jun 15, 2026, 2:30 PM`. */
+export function formatDateTime(value: string | Date | null | undefined): string {
+  const date = toDate(value);
+  return date ? format(date, 'MMM d, yyyy, h:mm a') : '—';
+}
+
 /** Relative age for "last activity" columns, e.g. `3 days ago`. */
 export function formatRelative(value: string | Date | null | undefined): string {
   const date = toDate(value);
