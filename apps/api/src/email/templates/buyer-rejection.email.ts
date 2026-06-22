@@ -13,11 +13,11 @@ export function renderBuyerRejectionEmail(model: BuyerRejectionEmailModel): Rend
     p(`Hello ${model.buyerCompany},`),
     p(`Thank you for your interest in a wholesale account with ${model.merchantName}. After reviewing your application, we are unable to approve it at this time.`),
     model.rejectionReason ? quote(model.rejectionReason) : '',
-    muted(`If you believe this was a mistake, contact ${model.merchantEmail} and we'll be glad to take another look.`),
+    muted(`If you have questions, contact ${model.merchantEmail} and we'll be glad to help.`),
   ].join('');
 
   return {
-    subject: `Update on your application to ${model.merchantName}`,
+    subject: `Update on your wholesale application — ${model.merchantName}`,
     html: layout('Application update', body),
   };
 }

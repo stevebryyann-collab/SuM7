@@ -1,34 +1,27 @@
-'use client';
-
-import { SignUp } from '@clerk/nextjs';
+import { getMerchantContextServer } from '@/lib/api/buyer-server';
+import { SignUpCard } from './sign-up-card';
 
 /**
- * Buyer signup. Clerk handles all credential collection, email verification and
- * brute-force protection — we never see a password. After signup the buyer is
- * authenticated (but not yet approved) and is sent to the wholesale application.
+ * Buyer signup. Server component: resolves the white-label merchant name from the
+ * signed App-Proxy context for the heading, then mounts the Clerk sign-up widget
+ * (a client component inside the buyer-auth ClerkProvider). After creating an
+ * account the buyer completes their business application at /portal/apply.
  */
-export default function BuyerSignupPage(): JSX.Element {
+export default async function BuyerSignupPage(): Promise<JSX.Element> {
+  const context = await getMerchantContextServer();
+  const subheading = context
+    ? `Join ${context.displayName}'s wholesale program.`
+    : 'Create your wholesale account.';
+
   return (
-    <SignUp
-      routing="path"
-      path="/buyer-signup"
-      signInUrl="/buyer-login"
-      forceRedirectUrl="/portal/apply"
-      appearance={{
-        variables: {
-          colorPrimary: '#2563eb',
-          colorBackground: '#ffffff',
-          colorText: '#111827',
-          borderRadius: '0.5rem',
-          fontFamily: 'inherit',
-        },
-        elements: {
-          card: 'shadow-sm border border-gray-200',
-          headerSubtitle: 'text-gray-500',
-          formButtonPrimary: 'bg-accent border border-accent-dark hover:brightness-100 active:brightness-95 normal-case',
-          footerActionLink: 'text-accent',
-        },
-      }}
-    />
+    <div className="flex flex-col items-center gap-4">
+      <div className="text-center">
+        <h1 className="text-lg font-semibold text-gray-900">Create your wholesale account</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          {subheading} After creating your account, you&apos;ll complete your business application.
+        </p>
+      </div>
+      <SignUpCard />
+    </div>
   );
 }

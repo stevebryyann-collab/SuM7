@@ -13,7 +13,6 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import {
   ApproveBuyerSchema,
   BuyerRegisterApplicationSchema,
@@ -38,25 +37,17 @@ import {
   ClerkAuthenticatedGuard,
   type BuyerIdentityRequest,
 } from '../auth/guards/clerk-authenticated.guard';
+import { MerchantResolverService } from '../auth/merchant-resolver.service';
 import {
   BuyersService,
   type ApplicationListItem,
   type ApplicationPii,
   type ApplicationResult,
+  type ApplicationStatusView,
   type BuyerDetail,
   type BuyerSummary,
+  type MerchantContextView,
 } from './buyers.service';
-
-/** Read one cookie from the raw header (App Proxy sets `__merchant_id`). */
-function readCookie(req: Request, name: string): string | null {
-  const cookies = req.headers.cookie;
-  if (!cookies) return null;
-  for (const part of cookies.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return decodeURIComponent(rest.join('='));
-  }
-  return null;
-}
 
 /** Buyer filters for the merchant list endpoint (validated loosely; ids checked in service). */
 interface BuyerListQuery {
@@ -84,14 +75,32 @@ interface BuyerListQuery {
  */
 @Controller()
 export class BuyersController {
-  constructor(private readonly buyers: BuyersService) {}
+  constructor(
+    private readonly buyers: BuyersService,
+    private readonly merchantResolver: MerchantResolverService,
+  ) {}
+
+  // ── Buyer: merchant context (white-label branding, pre-auth) ─────────────
+
+  /**
+   * Resolve the buyer's merchant tenant from the signed `X-Merchant-Context`
+   * header. Used by the buyer portal shell (login/signup/apply headings) for
+   * white-label branding before a Clerk session exists, so it needs no Clerk
+   * guard — only a valid App-Proxy context token.
+   */
+  @Get('buyer/merchant-context')
+  getMerchantContext(@Req() req: BuyerIdentityRequest): Promise<MerchantContextView> {
+    return this.merchantResolver
+      .resolveFromRequest(req)
+      .then(({ merchantId }) => this.buyers.getMerchantContext(merchantId));
+  }
 
   // ── Buyer: pre-approval application ──────────────────────────────────────
 
   @Post('buyer/apply')
   @UseGuards(ClerkAuthenticatedGuard)
   @HttpCode(HttpStatus.CREATED)
-  apply(
+  async apply(
     @Req() req: BuyerIdentityRequest,
     @Body(new ZodValidationPipe(BuyerRegisterApplicationSchema)) dto: BuyerRegisterApplicationInput,
   ): Promise<ApplicationResult> {
@@ -99,22 +108,33 @@ export class BuyersController {
     if (!identity) {
       throw new UnauthorizedException({ code: 'MISSING_TOKEN', message: 'Not authenticated' });
     }
-    const merchantId = readCookie(req, '__merchant_id');
-    if (!merchantId) {
-      throw new UnauthorizedException({
-        code: 'NO_MERCHANT_CONTEXT',
-        message: 'Missing merchant context cookie',
-      });
-    }
+    const { merchantId } = await this.merchantResolver.resolveFromRequest(req);
     const ipAddress = req.ip ?? 'unknown';
     const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : 'unknown';
     return this.buyers.submitRegistrationApplication(
       merchantId,
       identity.clerkUserId,
+      identity.email,
       dto,
       ipAddress,
       userAgent,
     );
+  }
+
+  /**
+   * The buyer's application/relationship status for THIS merchant. Drives the
+   * portal's pending / declined / approved routing. Read-only, no PII; the buyer
+   * is Clerk-authenticated but not necessarily approved.
+   */
+  @Get('buyer/application-status')
+  @UseGuards(ClerkAuthenticatedGuard)
+  async applicationStatus(@Req() req: BuyerIdentityRequest): Promise<ApplicationStatusView> {
+    const identity = req.buyerIdentity;
+    if (!identity) {
+      throw new UnauthorizedException({ code: 'MISSING_TOKEN', message: 'Not authenticated' });
+    }
+    const { merchantId } = await this.merchantResolver.resolveFromRequest(req);
+    return this.buyers.getApplicationStatusForBuyer(merchantId, identity.clerkUserId);
   }
 
   // ── Merchant: buyers list ────────────────────────────────────────────────

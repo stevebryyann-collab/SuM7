@@ -31,6 +31,9 @@ const MERCHANT_PREFIXES = [
 // /apps/wholesale/* → /portal/*), so they never collide with the merchant routes.
 const BUYER_PREFIXES = ['/portal'];
 
+/** Signed merchant-context token lifetime (24h; re-minted on each proxied entry). */
+const MERCHANT_CTX_TTL_SECONDS = 24 * 60 * 60;
+
 function isMerchantPath(pathname: string): boolean {
   return MERCHANT_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
@@ -45,6 +48,39 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   let mismatch = 0;
   for (let i = 0; i < a.length; i += 1) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return mismatch === 0;
+}
+
+/** base64url-encode bytes (no padding) — matches Node's `Buffer.toString('base64url')`. */
+function base64url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Mint a signed merchant-context token (Edge runtime, Web Crypto). Wire format
+ * is identical to the API's `verifyMerchantContextToken`:
+ *   base64url(JSON{shop,iat,exp}) + "." + base64url(HMAC_SHA256(payload, secret))
+ * The browser replays this as `X-Merchant-Context` so the cross-origin API can
+ * resolve the tenant without a cross-domain cookie.
+ */
+async function signMerchantContextToken(
+  shop: string,
+  secret: string,
+  ttlSeconds: number,
+): Promise<string> {
+  const iat = Math.floor(Date.now() / 1000);
+  const claims = { shop: shop.trim().toLowerCase(), iat, exp: iat + ttlSeconds };
+  const payload = base64url(new TextEncoder().encode(JSON.stringify(claims)));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  return `${payload}.${base64url(new Uint8Array(sig))}`;
 }
 
 /** Verify a Shopify App-Proxy signature over the request's query params. */
@@ -86,23 +122,28 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
       return new NextResponse('Invalid app proxy signature', { status: 401 });
     }
     const response = NextResponse.next();
-    // __merchant_domain is read by the API guard; __merchant_id (when forwarded
-    // by the proxy as logged_in_customer's shop id) scopes client-side requests.
+    // __merchant_domain (httpOnly) keeps the verified shop for server reads.
     response.cookies.set('__merchant_domain', shop, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
     });
-    const merchantId = searchParams.get('merchant_id');
-    if (merchantId) {
-      response.cookies.set('__merchant_id', merchantId, {
-        httpOnly: false, // read by the buyer layout to satisfy order validation
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        path: '/',
-      });
-    }
+    // __merchant_ctx is the SIGNED tenant carrier. The cross-origin API cannot
+    // read web-origin cookies, so the browser replays this token as the
+    // `X-Merchant-Context` header (buyerFetch) and server components read it for
+    // white-label branding. It is httpOnly:false ON PURPOSE — it carries no
+    // authority on its own (the API still requires an approved Clerk relationship)
+    // and the client must be able to read it to attach the header. `secret` is
+    // truthy here (an empty secret would have failed verification above).
+    const ctx = await signMerchantContextToken(shop, secret, MERCHANT_CTX_TTL_SECONDS);
+    response.cookies.set('__merchant_ctx', ctx, {
+      httpOnly: false,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: MERCHANT_CTX_TTL_SECONDS,
+    });
     return response;
   }
 

@@ -134,7 +134,10 @@
       "Bash(pnpm --filter=@b2b/api test -- --testPathPattern=pricing)",
       "Bash(npx jest *)",
       "Bash(echo \"web typecheck exit=$?\")",
-      "Bash(grep -iE 'node_modules|\\\\.env$')"
+      "Bash(grep -iE 'node_modules|\\\\.env$')",
+      "Bash(xargs ls -la)",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
+      "Bash(pnpm *)"
     ]
   }
 }

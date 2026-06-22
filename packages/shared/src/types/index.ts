@@ -137,3 +137,41 @@ export interface DecodedCursor {
   /** Tiebreaker id of the last row. */
   id: string;
 }
+
+// ── Buyer portal (white-label) ─────────────────────────────────────────
+
+/**
+ * Derive a human-readable merchant display name from a Shopify domain. Strips
+ * the `.myshopify.com` suffix and title-cases the handle (`acme-apparel` →
+ * `Acme Apparel`). Used for the white-label buyer portal headings/emails where
+ * no dedicated store-name column exists. Pure + framework-agnostic so the web
+ * edge, web server components, and the API all produce identical output.
+ */
+export function merchantDisplayNameFromDomain(domain: string | null | undefined): string {
+  const raw = (domain ?? '').trim().toLowerCase();
+  if (!raw) return 'Wholesale';
+  const handle = raw.replace(/\.myshopify\.com$/, '').split('.')[0] ?? raw;
+  const words = handle
+    .split(/[-_]+/)
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.length > 0 ? words.join(' ') : 'Wholesale';
+}
+
+/** White-label merchant branding returned by `GET /buyer/merchant-context`. */
+export interface MerchantContextDto {
+  merchantId: string;
+  shopDomain: string;
+  displayName: string;
+  contactEmail: string;
+}
+
+/** The buyer's per-merchant application state, from `GET /buyer/application-status`. */
+export interface ApplicationStatusDto {
+  status: 'none' | 'pending' | 'approved' | 'rejected' | 'suspended';
+  companyName: string | null;
+  appliedAt: string | null;
+  reviewedAt: string | null;
+  merchantDisplayName: string;
+  contactEmail: string;
+}

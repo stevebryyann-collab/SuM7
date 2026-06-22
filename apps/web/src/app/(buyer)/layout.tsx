@@ -1,17 +1,18 @@
 import type { ReactNode } from 'react';
-import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { BuyerProviders } from '@/components/providers/BuyerProviders';
 import { BuyerNav } from '@/components/buyer/BuyerNav';
+import { getMerchantContextServer } from '@/lib/api/buyer-server';
 
 /**
- * Buyer portal route-group layout. Resolves the merchant tenant from the
- * `__merchant_id` cookie (set by the App-Proxy edge middleware) and wraps the
- * subtree in Clerk + the buyer token bridge. White-labeled: the buyer only ever
- * sees the merchant's storefront context, never the platform brand.
+ * Buyer portal route-group layout. Resolves the merchant tenant from the signed
+ * `__merchant_ctx` App-Proxy token (verified server-side by the API) and wraps
+ * the subtree in Clerk + the buyer token bridge. White-labeled: the buyer only
+ * ever sees the merchant's storefront context, never the platform brand.
  */
-export default function BuyerLayout({ children }: { children: ReactNode }): JSX.Element {
-  const merchantId = cookies().get('__merchant_id')?.value ?? null;
+export default async function BuyerLayout({ children }: { children: ReactNode }): Promise<JSX.Element> {
+  const context = await getMerchantContextServer();
+  const merchantId = context?.merchantId ?? null;
 
   return (
     <BuyerProviders merchantId={merchantId}>
