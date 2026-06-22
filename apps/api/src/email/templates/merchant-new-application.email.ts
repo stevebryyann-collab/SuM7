@@ -24,7 +24,7 @@ export function renderMerchantNewApplicationEmail(
   ].join('');
 
   return {
-    subject: `New wholesale application: ${model.applicantCompany}`,
+    subject: `New wholesale application from ${model.applicantCompany}`,
     html: layout('New buyer application', body),
   };
 }

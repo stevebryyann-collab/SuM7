@@ -31,6 +31,25 @@ const GMV_RATE: Record<SubscriptionTier, Decimal> = {
 /** Number of dunning failures before the merchant is suspended. */
 const DUNNING_SUSPEND_THRESHOLD = 3;
 
+/** Flat monthly subscription price per tier (USD, mirrors the Stripe prices). */
+const TIER_FLAT_PRICE: Record<SubscriptionTier, string> = {
+  starter: '29.00',
+  growth: '79.00',
+  pro: '199.00',
+};
+
+/** Current plan snapshot for the billing page (`GET /api/v1/billing/plan`). */
+export interface BillingPlan {
+  tier: SubscriptionTier;
+  status: 'active' | 'trial' | 'inactive';
+  isTrial: boolean;
+  /** Flat monthly price for the current tier, as a 2dp string. */
+  amount: string;
+  priceLabel: string;
+  nextBillingDate: string | null;
+  trialEndsAt: string | null;
+}
+
 /** A breaker-wrapped Stripe call (one network round-trip). */
 type StripeAction<T> = () => Promise<T>;
 
@@ -280,6 +299,7 @@ export class BillingService implements OnModuleInit {
   async handleStripeWebhook(event: Stripe.Event): Promise<void> {
     switch (event.type) {
       case 'invoice.paid':
+      case 'invoice.payment_succeeded':
         await this.onInvoicePaid(event.data.object as Stripe.Invoice);
         break;
       case 'invoice.payment_failed':
@@ -403,6 +423,57 @@ export class BillingService implements OnModuleInit {
       freeThreshold: GMV_FREE_THRESHOLD[tier].toFixed(2),
       billableGmv: billable.toFixed(2),
       estimatedFee: billable.times(GMV_RATE[tier]).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toFixed(2),
+    };
+  }
+
+  /**
+   * Current plan snapshot for the billing page. Status is derived from the
+   * merchant row (there is no `subscriptionStatus` column): an unsubscribed
+   * merchant inside its trial window is `trial`; otherwise `active`/`inactive`
+   * follows `isActive` (the dunning flow flips it). The next billing date comes
+   * from Stripe when a subscription exists, else falls back to the trial end.
+   */
+  async getPlan(merchantId: string): Promise<BillingPlan> {
+    const merchant = await this.merchantContext.runAsSystem(() =>
+      this.prisma.merchant.findUniqueOrThrow({
+        where: { id: merchantId },
+        select: {
+          subscriptionTier: true,
+          subscriptionStripeId: true,
+          isActive: true,
+          trialEndsAt: true,
+        },
+      }),
+    );
+    const tier = merchant.subscriptionTier as SubscriptionTier;
+    const trialActive =
+      !merchant.subscriptionStripeId &&
+      merchant.trialEndsAt !== null &&
+      merchant.trialEndsAt.getTime() > Date.now();
+    const status: BillingPlan['status'] = trialActive ? 'trial' : merchant.isActive ? 'active' : 'inactive';
+
+    let nextBillingDate: string | null = merchant.trialEndsAt ? merchant.trialEndsAt.toISOString() : null;
+    if (merchant.subscriptionStripeId) {
+      try {
+        const subscription = (await this.fire(() =>
+          this.stripe.subscriptions.retrieve(merchant.subscriptionStripeId as string),
+        )) as Stripe.Subscription;
+        if (subscription.current_period_end) {
+          nextBillingDate = new Date(subscription.current_period_end * 1000).toISOString();
+        }
+      } catch (error) {
+        this.logger.warn(`Could not read Stripe period end for ${merchantId}: ${(error as Error).message}`);
+      }
+    }
+
+    return {
+      tier,
+      status,
+      isTrial: trialActive,
+      amount: TIER_FLAT_PRICE[tier],
+      priceLabel: `$${new Money(TIER_FLAT_PRICE[tier]).toNumber()}/mo`,
+      nextBillingDate,
+      trialEndsAt: merchant.trialEndsAt ? merchant.trialEndsAt.toISOString() : null,
     };
   }
 

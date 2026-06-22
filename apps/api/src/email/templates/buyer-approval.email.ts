@@ -4,27 +4,31 @@ export interface BuyerApprovalEmailModel {
   buyerCompany: string;
   merchantName: string;
   paymentTermsLabel: string;
+  pricingTierName: string | null;
   creditLimit: string | null;
   currency: string;
   portalUrl: string;
 }
 
-/** Buyer approved — congratulations, terms, optional credit limit, portal link. */
+/** Buyer approved — congratulations, account details, portal CTA. */
 export function renderBuyerApprovalEmail(model: BuyerApprovalEmailModel): RenderedEmail {
   const rows = [{ label: 'Payment Terms', value: model.paymentTermsLabel }];
   if (model.creditLimit) {
     rows.push({ label: 'Credit Limit', value: `${model.currency} ${model.creditLimit}` });
   }
+  if (model.pricingTierName) {
+    rows.push({ label: 'Pricing Tier', value: model.pricingTierName });
+  }
 
   const body = [
     p(`Congratulations ${model.buyerCompany},`),
-    p(`Your wholesale account with ${model.merchantName} has been approved. You can now place orders through the buyer portal.`),
+    p(`Your wholesale application with ${model.merchantName} has been approved. You can now place orders through the wholesale portal.`),
     keyValues(rows),
-    button('Go to your portal', model.portalUrl),
+    button('Access Wholesale Portal', model.portalUrl),
   ].join('');
 
   return {
-    subject: `You're approved to order with ${model.merchantName}`,
-    html: layout('Account approved', body),
+    subject: `Your wholesale application has been approved — ${model.merchantName}`,
+    html: layout('Application approved', body),
   };
 }

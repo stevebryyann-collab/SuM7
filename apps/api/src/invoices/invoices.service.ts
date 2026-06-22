@@ -5,13 +5,19 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { Decimal } from 'decimal.js';
-import { addDays, format } from 'date-fns';
+import { addDays, format, subDays } from 'date-fns';
 import * as Sentry from '@sentry/node';
-import type { InvoiceStatus } from '@b2b/shared';
+import type {
+  CursorPaginationInput,
+  DecodedCursor,
+  InvoiceStatus,
+  PaginatedResponse,
+} from '@b2b/shared';
 import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { InvoicePdfService } from './invoice-pdf.service';
@@ -24,6 +30,11 @@ const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 }
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const CREDIT_CAS_RETRIES = 3;
 const REMINDER_BATCH = 100;
+/** Max payment reminders per invoice and the minimum gap between them. */
+const REMINDER_MAX = 3;
+const REMINDER_COOLDOWN_DAYS = 7;
+/** Invoice statuses a payment reminder may be sent for. */
+const REMINDABLE_STATUSES: InvoiceStatus[] = ['sent', 'viewed', 'partially_paid', 'overdue'];
 
 export interface GenerateInvoiceParams {
   orderId: string;
@@ -60,6 +71,120 @@ export interface MarkPaidDto {
   reference?: string;
 }
 
+/** Compact invoice row for the merchant AR list + buyer portal invoice list. */
+export interface InvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  buyerCompanyName: string | null;
+  status: InvoiceStatus;
+  total: string;
+  amountPaid: string;
+  dueDate: string;
+  issuedAt: string | null;
+  lastReminderAt: string | null;
+  /** Payment reminders already sent (0–3) — drives the remaining-count UI. */
+  reminderCount: number;
+  createdAt: string;
+}
+
+/** One recorded payment against an invoice, derived from the audit trail. */
+export interface InvoicePayment {
+  amount: string;
+  paidAt: string;
+  reference: string | null;
+  recordedBy: string | null;
+}
+
+/** One audit-trail entry surfaced on the invoice detail view. */
+export interface InvoiceAuditEntry {
+  id: string;
+  action: string;
+  actorType: string;
+  actorLabel: string | null;
+  createdAt: string;
+}
+
+/** One line item rendered on the invoice detail / preview. */
+export interface InvoiceLineDetail {
+  productTitle: string;
+  variantTitle: string | null;
+  sku: string | null;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+}
+
+/**
+ * Full invoice detail for `GET /invoices/:id` — header, bill-to, line items,
+ * derived payment history and the recent audit trail. Status timeline is
+ * computed client-side from the timestamp fields.
+ */
+export interface InvoiceDetail {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  orderId: string | null;
+  shopifyOrderNumber: string | null;
+  buyerId: string;
+  buyerCompanyName: string | null;
+  buyerEmail: string | null;
+  buyerAddressLines: string[];
+  merchantName: string;
+  invoiceDate: string;
+  dueDate: string;
+  paymentTerms: PaymentTerms | null;
+  subtotal: string;
+  taxAmount: string;
+  total: string;
+  amountPaid: string;
+  outstanding: string;
+  currency: string;
+  sentAt: string | null;
+  firstViewedAt: string | null;
+  paidAt: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  reminderCount: number;
+  lastReminderAt: string | null;
+  createdAt: string;
+  lineItems: InvoiceLineDetail[];
+  payments: InvoicePayment[];
+  auditTrail: InvoiceAuditEntry[];
+}
+
+/** One reminder send result. */
+export interface SendReminderResult {
+  sent: boolean;
+  reminderCount: number;
+}
+
+/** Filters for the merchant invoice list (status, AR-aging bucket, buyer). */
+export interface MerchantInvoiceFilters {
+  status?: string;
+  /** One of: `current`, `1-30`, `31-60`, `61-90`, `90-plus`. */
+  agingBucket?: string;
+  buyerId?: string;
+}
+
+/**
+ * AR-aging bucket → due-date window expressed as day-offsets from "now",
+ * matching the getArAging CTE exactly: `gteDays`/`ltDays` are the inclusive
+ * lower / exclusive upper bounds as `subDays(now, n)` (null = open-ended).
+ */
+const AGING_BUCKET_WINDOWS: Record<string, { gteDays: number | null; ltDays: number | null }> = {
+  current: { gteDays: 0, ltDays: null }, // due_date >= now
+  '1-30': { gteDays: 30, ltDays: 0 }, // now-30 <= due_date < now
+  '31-60': { gteDays: 60, ltDays: 30 },
+  '61-90': { gteDays: 90, ltDays: 60 },
+  '90-plus': { gteDays: null, ltDays: 90 }, // due_date < now-90
+};
+
+/** Statuses considered outstanding for AR-aging (mirror of the getArAging CTE). */
+const OUTSTANDING_STATUSES: InvoiceStatus[] = ['sent', 'viewed', 'partially_paid', 'overdue'];
+
+// Single source of truth for the aging-bucket keys; `AgingBucketKey` is derived
+// from it, so the value is referenced only at the type level (hence the disable).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const AGING_BUCKETS = [
   'current',
   'overdue_1_30',
@@ -79,6 +204,21 @@ interface CreditRow {
   id: string;
   creditUsed: Prisma.Decimal;
   creditVersion: number;
+}
+
+/** Selected columns for the invoice list (merchant + buyer). */
+interface InvoiceListRow {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  total: Prisma.Decimal;
+  amountPaid: Prisma.Decimal;
+  dueDate: Date;
+  sentAt: Date | null;
+  lastReminderAt: Date | null;
+  reminderCount: number;
+  createdAt: Date;
+  buyer: { companyName: string };
 }
 
 /**
@@ -468,6 +608,330 @@ export class InvoicesService {
     };
   }
 
+  // ── Invoice detail ─────────────────────────────────────────────────────
+
+  /**
+   * Full invoice detail for the merchant admin. Scoped to the merchant
+   * (application `where` + RLS). Bundles the header, bill-to, the order's line
+   * items, the payment history derived from the audit trail, and the recent
+   * audit entries (with merchant-user actor labels resolved). Throws
+   * `INVOICE_NOT_FOUND` when nothing matches the scope.
+   */
+  async getInvoiceDetail(merchantId: string, invoiceId: string): Promise<InvoiceDetail> {
+    this.assertUuid(merchantId);
+    this.assertUuid(invoiceId);
+
+    return this.merchantContext.run(merchantId, async () => {
+      const invoice = await this.prisma.invoice.findFirst({
+        where: { id: invoiceId, merchantId },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          orderId: true,
+          buyerId: true,
+          invoiceDate: true,
+          dueDate: true,
+          subtotal: true,
+          taxAmount: true,
+          total: true,
+          amountPaid: true,
+          currency: true,
+          sentAt: true,
+          firstViewedAt: true,
+          paidAt: true,
+          voidedAt: true,
+          voidReason: true,
+          reminderCount: true,
+          lastReminderAt: true,
+          createdAt: true,
+          merchant: { select: { shopifyDomain: true } },
+          buyer: { select: { companyName: true, email: true, addressJson: true } },
+          order: {
+            select: {
+              shopifyOrderNumber: true,
+              paymentTerms: true,
+              lineItems: {
+                select: {
+                  productTitle: true,
+                  variantTitle: true,
+                  sku: true,
+                  quantity: true,
+                  unitPrice: true,
+                  lineTotal: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!invoice) {
+        throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+      }
+
+      const auditRows = await this.prisma.auditLog.findMany({
+        where: { entityType: 'invoice', entityId: invoiceId, merchantId },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+        select: {
+          id: true,
+          action: true,
+          actorType: true,
+          actorId: true,
+          oldValueJson: true,
+          newValueJson: true,
+          createdAt: true,
+        },
+      });
+
+      // Resolve merchant-user actor ids → display labels in one query.
+      const actorIds = Array.from(
+        new Set(
+          auditRows
+            .filter((row) => row.actorType === 'merchant_user' && row.actorId)
+            .map((row) => row.actorId as string),
+        ),
+      );
+      const actorLabels = new Map<string, string>();
+      if (actorIds.length > 0) {
+        const users = await this.prisma.merchantUser.findMany({
+          where: { id: { in: actorIds }, merchantId },
+          select: { id: true, firstName: true, lastName: true, email: true },
+        });
+        for (const user of users) {
+          const name = [user.firstName, user.lastName].filter((p) => p && p.length > 0).join(' ');
+          actorLabels.set(user.id, name.length > 0 ? name : user.email);
+        }
+      }
+      const labelFor = (actorType: string, actorId: string | null): string | null => {
+        if (actorType === 'merchant_user' && actorId) return actorLabels.get(actorId) ?? null;
+        return null;
+      };
+
+      // Payment history = audit rows of action 'paid', oldest first; the recorded
+      // amount is the cumulative-paid delta between the old and new audit values.
+      const payments: InvoicePayment[] = auditRows
+        .filter((row) => row.action === 'paid')
+        .map((row) => {
+          const prev = new Money(this.jsonField(row.oldValueJson, 'amountPaid') ?? '0');
+          const next = new Money(this.jsonField(row.newValueJson, 'amountPaid') ?? '0');
+          const delta = next.minus(prev);
+          return {
+            amount: (delta.greaterThan(0) ? delta : next).toFixed(2),
+            paidAt: row.createdAt.toISOString(),
+            reference: this.jsonField(row.newValueJson, 'reference'),
+            recordedBy: labelFor(row.actorType, row.actorId),
+          };
+        })
+        .reverse();
+
+      const auditTrail: InvoiceAuditEntry[] = auditRows.map((row) => ({
+        id: row.id,
+        action: row.action,
+        actorType: row.actorType,
+        actorLabel: labelFor(row.actorType, row.actorId),
+        createdAt: row.createdAt.toISOString(),
+      }));
+
+      const total = new Money(invoice.total.toString());
+      const amountPaid = new Money(invoice.amountPaid.toString());
+      const outstanding = Money.max(total.minus(amountPaid), new Money(0));
+
+      return {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+        orderId: invoice.orderId,
+        shopifyOrderNumber: invoice.order?.shopifyOrderNumber ?? null,
+        buyerId: invoice.buyerId,
+        buyerCompanyName: invoice.buyer?.companyName ?? null,
+        buyerEmail: invoice.buyer?.email ?? null,
+        buyerAddressLines: this.formatAddress(invoice.buyer?.addressJson ?? null),
+        merchantName: invoice.merchant.shopifyDomain,
+        invoiceDate: invoice.invoiceDate.toISOString(),
+        dueDate: invoice.dueDate.toISOString(),
+        paymentTerms: invoice.order?.paymentTerms ?? null,
+        subtotal: invoice.subtotal.toFixed(2),
+        taxAmount: invoice.taxAmount.toFixed(2),
+        total: total.toFixed(2),
+        amountPaid: amountPaid.toFixed(2),
+        outstanding: outstanding.toFixed(2),
+        currency: invoice.currency,
+        sentAt: invoice.sentAt ? invoice.sentAt.toISOString() : null,
+        firstViewedAt: invoice.firstViewedAt ? invoice.firstViewedAt.toISOString() : null,
+        paidAt: invoice.paidAt ? invoice.paidAt.toISOString() : null,
+        voidedAt: invoice.voidedAt ? invoice.voidedAt.toISOString() : null,
+        voidReason: invoice.voidReason,
+        reminderCount: invoice.reminderCount,
+        lastReminderAt: invoice.lastReminderAt ? invoice.lastReminderAt.toISOString() : null,
+        createdAt: invoice.createdAt.toISOString(),
+        lineItems: invoice.order
+          ? invoice.order.lineItems.map((li) => ({
+              productTitle: li.productTitle,
+              variantTitle: li.variantTitle,
+              sku: li.sku,
+              quantity: li.quantity,
+              unitPrice: li.unitPrice.toFixed(2),
+              lineTotal: li.lineTotal.toFixed(2),
+            }))
+          : [],
+        payments,
+        auditTrail,
+      };
+    });
+  }
+
+  // ── Invoice lists (cursor paginated) ──────────────────────────────────
+
+  /**
+   * Merchant AR invoice list. Cursor-paginated (createdAt+id, newest first),
+   * filterable by status, buyer, and AR-aging bucket. The aging-bucket filter
+   * derives a due-date window matching the getArAging CTE and (unless an
+   * explicit status is given) restricts to outstanding invoices.
+   */
+  async listInvoicesForMerchant(
+    merchantId: string,
+    params: CursorPaginationInput & MerchantInvoiceFilters,
+  ): Promise<PaginatedResponse<InvoiceSummary>> {
+    this.assertUuid(merchantId);
+    if (params.buyerId) this.assertUuid(params.buyerId);
+    const cursor = this.decodeCursor(params.cursor);
+
+    const where: Prisma.InvoiceWhereInput = { merchantId };
+    if (params.buyerId) where.buyerId = params.buyerId;
+    if (params.status) where.status = params.status as InvoiceStatus;
+
+    if (params.agingBucket) {
+      const window = AGING_BUCKET_WINDOWS[params.agingBucket];
+      if (!window) {
+        throw new BadRequestException({
+          code: 'INVALID_AGING_BUCKET',
+          message: `Unknown aging bucket: ${params.agingBucket}`,
+        });
+      }
+      const now = new Date();
+      const dueDate: Prisma.DateTimeFilter = {};
+      if (window.gteDays !== null) dueDate.gte = subDays(now, window.gteDays);
+      if (window.ltDays !== null) dueDate.lt = subDays(now, window.ltDays);
+      where.dueDate = dueDate;
+      // Aging is only meaningful for outstanding invoices.
+      if (!params.status) where.status = { in: OUTSTANDING_STATUSES };
+    }
+
+    if (cursor) {
+      where.OR = [
+        { createdAt: { lt: new Date(cursor.createdAt) } },
+        { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
+      ];
+    }
+
+    const rows = await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: params.limit + 1,
+        select: this.invoiceListSelect,
+      }),
+    );
+
+    return this.toInvoicePage(rows, params.limit);
+  }
+
+  /**
+   * Buyer portal invoice list — the buyer's own invoices for the current
+   * merchant tenant only. Cursor-paginated, optionally status-filtered. Tenant +
+   * buyer are taken from the guard, never from the client.
+   */
+  async listInvoicesForBuyer(
+    buyerId: string,
+    merchantId: string,
+    params: CursorPaginationInput & { status?: string },
+  ): Promise<PaginatedResponse<InvoiceSummary>> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+    const cursor = this.decodeCursor(params.cursor);
+
+    const where: Prisma.InvoiceWhereInput = { merchantId, buyerId };
+    if (params.status) where.status = params.status as InvoiceStatus;
+    if (cursor) {
+      where.OR = [
+        { createdAt: { lt: new Date(cursor.createdAt) } },
+        { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
+      ];
+    }
+
+    const rows = await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: params.limit + 1,
+        select: this.invoiceListSelect,
+      }),
+    );
+
+    return this.toInvoicePage(rows, params.limit);
+  }
+
+  /** Shared column projection for invoice-list reads. */
+  private readonly invoiceListSelect = {
+    id: true,
+    invoiceNumber: true,
+    status: true,
+    total: true,
+    amountPaid: true,
+    dueDate: true,
+    sentAt: true,
+    lastReminderAt: true,
+    reminderCount: true,
+    createdAt: true,
+    buyer: { select: { companyName: true } },
+  } satisfies Prisma.InvoiceSelect;
+
+  /** Map raw invoice rows into a cursor-paginated InvoiceSummary page. */
+  private toInvoicePage(rows: InvoiceListRow[], limit: number): PaginatedResponse<InvoiceSummary> {
+    const hasNextPage = rows.length > limit;
+    const page = hasNextPage ? rows.slice(0, limit) : rows;
+    const last = page[page.length - 1];
+    const endCursor =
+      hasNextPage && last
+        ? this.encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+        : null;
+
+    return {
+      data: page.map((row) => ({
+        id: row.id,
+        invoiceNumber: row.invoiceNumber,
+        buyerCompanyName: row.buyer?.companyName ?? null,
+        status: row.status,
+        total: new Money(row.total.toString()).toFixed(2),
+        amountPaid: new Money(row.amountPaid.toString()).toFixed(2),
+        dueDate: row.dueDate.toISOString(),
+        issuedAt: row.sentAt ? row.sentAt.toISOString() : null,
+        lastReminderAt: row.lastReminderAt ? row.lastReminderAt.toISOString() : null,
+        reminderCount: row.reminderCount,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      pageInfo: { hasNextPage, endCursor },
+    };
+  }
+
+  private encodeCursor(cursor: DecodedCursor): string {
+    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
+  }
+
+  private decodeCursor(raw: string | undefined): DecodedCursor | null {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Partial<DecodedCursor>;
+      if (typeof parsed.createdAt === 'string' && typeof parsed.id === 'string') {
+        return { createdAt: parsed.createdAt, id: parsed.id };
+      }
+    } catch {
+      // fall through to the invalid-cursor error
+    }
+    throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Malformed pagination cursor' });
+  }
+
   // ── Scheduled jobs ────────────────────────────────────────────────────
 
   @Cron('0 * * * *')
@@ -665,6 +1129,190 @@ export class InvoicesService {
     });
 
     return { sent: result.sent };
+  }
+
+  // ── Payment reminders (manual, merchant-initiated) ─────────────────────
+
+  /**
+   * Send the next payment reminder for an outstanding invoice. Enforces the
+   * same business rules as the daily cron: at most {@link REMINDER_MAX} reminders
+   * per invoice and no more than one per {@link REMINDER_COOLDOWN_DAYS}-day window.
+   * The counter + timestamp are only advanced when the email is actually sent, so
+   * a Resend outage doesn't burn a reminder slot. Audited on success.
+   */
+  async sendReminder(invoiceId: string, merchantId: string, actorId: string): Promise<SendReminderResult> {
+    this.assertUuid(invoiceId);
+    this.assertUuid(merchantId);
+    this.assertUuid(actorId);
+
+    const invoice = await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.findFirst({
+        where: { id: invoiceId, merchantId },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          status: true,
+          total: true,
+          amountPaid: true,
+          currency: true,
+          dueDate: true,
+          reminderCount: true,
+          lastReminderAt: true,
+          merchant: { select: { shopifyDomain: true } },
+          buyer: { select: { email: true } },
+        },
+      }),
+    );
+    if (!invoice) {
+      throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+    }
+    if (!REMINDABLE_STATUSES.includes(invoice.status)) {
+      throw new ConflictException({
+        code: 'REMINDER_NOT_APPLICABLE',
+        message: `A reminder cannot be sent for a ${invoice.status} invoice`,
+      });
+    }
+    if (invoice.reminderCount >= REMINDER_MAX) {
+      throw new ConflictException({
+        code: 'REMINDER_LIMIT_REACHED',
+        message: `The maximum of ${REMINDER_MAX} reminders has already been sent`,
+      });
+    }
+    if (
+      invoice.lastReminderAt &&
+      invoice.lastReminderAt.getTime() > subDays(new Date(), REMINDER_COOLDOWN_DAYS).getTime()
+    ) {
+      throw new ConflictException({
+        code: 'REMINDER_TOO_SOON',
+        message: `A reminder was sent within the last ${REMINDER_COOLDOWN_DAYS} days`,
+      });
+    }
+
+    const nextCount = (invoice.reminderCount + 1) as 1 | 2 | 3;
+    const outstanding = new Money(invoice.total.toString())
+      .minus(new Money(invoice.amountPaid.toString()))
+      .toFixed(2);
+    const daysOverdue = Math.max(
+      0,
+      Math.floor((Date.now() - invoice.dueDate.getTime()) / (24 * 60 * 60 * 1000)),
+    );
+
+    const result = await this.email.sendPaymentReminderEmail({
+      to: invoice.buyer.email,
+      invoiceNumber: invoice.invoiceNumber,
+      merchantName: invoice.merchant.shopifyDomain,
+      merchantEmail: invoice.merchant.shopifyDomain,
+      outstandingAmount: outstanding,
+      currency: invoice.currency,
+      dueDate: format(invoice.dueDate, 'dd MMM yyyy'),
+      daysOverdue,
+      reminderCount: nextCount,
+      portalUrl: null,
+    });
+
+    if (!result.sent) {
+      // Don't consume a reminder slot on a delivery failure.
+      return { sent: false, reminderCount: invoice.reminderCount };
+    }
+
+    await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.update({
+        where: { id: invoiceId },
+        data: { reminderCount: nextCount, lastReminderAt: new Date() },
+      }),
+    );
+    await this.writeAudit(
+      merchantId,
+      invoiceId,
+      'reminder_sent',
+      { reminderCount: invoice.reminderCount },
+      { reminderCount: nextCount },
+      'merchant_user',
+      actorId,
+    );
+
+    return { sent: true, reminderCount: nextCount };
+  }
+
+  // ── Merchant PDF download (integrity-gated) ────────────────────────────
+
+  /**
+   * Verify the stored PDF's SHA-256 then return a short-lived presigned URL.
+   * Merchant-scoped. On a hash mismatch the download is blocked with
+   * `INVOICE_INTEGRITY_FAILED` (422) and a P1 is raised — the merchant UI shows a
+   * non-dismissing warning rather than serving a possibly-tampered document.
+   */
+  async getInvoicePdfUrl(invoiceId: string, merchantId: string): Promise<{ url: string }> {
+    this.assertUuid(invoiceId);
+    this.assertUuid(merchantId);
+
+    const invoice = await this.merchantContext.run(merchantId, () =>
+      this.prisma.invoice.findFirst({
+        where: { id: invoiceId, merchantId },
+        select: { pdfS3Key: true, pdfSha256: true, invoiceNumber: true },
+      }),
+    );
+    if (!invoice || !invoice.pdfS3Key) {
+      throw new NotFoundException({ code: 'INVOICE_PDF_NOT_FOUND', message: 'Invoice PDF not found' });
+    }
+
+    const bytes = await this.storage.downloadObject(invoice.pdfS3Key);
+    const { createHash } = await import('node:crypto');
+    const computedHash = createHash('sha256').update(bytes).digest('hex');
+    if (invoice.pdfSha256 === null || computedHash !== invoice.pdfSha256) {
+      Sentry.captureMessage('Invoice PDF integrity mismatch on merchant download', {
+        level: 'fatal',
+        tags: { component: 'invoices', check: 'integrity', surface: 'merchant_download' },
+        extra: { invoiceId, merchantId, invoiceNumber: invoice.invoiceNumber },
+      });
+      this.logger.error(`PDF integrity mismatch on download for invoice ${invoice.invoiceNumber}`);
+      throw new UnprocessableEntityException({
+        code: 'INVOICE_INTEGRITY_FAILED',
+        message: 'Invoice PDF integrity check failed. Contact support.',
+      });
+    }
+
+    return { url: await this.storage.getPresignedUrl(invoice.pdfS3Key, 3600) };
+  }
+
+  // ── AR-aging CSV export ────────────────────────────────────────────────
+
+  /** Build the AR-aging report as CSV (5 buckets + a total row). */
+  async exportArAgingCsv(merchantId: string): Promise<string> {
+    const aging = await this.getArAging(merchantId);
+    const rows: Array<{ label: string; bucket: ArAgingBucket }> = [
+      { label: 'Current (not yet due)', bucket: aging.current },
+      { label: '1–30 days overdue', bucket: aging.overdue_1_30 },
+      { label: '31–60 days overdue', bucket: aging.overdue_31_60 },
+      { label: '61–90 days overdue', bucket: aging.overdue_61_90 },
+      { label: '90+ days overdue', bucket: aging.overdue_90_plus },
+    ];
+    let totalCount = 0;
+    let totalAmount = new Money(0);
+    const lines = ['Bucket,Invoices,Outstanding'];
+    for (const { label, bucket } of rows) {
+      totalCount += bucket.invoiceCount;
+      totalAmount = totalAmount.plus(new Money(bucket.outstandingAmount));
+      lines.push(`${this.csvCell(label)},${bucket.invoiceCount},${bucket.outstandingAmount}`);
+    }
+    lines.push(`${this.csvCell('Total')},${totalCount},${totalAmount.toFixed(2)}`);
+    return `${lines.join('\r\n')}\r\n`;
+  }
+
+  /** Quote a CSV cell when it contains a comma, quote or newline. */
+  private csvCell(value: string): string {
+    if (/[",\r\n]/.test(value)) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  }
+
+  /** Read a string-coercible field from an audit JSON value (null when absent). */
+  private jsonField(json: Prisma.JsonValue | null, key: string): string | null {
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+    const value = (json as Record<string, unknown>)[key];
+    if (value === null || value === undefined) return null;
+    return typeof value === 'string' ? value : String(value);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────

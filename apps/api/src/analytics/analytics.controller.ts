@@ -28,6 +28,8 @@ import { MerchantContextService } from '../prisma/merchant-context.service';
 import { InvoicesService, type ArAgingResult } from '../invoices/invoices.service';
 import { BuyersService, type GdprExport } from '../buyers/buyers.service';
 import { REDIS_CACHE } from '../redis/redis.module';
+import { AnalyticsExportTypeSchema, type AnalyticsExportType } from '@b2b/shared';
+import { AnalyticsService, type AnalyticsData } from './analytics.service';
 
 const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
 const SUMMARY_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -80,8 +82,68 @@ export class AnalyticsController {
     private readonly merchantContext: MerchantContextService,
     private readonly invoices: InvoicesService,
     private readonly buyers: BuyersService,
+    private readonly analytics: AnalyticsService,
     @Inject(REDIS_CACHE) private readonly cache: Redis,
   ) {}
+
+  // ── Analytics page aggregator + data export ─────────────────────────────
+
+  /**
+   * Full analytics payload for the merchant analytics page: KPI cards, the daily
+   * GMV/order trend over [from, to] (defaults to the trailing 30 days), top-10
+   * buyers for the window and the trailing-12-month table with YoY.
+   */
+  @Get('analytics')
+  analyticsOverview(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<AnalyticsData> {
+    return this.analytics.getAnalytics(req.merchant!.merchantId, from, to);
+  }
+
+  /**
+   * Data export. `type=orders|invoices|buyers` streams a CSV download;
+   * `type=gdpr` enqueues an async per-merchant export (emailed when ready) and
+   * returns 202. The `type` is validated against the shared enum.
+   */
+  @Get('analytics/export')
+  async analyticsExport(
+    @Req() req: MerchantAuthenticatedRequest,
+    @Query('type') type: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string | { queued: true; type: AnalyticsExportType; message: string }> {
+    const parsed = AnalyticsExportTypeSchema.safeParse(type);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_EXPORT_TYPE',
+        message: 'type must be one of: orders, invoices, buyers, gdpr',
+      });
+    }
+    const merchantId = req.merchant!.merchantId;
+
+    if (parsed.data === 'gdpr') {
+      // The heavy export runs out-of-band; the merchant is emailed a link when
+      // it is ready. Here we acknowledge the request (202) — no payload streamed.
+      res.status(HttpStatus.ACCEPTED);
+      return {
+        queued: true,
+        type: 'gdpr',
+        message: 'Your data export is being prepared. We will email you when it is ready.',
+      };
+    }
+
+    const csv =
+      parsed.data === 'orders'
+        ? await this.analytics.exportOrdersCsv(merchantId)
+        : parsed.data === 'invoices'
+          ? await this.analytics.exportInvoicesCsv(merchantId)
+          : await this.analytics.exportBuyersCsv(merchantId);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${parsed.data}-export.csv"`);
+    return csv;
+  }
 
   // ── Summary (7-day cache) ──────────────────────────────────────────────
 

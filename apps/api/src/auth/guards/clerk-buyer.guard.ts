@@ -11,6 +11,7 @@ import type { PaymentTerms } from '@b2b/shared';
 import { AppConfigService } from '../../config/app-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MerchantContextService } from '../../prisma/merchant-context.service';
+import { MerchantResolverService } from '../merchant-resolver.service';
 
 /**
  * The authenticated buyer principal attached to the request by
@@ -38,23 +39,11 @@ function extractBearer(req: Request): string | null {
   return token.trim();
 }
 
-/** Read a single cookie value from the raw Cookie header (no cookie-parser dep). */
-function readCookie(req: Request, name: string): string | null {
-  const cookies = req.headers.cookie;
-  if (!cookies) return null;
-  for (const part of cookies.split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) {
-      return decodeURIComponent(rest.join('='));
-    }
-  }
-  return null;
-}
-
 /**
  * Authenticates buyer-portal requests. Clerk verifies the session token; the
- * merchant tenant is supplied by the `__merchant_id` cookie set by the App
- * Proxy middleware (the buyer always sees the merchant's own Shopify domain).
+ * merchant tenant is resolved from the signed `X-Merchant-Context` header
+ * (minted by the App-Proxy edge middleware after a verified Shopify proxy
+ * signature). The buyer always sees the merchant's own Shopify domain.
  *
  * Beyond signature verification this guard makes ONE database query per request
  * to enforce the per-merchant relationship state (relationship existence,
@@ -68,6 +57,7 @@ export class ClerkBuyerGuard implements CanActivate {
     private readonly config: AppConfigService,
     private readonly prisma: PrismaService,
     private readonly merchantContext: MerchantContextService,
+    private readonly merchantResolver: MerchantResolverService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -78,13 +68,9 @@ export class ClerkBuyerGuard implements CanActivate {
       throw new UnauthorizedException({ code: 'MISSING_TOKEN', message: 'Missing bearer token' });
     }
 
-    const merchantId = readCookie(req, '__merchant_id');
-    if (!merchantId) {
-      throw new UnauthorizedException({
-        code: 'NO_MERCHANT_CONTEXT',
-        message: 'Missing merchant context cookie',
-      });
-    }
+    // Resolve the tenant from the signed App-Proxy context header (throws 401
+    // NO_MERCHANT_CONTEXT when absent/invalid/unknown).
+    const { merchantId } = await this.merchantResolver.resolveFromRequest(req);
 
     let payload: Awaited<ReturnType<typeof verifyToken>>;
     try {

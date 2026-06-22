@@ -71,6 +71,7 @@ export interface BuyerApprovalEmailParams {
   buyerCompany: string;
   merchantName: string;
   paymentTermsLabel: string;
+  pricingTierName: string | null;
   creditLimit: string | null;
   currency: string;
   portalUrl: string;
@@ -177,11 +178,12 @@ export class EmailService implements OnModuleInit {
     params: RegistrationConfirmEmailParams,
   ): Promise<EmailSendResult> {
     const rendered: RenderedEmail = {
-      subject: `We received your application to ${params.merchantName}`,
+      subject: `We received your application — ${params.merchantName}`,
       html: this.simpleLayout(
         'Application received',
         `Hello ${params.applicantCompany}, we've received your wholesale application to ${params.merchantName}. ` +
-          `You'll receive an email once it has been reviewed.`,
+          `We'll review it and send a decision — typically within 1 business day. ` +
+          `You'll receive an email once a decision has been made.`,
       ),
     };
     return this.send(params.to, rendered, 'registration_confirm');
@@ -192,6 +194,7 @@ export class EmailService implements OnModuleInit {
       buyerCompany: params.buyerCompany,
       merchantName: params.merchantName,
       paymentTermsLabel: params.paymentTermsLabel,
+      pricingTierName: params.pricingTierName,
       creditLimit: params.creditLimit,
       currency: params.currency,
       portalUrl: params.portalUrl,

@@ -1,0 +1,24 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "pnpm --filter @b2b/web start",
+      "url": ["http://localhost:3000/merchant-login", "http://localhost:3000/buyer-login"],
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop",
+        "budgetPath": "./.lighthouse-budget.json"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["warn", { "minScore": 0.9 }],
+        "categories:accessibility": ["error", { "minScore": 0.9 }],
+        "categories:best-practices": ["warn", { "minScore": 0.9 }],
+        "categories:seo": ["warn", { "minScore": 0.9 }]
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}

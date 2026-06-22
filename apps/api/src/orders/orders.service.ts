@@ -48,6 +48,10 @@ export interface OrderSummary {
   shopifyOrderNumber: string | null;
   buyerCompanyName: string | null;
   status: string;
+  /** Shopify sync state — drives the merchant list "Sync Status" column. */
+  syncStatus: string;
+  /** Number of distinct line items on the order. */
+  itemCount: number;
   subtotal: string;
   total: string;
   currency: string;
@@ -804,6 +808,7 @@ export class OrdersService {
       id: true,
       shopifyOrderNumber: true,
       status: true,
+      syncStatus: true,
       subtotal: true,
       total: true,
       currency: true,
@@ -812,6 +817,7 @@ export class OrdersService {
       createdAt: true,
       buyer: { select: { companyName: true } },
       invoice: { select: { status: true, dueDate: true } },
+      _count: { select: { lineItems: true } },
     };
   }
 
@@ -820,6 +826,7 @@ export class OrdersService {
       id: string;
       shopifyOrderNumber: string | null;
       status: string;
+      syncStatus: string;
       subtotal: Prisma.Decimal;
       total: Prisma.Decimal;
       currency: string;
@@ -828,6 +835,7 @@ export class OrdersService {
       createdAt: Date;
       buyer: { companyName: string } | null;
       invoice: { status: string; dueDate: Date } | null;
+      _count: { lineItems: number };
     }>,
     limit: number,
   ): PaginatedResponse<OrderSummary> {
@@ -843,6 +851,8 @@ export class OrdersService {
         shopifyOrderNumber: row.shopifyOrderNumber,
         buyerCompanyName: row.buyer?.companyName ?? null,
         status: row.status,
+        syncStatus: row.syncStatus,
+        itemCount: row._count.lineItems,
         subtotal: row.subtotal.toFixed(2),
         total: row.total.toFixed(2),
         currency: row.currency,

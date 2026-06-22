@@ -122,6 +122,13 @@ model Merchant {
   gmvCurrentMonth               Decimal          @default(0) @map("gmv_current_month") @db.Decimal(15, 2)
   gmvMonthKey                   String           @default("0000-00") @map("gmv_month_key") @db.Char(7)
   trialEndsAt                   DateTime?        @map("trial_ends_at") @db.Timestamptz(6)
+  // Invoice + notification settings (Stage 4 — merchant settings page). invoicePrefix
+  // affects future invoice numbers only; paymentInstructions is rendered on all invoices.
+  invoicePrefix                 String           @default("INV") @map("invoice_prefix") @db.VarChar(8)
+  paymentInstructions           String?          @map("payment_instructions") @db.Text
+  notifyNewApplication          Boolean          @default(true) @map("notify_new_application")
+  notifyInvoiceOverdue          Boolean          @default(true) @map("notify_invoice_overdue")
+  notifyPaymentReceived         Boolean          @default(false) @map("notify_payment_received")
   isActive                      Boolean          @default(true) @map("is_active")
   deletedAt                     DateTime?        @map("deleted_at") @db.Timestamptz(6)
   createdAt                     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -147,6 +154,7 @@ model MerchantUser {
   firstName   String?          @map("first_name") @db.VarChar(100)
   lastName    String?          @map("last_name") @db.VarChar(100)
   isActive    Boolean          @default(true) @map("is_active")
+  lastLoginAt DateTime?        @map("last_login_at") @db.Timestamptz(6)
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 

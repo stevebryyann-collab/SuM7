@@ -27,15 +27,54 @@ export const BuyerLoginSchema = z.object({
 });
 export type BuyerLoginInput = z.infer<typeof BuyerLoginSchema>;
 
+/** Business-type options (single source of truth for the form Select + API). */
+export const BUSINESS_TYPE_OPTIONS = [
+  'Retailer',
+  'Distributor',
+  'Wholesaler',
+  'Manufacturer',
+  'Other',
+] as const;
+
+/** Estimated-monthly-order ranges (single source of truth for the form + API). */
+export const ESTIMATED_MONTHLY_ORDER_OPTIONS = [
+  'Under $5,000',
+  '$5K–$20K',
+  '$20K–$50K',
+  'Over $50K',
+] as const;
+
+/**
+ * Buyer registration application — the single source of truth for BOTH the React
+ * Hook Form resolver and the NestJS pipe.
+ *
+ * `email` is OPTIONAL here: the buyer is already Clerk-authenticated when they
+ * apply, so the API sources the address from the verified Clerk identity rather
+ * than trusting a form field. `businessType` and `estimatedMonthlyOrder` are
+ * REQUIRED selects constrained to the option lists above. Free-form text fields
+ * keep their own messages so the same copy renders on client and server.
+ */
 export const BuyerRegisterApplicationSchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(255),
-  companyName: z.string().trim().min(1).max(255),
-  businessType: z.string().trim().max(100).optional(),
-  website: z.string().trim().url().max(255).optional(),
+  email: z.string().trim().toLowerCase().email().max(255).optional(),
+  companyName: z.string({ required_error: 'Company name is required' })
+    .trim()
+    .min(1, 'Company name is required')
+    .max(255),
+  businessType: z.enum(BUSINESS_TYPE_OPTIONS, {
+    required_error: 'Please select a business type',
+    invalid_type_error: 'Please select a business type',
+  }),
+  website: z.union([
+    z.literal(''),
+    z.string().trim().url('Please enter a valid URL').max(255),
+  ]).optional(),
   taxId: z.string().trim().max(100).optional(),
   phone: z.string().trim().max(50).optional(),
-  estimatedMonthlyOrder: z.string().trim().max(100).optional(),
-  message: z.string().trim().max(2000).optional(),
+  estimatedMonthlyOrder: z.enum(ESTIMATED_MONTHLY_ORDER_OPTIONS, {
+    required_error: 'Please select an estimated order range',
+    invalid_type_error: 'Please select an estimated order range',
+  }),
+  message: z.string().trim().max(500, 'Message must be 500 characters or fewer').optional(),
 });
 export type BuyerRegisterApplicationInput = z.infer<typeof BuyerRegisterApplicationSchema>;
 
@@ -170,11 +209,69 @@ export type UpdatePricingTierInput = z.infer<typeof UpdatePricingTierSchema>;
 
 export const SubscriptionTierSchema = z.enum(['starter', 'growth', 'pro']);
 
-/** Body for POST /billing/subscribe and POST /billing/change-tier. */
+/** Body for POST /billing/subscribe, /billing/change-tier and /billing/change-plan. */
 export const BillingTierSchema = z.object({
   tier: SubscriptionTierSchema,
 });
 export type BillingTierInput = z.infer<typeof BillingTierSchema>;
+
+/** Alias used by the Stage 4 billing page (`POST /billing/change-plan`). */
+export const ChangePlanSchema = BillingTierSchema;
+export type ChangePlanInput = BillingTierInput;
+
+// ── Merchant settings (Stage 4) ────────────────────────────────────────
+
+/** Owner email-notification preferences. */
+export const NotificationPrefsSchema = z.object({
+  newApplication: z.boolean(),
+  invoiceOverdue: z.boolean(),
+  paymentReceived: z.boolean(),
+});
+export type NotificationPrefsInput = z.infer<typeof NotificationPrefsSchema>;
+
+/**
+ * Body for `PUT /api/v1/settings`. The whole settings object is sent on every
+ * save (both the Invoice and Notifications save buttons submit the full set),
+ * so all fields are required. `invoicePrefix` affects future invoices only and
+ * is limited to 8 chars of letters/digits/dashes; `paymentInstructions` (≤500)
+ * is rendered on every invoice and may be cleared to null.
+ */
+export const UpdateMerchantSettingsSchema = z.object({
+  invoicePrefix: z
+    .string()
+    .trim()
+    .min(1)
+    .max(8)
+    .regex(/^[A-Za-z0-9-]+$/, 'Use letters, digits and dashes only (max 8)'),
+  paymentInstructions: z.string().trim().max(500).nullable().default(null),
+  notifications: NotificationPrefsSchema,
+});
+export type UpdateMerchantSettingsInput = z.infer<typeof UpdateMerchantSettingsSchema>;
+
+// ── Team management (Stage 4 — owner only) ─────────────────────────────
+
+/** Assignable (non-owner) team roles. Ownership cannot be reassigned via the UI. */
+export const TeamMemberRoleSchema = z.enum(['admin', 'staff']);
+export type TeamMemberRole = z.infer<typeof TeamMemberRoleSchema>;
+
+/** Body for `PATCH /api/v1/team/:id` — change a member's role. */
+export const UpdateTeamMemberSchema = z.object({
+  role: TeamMemberRoleSchema,
+});
+export type UpdateTeamMemberInput = z.infer<typeof UpdateTeamMemberSchema>;
+
+/** Body for `POST /api/v1/team/invite` (v1 stub — no email is actually sent). */
+export const InviteTeamMemberSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(255),
+  role: TeamMemberRoleSchema,
+});
+export type InviteTeamMemberInput = z.infer<typeof InviteTeamMemberSchema>;
+
+// ── Analytics export ───────────────────────────────────────────────────
+
+/** Allowed `?type=` values for `GET /api/v1/analytics/export`. */
+export const AnalyticsExportTypeSchema = z.enum(['orders', 'invoices', 'buyers', 'gdpr']);
+export type AnalyticsExportType = z.infer<typeof AnalyticsExportTypeSchema>;
 
 // ── Bulk ordering (spreadsheet-style) ──────────────────────────────────
 
@@ -218,6 +315,24 @@ export const RejectBuyerSchema = z.object({
   rejectionReason: z.string().trim().min(1).max(2000),
 });
 export type RejectBuyerInput = z.infer<typeof RejectBuyerSchema>;
+
+/**
+ * Partial update for an approved buyer's per-merchant relationship (PATCH
+ * /buyers/:buyerId). All fields optional; at least one required. `pricingTierId`
+ * nullable to clear the tier (fall back to the merchant default); `creditLimit`
+ * nullable to remove a limit; `notes` nullable to clear internal notes.
+ */
+export const UpdateBuyerSchema = z
+  .object({
+    pricingTierId: uuid.nullable().optional(),
+    paymentTerms: PaymentTermsSchema.optional(),
+    creditLimit: moneyString.nullable().optional(),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field must be provided',
+  });
+export type UpdateBuyerInput = z.infer<typeof UpdateBuyerSchema>;
 
 // ── Invoicing ──────────────────────────────────────────────────────────
 

@@ -19,13 +19,26 @@ import { ClerkBuyerGuard, type BuyerAuthenticatedRequest } from '../auth/guards/
 import { PrismaService } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { BnplService } from './bnpl.service';
-import type { BuyerProfileForBnpl, EligibilityResult, BnplWebhookEvent } from './bnpl.interfaces';
+import type { BuyerProfileForBnpl, BnplWebhookEvent } from './bnpl.interfaces';
 
 const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
 
 /** Request body for an eligibility check (buyer-facing; amount is a number). */
 interface EligibilityBody {
   orderAmount: number;
+}
+
+/**
+ * Wire response for an eligibility check. `approvedAmount` is serialized to a
+ * decimal STRING here (the service returns a Decimal) so the boundary matches the
+ * rest of the API's money-as-string convention and never leaks Decimal internals.
+ */
+interface EligibilityResponse {
+  eligible: boolean;
+  approvedAmount: string | null;
+  availableTermsDays: number[];
+  currency: string;
+  declineReason: string | null;
 }
 
 /** Request body for initiating financing. */
@@ -71,7 +84,7 @@ export class BnplController {
   async eligibility(
     @Req() req: BuyerAuthenticatedRequest,
     @Body() body: EligibilityBody,
-  ): Promise<EligibilityResult> {
+  ): Promise<EligibilityResponse> {
     const buyer = req.buyer!;
     if (typeof body.orderAmount !== 'number' || !Number.isFinite(body.orderAmount) || body.orderAmount <= 0) {
       throw new BadRequestException({
@@ -81,11 +94,18 @@ export class BnplController {
     }
     const orderAmount = new Money(body.orderAmount.toString());
     const profile = await this.loadBuyerProfile(buyer.buyerId, buyer.merchantId);
-    return this.bnpl.checkEligibility(buyer.merchantId, {
+    const result = await this.bnpl.checkEligibility(buyer.merchantId, {
       buyer: profile,
       orderAmount,
       currency: 'USD',
     });
+    return {
+      eligible: result.eligible,
+      approvedAmount: result.approvedAmount ? result.approvedAmount.toFixed(2) : null,
+      availableTermsDays: result.availableTermsDays,
+      currency: result.currency,
+      declineReason: result.declineReason,
+    };
   }
 
   // ── Buyer: initiate financing ─────────────────────────────────────────────

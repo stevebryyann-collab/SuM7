@@ -247,7 +247,7 @@ export class PricingService {
 
     const base = this.basePriceOf(override);
     let unit = base;
-    let appliedTierType: PricingTierType | null = tier?.type ?? null;
+    const appliedTierType: PricingTierType | null = tier?.type ?? null;
     let discountPct: Decimal | null = null;
 
     if (tier?.type === 'percentage_off') {

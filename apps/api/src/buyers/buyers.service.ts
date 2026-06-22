@@ -14,14 +14,16 @@ import { Decimal } from 'decimal.js';
 import { createClerkClient, type ClerkClient } from '@clerk/backend';
 import { Redis } from 'ioredis';
 import * as Sentry from '@sentry/node';
-import type {
-  ApproveBuyerInput,
-  BuyerRegisterApplicationInput,
-  CursorPaginationInput,
-  DecodedCursor,
-  PaginatedResponse,
-  PaymentTerms,
-  RejectBuyerInput,
+import {
+  merchantDisplayNameFromDomain,
+  type ApproveBuyerInput,
+  type BuyerRegisterApplicationInput,
+  type CursorPaginationInput,
+  type DecodedCursor,
+  type PaginatedResponse,
+  type PaymentTerms,
+  type RejectBuyerInput,
+  type UpdateBuyerInput,
 } from '@b2b/shared';
 import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
@@ -33,7 +35,7 @@ import { REDIS_CACHE } from '../redis/redis.module';
 const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-const APPLY_RATE_LIMIT = 3;
+const APPLY_RATE_LIMIT = 5;
 const APPLY_RATE_WINDOW_SECONDS = 3600;
 const PENDING_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -50,6 +52,64 @@ const PAYMENT_TERMS_LABELS: Record<PaymentTerms, string> = {
 export interface ApplicationResult {
   applicationId: string;
   status: 'pending';
+}
+
+/**
+ * White-label merchant branding for the buyer portal shell (login / signup /
+ * apply headings). No tenant secrets — only the public storefront identity.
+ */
+export interface MerchantContextView {
+  merchantId: string;
+  shopDomain: string;
+  displayName: string;
+  contactEmail: string;
+}
+
+/**
+ * The buyer's application/relationship state for one merchant. Drives the portal
+ * routing (form vs. under-review vs. declined vs. straight to catalog). No PII.
+ *
+ *   none      — no application and no relationship yet → show the form
+ *   pending   — application under review               → "Under Review" card
+ *   approved  — relationship approved                  → redirect to catalog
+ *   rejected  — application declined                   → "Application Declined" card
+ *   suspended — relationship suspended                 → suspended card
+ */
+export interface ApplicationStatusView {
+  status: 'none' | 'pending' | 'approved' | 'rejected' | 'suspended';
+  companyName: string | null;
+  appliedAt: string | null;
+  reviewedAt: string | null;
+  merchantDisplayName: string;
+  contactEmail: string;
+}
+
+/**
+ * A registration application surfaced in the merchant approval panel.
+ *
+ * PII (taxId, phone) is intentionally OMITTED from this list payload — it is
+ * fetched on demand through {@link BuyersService.revealApplicationPii}, which
+ * writes an audit row. Never re-add plaintext PII to a list response.
+ */
+export interface ApplicationListItem {
+  id: string;
+  email: string;
+  companyName: string;
+  businessType: string | null;
+  website: string | null;
+  estimatedMonthlyOrder: string | null;
+  message: string | null;
+  /** Whether the application carries a taxId / phone available to reveal. */
+  hasTaxId: boolean;
+  hasPhone: boolean;
+  status: string;
+  createdAt: string;
+}
+
+/** Decrypted/plaintext PII for one application, returned only on audited reveal. */
+export interface ApplicationPii {
+  taxId: string | null;
+  phone: string | null;
 }
 
 /** Filters accepted by {@link BuyersService.listBuyersForMerchant}. */
@@ -72,6 +132,48 @@ export interface BuyerSummary {
   outstandingInvoiceTotal: string;
   lastOrderAt: string | null;
   createdAt: string;
+}
+
+/**
+ * Full buyer detail for the merchant admin View panel + approved-buyer inline
+ * edit. Carries the per-merchant relationship config (tier / terms / credit /
+ * notes) and the same aggregates as the list. PII (taxId, phone) is NOT included
+ * — reveal flows are audited and application-scoped.
+ */
+export interface BuyerDetail {
+  buyerId: string;
+  companyName: string;
+  email: string;
+  businessType: string | null;
+  approvalStatus: string;
+  pricingTierId: string | null;
+  pricingTierName: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: string | null;
+  notes: string | null;
+  orderCount: number;
+  outstandingInvoiceTotal: string;
+  lastOrderAt: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * The authenticated, approved buyer's own relationship snapshot for THIS merchant.
+ * Powers the catalog welcome bar and the Review-Order credit section. Money fields
+ * are decimal strings; `bnplEnabled` reflects the merchant's plan (growth/pro).
+ */
+export interface BuyerMeView {
+  companyName: string;
+  pricingTierName: string | null;
+  /** The buyer's tier minimum order amount (decimal string), or null when none. */
+  minOrderAmount: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: string | null;
+  creditUsed: string;
+  creditAvailable: string | null;
+  memberSince: string | null;
+  bnplEnabled: boolean;
 }
 
 /** GDPR subject-access export. PII is returned as stored (encrypted) — never decrypted here. */
@@ -132,6 +234,31 @@ interface BuyerListRow {
   createdAt: Date;
 }
 
+/** Raw row shape for the single-buyer detail aggregation query. */
+interface BuyerDetailRow {
+  approvalStatus: string;
+  pricingTierId: string | null;
+  pricingTierName: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: Prisma.Decimal | null;
+  notes: string | null;
+  orderCount: bigint;
+  outstandingInvoiceTotal: Prisma.Decimal;
+  lastOrderAt: Date | null;
+  approvedAt: Date | null;
+  createdAt: Date;
+}
+
+/** Raw row shape for the relationship FOR UPDATE lock (reinstate / update). */
+interface LockedRelationshipRow {
+  id: string;
+  approvalStatus: string;
+  pricingTierId: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: Prisma.Decimal | null;
+  notes: string | null;
+}
+
 /**
  * Buyer domain: self-serve registration applications, the merchant approval
  * workflow, the merchant buyers list, suspension, and GDPR export/erasure.
@@ -171,18 +298,27 @@ export class BuyersService {
   async submitRegistrationApplication(
     merchantId: string,
     clerkUserId: string,
+    clerkEmail: string | null,
     dto: BuyerRegisterApplicationInput,
     ipAddress: string,
     userAgent: string,
   ): Promise<ApplicationResult> {
     this.assertUuid(merchantId);
 
-    // 1. Per-IP rate limit: 3 applications / hour.
+    // 1. Per-IP rate limit: 5 applications / hour.
     await this.enforceApplyRateLimit(ipAddress);
 
-    // 2. Sanitize (the Zod schema already trims + lowercases email; re-normalize
-    //    defensively in case a caller bypasses the pipe).
-    const email = dto.email.trim().toLowerCase();
+    // 2. Resolve the buyer email. The verified Clerk identity is authoritative
+    //    (the form no longer collects email); fall back to the dto only if a
+    //    caller supplied one. The Zod schema trims + lowercases; re-normalize
+    //    defensively in case a caller bypasses the pipe.
+    const email = (clerkEmail ?? dto.email ?? '').trim().toLowerCase();
+    if (!email) {
+      throw new BadRequestException({
+        code: 'MISSING_EMAIL',
+        message: 'No verified email is associated with this account',
+      });
+    }
     const companyName = dto.companyName.trim();
 
     // 3. Existing approved relationship for this Clerk user + merchant → 409.
@@ -274,7 +410,7 @@ export class BuyersService {
     await this.email.sendBuyerRegistrationConfirmation({
       to: email,
       applicantCompany: companyName,
-      merchantName: merchant.name,
+      merchantName: merchant.displayName,
     });
 
     // 8. Merchant owner alert (non-throwing).
@@ -290,7 +426,7 @@ export class BuyersService {
         applicantCompany: companyName,
         businessType: dto.businessType?.trim() ?? null,
         estimatedMonthlyOrder: dto.estimatedMonthlyOrder?.trim() ?? null,
-        reviewUrl: this.applicationReviewUrl(application.id),
+        reviewUrl: this.applicationReviewUrl(),
       });
     }
 
@@ -306,6 +442,185 @@ export class BuyersService {
     });
 
     return { applicationId: application.id, status: 'pending' };
+  }
+
+  // ── Buyer self-service reads (pre-approval) ──────────────────────────────
+
+  /**
+   * White-label merchant branding for the buyer portal shell. Resolved from the
+   * signed App-Proxy context (the controller passes the verified merchantId), so
+   * it is safe to expose before a Clerk session exists. No tenant secrets.
+   */
+  async getMerchantContext(merchantId: string): Promise<MerchantContextView> {
+    this.assertUuid(merchantId);
+    const merchant = await this.loadMerchantName(merchantId);
+    return {
+      merchantId,
+      shopDomain: merchant.shopDomain,
+      displayName: merchant.displayName,
+      contactEmail: merchant.contactEmail,
+    };
+  }
+
+  /**
+   * The authenticated buyer's application/relationship state for this merchant.
+   * Drives the portal routing (form / under-review / declined / catalog). A
+   * suspended or approved relationship takes precedence over a stale application
+   * row; otherwise the latest application's status is reported. Read-only, no PII.
+   */
+  async getApplicationStatusForBuyer(
+    merchantId: string,
+    clerkUserId: string,
+  ): Promise<ApplicationStatusView> {
+    this.assertUuid(merchantId);
+    const merchant = await this.loadMerchantName(merchantId);
+    const base = {
+      merchantDisplayName: merchant.displayName,
+      contactEmail: merchant.contactEmail,
+    };
+
+    // Resolve the buyer's email via their unified (cross-merchant) record so the
+    // application lookup matches even before the Clerk webhook links the id.
+    const buyer = await this.merchantContext.runAsSystem(() =>
+      this.prisma.buyer.findUnique({
+        where: { clerkUserId },
+        select: { id: true, email: true },
+      }),
+    );
+
+    // An approved/suspended relationship is authoritative over any application row.
+    if (buyer) {
+      const relationship = await this.merchantContext.run(merchantId, () =>
+        this.prisma.merchantBuyerRelationship.findFirst({
+          where: { merchantId, buyerId: buyer.id },
+          select: { approvalStatus: true, approvedAt: true },
+        }),
+      );
+      if (relationship?.approvalStatus === 'approved') {
+        return {
+          ...base,
+          status: 'approved',
+          companyName: null,
+          appliedAt: null,
+          reviewedAt: relationship.approvedAt?.toISOString() ?? null,
+        };
+      }
+      if (relationship?.approvalStatus === 'suspended') {
+        return {
+          ...base,
+          status: 'suspended',
+          companyName: null,
+          appliedAt: null,
+          reviewedAt: relationship.approvedAt?.toISOString() ?? null,
+        };
+      }
+    }
+
+    // Otherwise report the latest application for this buyer's email (if any).
+    const email = buyer?.email?.trim().toLowerCase();
+    const application = email
+      ? await this.merchantContext.run(merchantId, () =>
+          this.prisma.buyerRegistrationApplication.findFirst({
+            where: { merchantId, email },
+            orderBy: { createdAt: 'desc' },
+            select: { status: true, companyName: true, createdAt: true, reviewedAt: true },
+          }),
+        )
+      : null;
+
+    if (!application) {
+      return { ...base, status: 'none', companyName: null, appliedAt: null, reviewedAt: null };
+    }
+
+    const status =
+      application.status === 'approved'
+        ? 'approved'
+        : application.status === 'rejected'
+          ? 'rejected'
+          : 'pending';
+
+    return {
+      ...base,
+      status,
+      companyName: application.companyName,
+      appliedAt: application.createdAt.toISOString(),
+      reviewedAt: application.reviewedAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * The approved buyer's own relationship snapshot for this merchant (tier name,
+   * payment terms, credit limit/used/available, member-since) plus whether the
+   * merchant's plan enables BNPL. Guarded by ClerkBuyerGuard, so the relationship
+   * is already known-approved; we still surface a 404 if it has gone missing.
+   */
+  async getBuyerMe(buyerId: string, merchantId: string): Promise<BuyerMeView> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+
+    // Buyer record is cross-merchant (no RLS) → system context.
+    const buyer = await this.merchantContext.runAsSystem(() =>
+      this.prisma.buyer.findUnique({
+        where: { id: buyerId },
+        select: { companyName: true },
+      }),
+    );
+    if (!buyer) {
+      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+    }
+
+    // Merchant plan drives BNPL availability (growth/pro only).
+    const merchant = await this.merchantContext.runAsSystem(() =>
+      this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { subscriptionTier: true },
+      }),
+    );
+
+    const relationship = await this.merchantContext.run(merchantId, () =>
+      this.prisma.merchantBuyerRelationship.findFirst({
+        where: { merchantId, buyerId },
+        select: {
+          paymentTerms: true,
+          creditLimit: true,
+          creditUsed: true,
+          approvedAt: true,
+          createdAt: true,
+          pricingTier: { select: { name: true, minOrderAmount: true } },
+        },
+      }),
+    );
+    if (!relationship) {
+      throw new NotFoundException({
+        code: 'RELATIONSHIP_NOT_FOUND',
+        message: 'No relationship with this merchant',
+      });
+    }
+
+    const creditLimit = relationship.creditLimit
+      ? new Money(relationship.creditLimit.toString()).toFixed(2)
+      : null;
+    const creditUsed = new Money(relationship.creditUsed.toString()).toFixed(2);
+    const creditAvailable = creditLimit
+      ? Money.max(new Money(creditLimit).minus(new Money(creditUsed)), new Money(0)).toFixed(2)
+      : null;
+    const minOrderAmount = relationship.pricingTier?.minOrderAmount
+      ? new Money(relationship.pricingTier.minOrderAmount.toString()).toFixed(2)
+      : null;
+    const bnplEnabled =
+      merchant?.subscriptionTier === 'growth' || merchant?.subscriptionTier === 'pro';
+
+    return {
+      companyName: buyer.companyName,
+      pricingTierName: relationship.pricingTier?.name ?? null,
+      minOrderAmount,
+      paymentTerms: relationship.paymentTerms,
+      creditLimit,
+      creditUsed,
+      creditAvailable,
+      memberSince: (relationship.approvedAt ?? relationship.createdAt).toISOString(),
+      bnplEnabled,
+    };
   }
 
   // ── Approval workflow (merchant, MerchantSessionGuard) ───────────────────
@@ -374,6 +689,17 @@ export class BuyersService {
           data: { status: 'approved', reviewedBy: actorId, reviewedAt: new Date() },
         });
 
+        // Resolve the assigned tier's name for the approval email (tenant is set
+        // on `tx`, so this read is RLS-scoped to the merchant).
+        let pricingTierName: string | null = null;
+        if (dto.pricingTierId) {
+          const tier = await tx.pricingTier.findFirst({
+            where: { id: dto.pricingTierId, merchantId },
+            select: { name: true },
+          });
+          pricingTierName = tier?.name ?? null;
+        }
+
         await this.writeAuditTx(tx, merchantId, {
           entityType: 'buyer_registration_application',
           entityId: applicationId,
@@ -387,7 +713,7 @@ export class BuyersService {
           },
         });
 
-        return { buyerEmail: buyer.email, buyerCompany: buyer.companyName };
+        return { buyerEmail: buyer.email, buyerCompany: buyer.companyName, pricingTierName };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -396,8 +722,9 @@ export class BuyersService {
     await this.email.sendBuyerApprovalEmail({
       to: result.buyerEmail,
       buyerCompany: result.buyerCompany,
-      merchantName: merchant.name,
+      merchantName: merchant.displayName,
       paymentTermsLabel: PAYMENT_TERMS_LABELS[dto.paymentTerms],
+      pricingTierName: result.pricingTierName,
       creditLimit,
       currency: 'USD',
       portalUrl: merchant.portalUrl,
@@ -451,10 +778,108 @@ export class BuyersService {
     await this.email.sendBuyerRejectionEmail({
       to: result.email,
       buyerCompany: result.companyName,
-      merchantName: merchant.name,
+      merchantName: merchant.displayName,
       merchantEmail: merchant.contactEmail,
       rejectionReason: dto.rejectionReason,
     });
+  }
+
+  // ── Applications list (merchant) ─────────────────────────────────────────
+
+  /**
+   * Registration applications for the merchant, newest first. Defaults to
+   * `pending` (the approval panel's queue); pass a status to list others. Capped
+   * (no cursor) because the approval queue is small and reviewed promptly; the
+   * panel re-fetches after each approve/reject.
+   */
+  async listApplicationsForMerchant(
+    merchantId: string,
+    status?: string,
+  ): Promise<ApplicationListItem[]> {
+    this.assertUuid(merchantId);
+    const filterStatus = (status ?? 'pending').trim();
+    if (!['pending', 'approved', 'rejected'].includes(filterStatus)) {
+      throw new BadRequestException({
+        code: 'INVALID_STATUS',
+        message: `Unknown application status: ${filterStatus}`,
+      });
+    }
+
+    const rows = await this.merchantContext.run(merchantId, () =>
+      this.prisma.buyerRegistrationApplication.findMany({
+        where: { merchantId, status: filterStatus as 'pending' | 'approved' | 'rejected' },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+        select: {
+          id: true,
+          email: true,
+          companyName: true,
+          businessType: true,
+          website: true,
+          taxId: true,
+          phone: true,
+          estimatedMonthlyOrder: true,
+          message: true,
+          status: true,
+          createdAt: true,
+        },
+      }),
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      email: row.email,
+      companyName: row.companyName,
+      businessType: row.businessType,
+      website: row.website,
+      estimatedMonthlyOrder: row.estimatedMonthlyOrder,
+      message: row.message,
+      hasTaxId: Boolean(row.taxId && row.taxId.length > 0),
+      hasPhone: Boolean(row.phone && row.phone.length > 0),
+      status: row.status,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Reveal an application's PII (taxId, phone) on demand. This is the ONLY path
+   * that returns plaintext PII; it is audited on every call (`pii_revealed`) so
+   * access is traceable. The list endpoint never ships these values. Application
+   * PII is stored in plaintext on the applications table (buyer-submitted at
+   * apply time), so no decryption is required here — the control is access +
+   * audit, not encryption.
+   */
+  async revealApplicationPii(
+    applicationId: string,
+    merchantId: string,
+    actorId: string,
+  ): Promise<ApplicationPii> {
+    this.assertUuid(applicationId);
+    this.assertUuid(merchantId);
+    this.assertUuid(actorId);
+
+    const application = await this.merchantContext.run(merchantId, () =>
+      this.prisma.buyerRegistrationApplication.findFirst({
+        where: { id: applicationId, merchantId },
+        select: { id: true, taxId: true, phone: true },
+      }),
+    );
+    if (!application) {
+      throw new NotFoundException({
+        code: 'APPLICATION_NOT_FOUND',
+        message: 'Application not found',
+      });
+    }
+
+    await this.writeAudit(merchantId, {
+      entityType: 'buyer_registration_application',
+      entityId: applicationId,
+      action: 'pii_revealed',
+      actorType: 'merchant_user',
+      actorId,
+    });
+
+    return { taxId: application.taxId, phone: application.phone };
   }
 
   // ── Buyers list (merchant, cursor paginated) ─────────────────────────────
@@ -579,6 +1004,200 @@ export class BuyersService {
       actorType: 'merchant_user',
       actorId,
     });
+  }
+
+  /**
+   * Reinstate a suspended buyer (suspended → approved). Runs inside a
+   * SERIALIZABLE transaction with the relationship locked FOR UPDATE so the
+   * status transition is atomic, and refuses anything that is not currently
+   * `suspended` (idempotency + guard against reinstating a rejected/pending row).
+   */
+  async reinstateBuyer(buyerId: string, merchantId: string, actorId: string): Promise<void> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+    this.assertUuid(actorId);
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await this.setTenant(tx, merchantId);
+        const rel = await this.lockRelationship(tx, buyerId, merchantId);
+        if (rel.approvalStatus !== 'suspended') {
+          throw new ConflictException({
+            code: 'NOT_SUSPENDED',
+            message: `Buyer is ${rel.approvalStatus}, not suspended`,
+          });
+        }
+
+        await tx.merchantBuyerRelationship.update({
+          where: { id: rel.id },
+          data: { approvalStatus: 'approved' },
+        });
+
+        await this.writeAuditTx(tx, merchantId, {
+          entityType: 'merchant_buyer_relationship',
+          entityId: buyerId,
+          action: 'reinstated',
+          actorType: 'merchant_user',
+          actorId,
+          newValueJson: { approvalStatus: { from: 'suspended', to: 'approved' } },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  /**
+   * Update an approved buyer's per-merchant relationship config (pricing tier,
+   * payment terms, credit limit, internal notes). SERIALIZABLE + FOR UPDATE
+   * because creditLimit gates the order-time credit check; the audit row records
+   * both the previous and new values for the changed fields only.
+   */
+  async updateBuyer(
+    buyerId: string,
+    merchantId: string,
+    dto: UpdateBuyerInput,
+    actorId: string,
+  ): Promise<void> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+    this.assertUuid(actorId);
+    if (dto.pricingTierId) this.assertUuid(dto.pricingTierId);
+
+    const creditLimit =
+      dto.creditLimit !== undefined
+        ? dto.creditLimit === null
+          ? null
+          : new Money(dto.creditLimit).toFixed(2)
+        : undefined;
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await this.setTenant(tx, merchantId);
+        const rel = await this.lockRelationship(tx, buyerId, merchantId);
+
+        // A non-null tier must belong to this merchant (RLS-scoped read).
+        if (dto.pricingTierId) {
+          const tier = await tx.pricingTier.findFirst({
+            where: { id: dto.pricingTierId, merchantId },
+            select: { id: true },
+          });
+          if (!tier) {
+            throw new NotFoundException({
+              code: 'PRICING_TIER_NOT_FOUND',
+              message: 'Pricing tier not found',
+            });
+          }
+        }
+
+        const data: Prisma.MerchantBuyerRelationshipUncheckedUpdateInput = {};
+        if (dto.pricingTierId !== undefined) data.pricingTierId = dto.pricingTierId;
+        if (dto.paymentTerms !== undefined) data.paymentTerms = dto.paymentTerms;
+        if (creditLimit !== undefined) data.creditLimit = creditLimit;
+        if (dto.notes !== undefined) data.notes = dto.notes;
+
+        await tx.merchantBuyerRelationship.update({ where: { id: rel.id }, data });
+
+        const changes: Record<string, Prisma.InputJsonValue | null> = {};
+        const previous: Record<string, Prisma.InputJsonValue | null> = {};
+        if (dto.pricingTierId !== undefined) {
+          changes.pricingTierId = dto.pricingTierId;
+          previous.pricingTierId = rel.pricingTierId;
+        }
+        if (dto.paymentTerms !== undefined) {
+          changes.paymentTerms = dto.paymentTerms;
+          previous.paymentTerms = rel.paymentTerms;
+        }
+        if (creditLimit !== undefined) {
+          changes.creditLimit = creditLimit;
+          previous.creditLimit = rel.creditLimit ? new Money(rel.creditLimit.toString()).toFixed(2) : null;
+        }
+        if (dto.notes !== undefined) {
+          changes.notes = dto.notes;
+          previous.notes = rel.notes;
+        }
+
+        await this.writeAuditTx(tx, merchantId, {
+          entityType: 'merchant_buyer_relationship',
+          entityId: buyerId,
+          action: 'updated',
+          actorType: 'merchant_user',
+          actorId,
+          newValueJson: { changes, previous },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+
+  // ── Buyer detail (merchant) ──────────────────────────────────────────────
+
+  /**
+   * Full detail for one buyer scoped to this merchant — backs the View panel and
+   * the approved-buyer inline edit. Same per-buyer aggregates as the list
+   * (orders, outstanding AR, last order) via scalar subqueries. PII is excluded.
+   */
+  async getBuyerDetail(buyerId: string, merchantId: string): Promise<BuyerDetail> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+
+    const buyer = await this.merchantContext.runAsSystem(() =>
+      this.prisma.buyer.findUnique({
+        where: { id: buyerId },
+        select: { companyName: true, email: true, businessType: true },
+      }),
+    );
+    if (!buyer) {
+      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+    }
+
+    const rows = await this.merchantContext.run(merchantId, () =>
+      this.prisma.$queryRaw<BuyerDetailRow[]>`
+        SELECT
+          r.approval_status AS "approvalStatus",
+          r.pricing_tier_id AS "pricingTierId",
+          pt.name           AS "pricingTierName",
+          r.payment_terms   AS "paymentTerms",
+          r.credit_limit    AS "creditLimit",
+          r.notes           AS "notes",
+          r.approved_at     AS "approvedAt",
+          r.created_at      AS "createdAt",
+          (SELECT COUNT(*) FROM orders o
+             WHERE o.buyer_id = r.buyer_id AND o.merchant_id = r.merchant_id) AS "orderCount",
+          (SELECT COALESCE(SUM(i.total - i.amount_paid), 0) FROM invoices i
+             WHERE i.buyer_id = r.buyer_id AND i.merchant_id = r.merchant_id
+               AND i.status NOT IN ('paid', 'void')) AS "outstandingInvoiceTotal",
+          (SELECT MAX(o.created_at) FROM orders o
+             WHERE o.buyer_id = r.buyer_id AND o.merchant_id = r.merchant_id) AS "lastOrderAt"
+        FROM merchant_buyer_relationships r
+        LEFT JOIN pricing_tiers pt ON pt.id = r.pricing_tier_id
+        WHERE r.merchant_id = ${merchantId}::uuid AND r.buyer_id = ${buyerId}::uuid
+        LIMIT 1`,
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new NotFoundException({
+        code: 'RELATIONSHIP_NOT_FOUND',
+        message: 'No relationship with this buyer',
+      });
+    }
+
+    return {
+      buyerId,
+      companyName: buyer.companyName,
+      email: buyer.email,
+      businessType: buyer.businessType,
+      approvalStatus: row.approvalStatus,
+      pricingTierId: row.pricingTierId,
+      pricingTierName: row.pricingTierName,
+      paymentTerms: row.paymentTerms,
+      creditLimit: row.creditLimit ? new Money(row.creditLimit.toString()).toFixed(2) : null,
+      notes: row.notes,
+      orderCount: Number(row.orderCount),
+      outstandingInvoiceTotal: new Money(row.outstandingInvoiceTotal.toString()).toFixed(2),
+      lastOrderAt: row.lastOrderAt ? row.lastOrderAt.toISOString() : null,
+      approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
+      createdAt: row.createdAt.toISOString(),
+    };
   }
 
   // ── GDPR (merchant) ──────────────────────────────────────────────────────
@@ -791,9 +1410,34 @@ export class BuyersService {
     return application;
   }
 
+  private async lockRelationship(
+    tx: PrismaTransaction,
+    buyerId: string,
+    merchantId: string,
+  ): Promise<LockedRelationshipRow> {
+    const rows = await tx.$queryRaw<LockedRelationshipRow[]>`
+      SELECT id,
+             approval_status::text AS "approvalStatus",
+             pricing_tier_id       AS "pricingTierId",
+             payment_terms         AS "paymentTerms",
+             credit_limit          AS "creditLimit",
+             notes
+      FROM merchant_buyer_relationships
+      WHERE merchant_id = ${merchantId}::uuid AND buyer_id = ${buyerId}::uuid
+      FOR UPDATE`;
+    const relationship = rows[0];
+    if (!relationship) {
+      throw new NotFoundException({
+        code: 'RELATIONSHIP_NOT_FOUND',
+        message: 'No relationship with this buyer',
+      });
+    }
+    return relationship;
+  }
+
   private async loadMerchantName(
     merchantId: string,
-  ): Promise<{ name: string; contactEmail: string; portalUrl: string }> {
+  ): Promise<{ name: string; displayName: string; contactEmail: string; portalUrl: string; shopDomain: string }> {
     const merchant = await this.merchantContext.runAsSystem(() =>
       this.prisma.merchant.findUnique({
         where: { id: merchantId },
@@ -802,14 +1446,19 @@ export class BuyersService {
     );
     const domain = merchant?.shopifyDomain ?? 'your supplier';
     return {
+      // `name` keeps the raw domain (back-compat for existing email callers);
+      // `displayName` is the white-label, title-cased store name.
       name: domain,
+      displayName: merchantDisplayNameFromDomain(merchant?.shopifyDomain),
       contactEmail: merchant?.users[0]?.email ?? this.config.get('RESEND_FROM_ADDRESS'),
       portalUrl: `https://${domain}`,
+      shopDomain: domain,
     };
   }
 
-  private applicationReviewUrl(applicationId: string): string {
-    return `https://${this.config.get('PLATFORM_DOMAIN')}/merchant/buyers/applications/${applicationId}`;
+  private applicationReviewUrl(): string {
+    // Deep-link straight to the pending-applications queue in the merchant admin.
+    return `https://${this.config.get('PLATFORM_DOMAIN')}/buyers?status=pending`;
   }
 
   private async writeAudit(
