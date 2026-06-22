@@ -158,6 +158,24 @@ export interface BuyerDetail {
   createdAt: string;
 }
 
+/**
+ * The authenticated, approved buyer's own relationship snapshot for THIS merchant.
+ * Powers the catalog welcome bar and the Review-Order credit section. Money fields
+ * are decimal strings; `bnplEnabled` reflects the merchant's plan (growth/pro).
+ */
+export interface BuyerMeView {
+  companyName: string;
+  pricingTierName: string | null;
+  /** The buyer's tier minimum order amount (decimal string), or null when none. */
+  minOrderAmount: string | null;
+  paymentTerms: PaymentTerms;
+  creditLimit: string | null;
+  creditUsed: string;
+  creditAvailable: string | null;
+  memberSince: string | null;
+  bnplEnabled: boolean;
+}
+
 /** GDPR subject-access export. PII is returned as stored (encrypted) — never decrypted here. */
 export interface GdprExport {
   buyer: {
@@ -527,6 +545,81 @@ export class BuyersService {
       companyName: application.companyName,
       appliedAt: application.createdAt.toISOString(),
       reviewedAt: application.reviewedAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * The approved buyer's own relationship snapshot for this merchant (tier name,
+   * payment terms, credit limit/used/available, member-since) plus whether the
+   * merchant's plan enables BNPL. Guarded by ClerkBuyerGuard, so the relationship
+   * is already known-approved; we still surface a 404 if it has gone missing.
+   */
+  async getBuyerMe(buyerId: string, merchantId: string): Promise<BuyerMeView> {
+    this.assertUuid(buyerId);
+    this.assertUuid(merchantId);
+
+    // Buyer record is cross-merchant (no RLS) → system context.
+    const buyer = await this.merchantContext.runAsSystem(() =>
+      this.prisma.buyer.findUnique({
+        where: { id: buyerId },
+        select: { companyName: true },
+      }),
+    );
+    if (!buyer) {
+      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+    }
+
+    // Merchant plan drives BNPL availability (growth/pro only).
+    const merchant = await this.merchantContext.runAsSystem(() =>
+      this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { subscriptionTier: true },
+      }),
+    );
+
+    const relationship = await this.merchantContext.run(merchantId, () =>
+      this.prisma.merchantBuyerRelationship.findFirst({
+        where: { merchantId, buyerId },
+        select: {
+          paymentTerms: true,
+          creditLimit: true,
+          creditUsed: true,
+          approvedAt: true,
+          createdAt: true,
+          pricingTier: { select: { name: true, minOrderAmount: true } },
+        },
+      }),
+    );
+    if (!relationship) {
+      throw new NotFoundException({
+        code: 'RELATIONSHIP_NOT_FOUND',
+        message: 'No relationship with this merchant',
+      });
+    }
+
+    const creditLimit = relationship.creditLimit
+      ? new Money(relationship.creditLimit.toString()).toFixed(2)
+      : null;
+    const creditUsed = new Money(relationship.creditUsed.toString()).toFixed(2);
+    const creditAvailable = creditLimit
+      ? Money.max(new Money(creditLimit).minus(new Money(creditUsed)), new Money(0)).toFixed(2)
+      : null;
+    const minOrderAmount = relationship.pricingTier?.minOrderAmount
+      ? new Money(relationship.pricingTier.minOrderAmount.toString()).toFixed(2)
+      : null;
+    const bnplEnabled =
+      merchant?.subscriptionTier === 'growth' || merchant?.subscriptionTier === 'pro';
+
+    return {
+      companyName: buyer.companyName,
+      pricingTierName: relationship.pricingTier?.name ?? null,
+      minOrderAmount,
+      paymentTerms: relationship.paymentTerms,
+      creditLimit,
+      creditUsed,
+      creditAvailable,
+      memberSince: (relationship.approvedAt ?? relationship.createdAt).toISOString(),
+      bnplEnabled,
     };
   }
 

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Redis } from 'ioredis';
+import type { VolumeBreakCondition } from '@b2b/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { ShopifyApiService } from '../shopify/shopify-api.service';
@@ -20,6 +21,10 @@ export interface CatalogVariant {
   basePrice: string;
   resolvedPrice: string;
   appliedTierType: ResolvedVariantPrice['appliedTierType'];
+  /** Discount % for a `percentage_off` tier (drives the "X% off" badge); else null. */
+  discountPct: string | null;
+  /** Bracket ladder for a `volume_breaks` tier (drives the live volume popover); else null. */
+  volumeBrackets: VolumeBreakCondition[] | null;
   available: boolean;
 }
 
@@ -198,6 +203,8 @@ export class CatalogService {
           basePrice: resolved?.basePrice ?? variant.price,
           resolvedPrice: resolved?.resolvedPrice ?? variant.price,
           appliedTierType: resolved?.appliedTierType ?? null,
+          discountPct: resolved?.discountPct ?? null,
+          volumeBrackets: resolved?.volumeBrackets ?? null,
           available: variant.available ?? variant.inventory_quantity > 0,
         };
       });

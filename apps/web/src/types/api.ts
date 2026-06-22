@@ -314,6 +314,10 @@ export interface CatalogVariant {
   basePrice: string;
   resolvedPrice: string;
   appliedTierType: PricingTierType | null;
+  /** Discount % on a `percentage_off` tier (drives the "X% off" badge); else null. */
+  discountPct: string | null;
+  /** Bracket ladder on a `volume_breaks` tier (drives the live volume popover); else null. */
+  volumeBrackets: VolumeBreakBracket[] | null;
   available: boolean;
 }
 
@@ -332,6 +336,36 @@ export interface CatalogPage {
   products: CatalogProduct[];
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
   stale: boolean;
+}
+
+// ── Buyer account / BNPL (buyer portal) ─────────────────────────────────
+
+/** The approved buyer's own relationship snapshot (`GET /buyer/me`). */
+export interface BuyerMe {
+  companyName: string;
+  pricingTierName: string | null;
+  /** The buyer's tier minimum order amount (decimal string), or null when none. */
+  minOrderAmount: string | null;
+  paymentTerms: PaymentTerms;
+  /** Credit limit, or null for an uncapped relationship. Money as a decimal string. */
+  creditLimit: string | null;
+  creditUsed: string;
+  /** max(limit - used, 0), or null when there is no limit. */
+  creditAvailable: string | null;
+  memberSince: string | null;
+  /** True when the merchant's plan (growth/pro) enables BNPL financing. */
+  bnplEnabled: boolean;
+}
+
+/** Resolve eligibility result (`POST /api/v1/buyer/bnpl/eligibility`). */
+export interface BnplEligibility {
+  eligible: boolean;
+  /** Maximum financeable amount as a decimal string, or null when not eligible. */
+  approvedAmount: string | null;
+  /** Offered term lengths in days (e.g. [60, 90]). */
+  availableTermsDays: number[];
+  currency: string;
+  declineReason: string | null;
 }
 
 // ── Dashboard aggregator (REST GET /api/v1/dashboard) ───────────────────

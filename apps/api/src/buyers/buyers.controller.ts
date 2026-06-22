@@ -37,6 +37,7 @@ import {
   ClerkAuthenticatedGuard,
   type BuyerIdentityRequest,
 } from '../auth/guards/clerk-authenticated.guard';
+import { ClerkBuyerGuard, type BuyerAuthenticatedRequest } from '../auth/guards/clerk-buyer.guard';
 import { MerchantResolverService } from '../auth/merchant-resolver.service';
 import {
   BuyersService,
@@ -45,6 +46,7 @@ import {
   type ApplicationResult,
   type ApplicationStatusView,
   type BuyerDetail,
+  type BuyerMeView,
   type BuyerSummary,
   type MerchantContextView,
 } from './buyers.service';
@@ -135,6 +137,22 @@ export class BuyersController {
     }
     const { merchantId } = await this.merchantResolver.resolveFromRequest(req);
     return this.buyers.getApplicationStatusForBuyer(merchantId, identity.clerkUserId);
+  }
+
+  // ── Buyer: own account snapshot (approved, ClerkBuyerGuard) ───────────────
+
+  /**
+   * The approved buyer's relationship snapshot for the resolved merchant tenant —
+   * tier name, payment terms, credit limit/used/available, member-since, and
+   * whether the merchant's plan enables BNPL. Powers the catalog welcome bar and
+   * the Review-Order credit + BNPL sections. The tenant is the merchant resolved
+   * by ClerkBuyerGuard from the App-Proxy cookie, never a client-supplied id.
+   */
+  @Get('buyer/me')
+  @UseGuards(ClerkBuyerGuard)
+  getBuyerMe(@Req() req: BuyerAuthenticatedRequest): Promise<BuyerMeView> {
+    const buyer = req.buyer!;
+    return this.buyers.getBuyerMe(buyer.buyerId, buyer.merchantId);
   }
 
   // ── Merchant: buyers list ────────────────────────────────────────────────

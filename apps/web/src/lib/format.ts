@@ -89,3 +89,37 @@ export function daysOverdue(dueDate: string | Date | null | undefined): number {
   const diffMs = Date.now() - date.getTime();
   return diffMs <= 0 ? 0 : Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
+
+/** Human label for a payment-terms enum, e.g. `net30` → `Net 30`. */
+export function formatPaymentTerms(terms: string | null | undefined): string {
+  switch (terms) {
+    case 'immediate':
+      return 'Due immediately';
+    case 'net15':
+      return 'Net 15';
+    case 'net30':
+      return 'Net 30';
+    case 'net60':
+      return 'Net 60';
+    case 'net90':
+      return 'Net 90';
+    default:
+      return terms && terms.length > 0 ? terms : '—';
+  }
+}
+
+/** Days a payment-terms enum represents (0 for immediate/unknown). Used for due-date estimates. */
+export function paymentTermsDays(terms: string | null | undefined): number {
+  switch (terms) {
+    case 'net15':
+      return 15;
+    case 'net30':
+      return 30;
+    case 'net60':
+      return 60;
+    case 'net90':
+      return 90;
+    default:
+      return 0;
+  }
+}
