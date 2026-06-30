@@ -11,24 +11,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
+import { Button, LoadingButton } from '@/components/ui/button';
 
 /**
- * Confirmation dialog built on Radix AlertDialog. `destructive` turns the
- * confirm button red; `isLoading` shows a spinner and disables BOTH buttons so
- * a financial action (mark paid, void, reject) can't be double-submitted.
+ * Confirmation dialog built on Radix AlertDialog, redesigned to the token
+ * system. `destructive` turns the confirm button red; `isLoading` shows a
+ * spinner and disables BOTH buttons so a financial action (mark paid, void,
+ * reject) can't be double-submitted. `children` embeds form content — e.g. a
+ * rejection-reason field — between the description and the footer.
  */
 export interface ConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  description?: ReactNode;
+  description?: string | ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
   isLoading?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
+  children?: ReactNode;
 }
 
 export function ConfirmDialog({
@@ -41,33 +43,40 @@ export function ConfirmDialog({
   destructive = false,
   isLoading = false,
   onConfirm,
+  children,
 }: ConfirmDialogProps): JSX.Element {
   return (
     <AlertDialog open={open} onOpenChange={(next) => !isLoading && onOpenChange(next)}>
-      <AlertDialogContent>
+      <AlertDialogContent className="rounded-xl border-border bg-surface shadow-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          {description ? <AlertDialogDescription>{description}</AlertDialogDescription> : null}
+          <AlertDialogTitle className="text-xl font-semibold text-text-primary">{title}</AlertDialogTitle>
+          {description ? (
+            <AlertDialogDescription className="mt-2 text-sm text-text-secondary">
+              {description}
+            </AlertDialogDescription>
+          ) : null}
         </AlertDialogHeader>
-        <AlertDialogFooter>
+
+        {children ? <div className="mt-4">{children}</div> : null}
+
+        <AlertDialogFooter className="mt-6 gap-3">
           <AlertDialogCancel asChild>
-            <Button variant="default" disabled={isLoading}>
+            <Button variant="secondary" disabled={isLoading}>
               {cancelLabel}
             </Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
-            <Button
+            <LoadingButton
               variant={destructive ? 'destructive' : 'primary'}
-              disabled={isLoading}
+              isLoading={isLoading}
               onClick={(event) => {
                 // Keep the dialog open until the caller resolves the action.
                 event.preventDefault();
-                onConfirm();
+                void onConfirm();
               }}
             >
-              {isLoading ? <Spinner /> : null}
               {confirmLabel}
-            </Button>
+            </LoadingButton>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

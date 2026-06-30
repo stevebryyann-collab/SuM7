@@ -356,4 +356,51 @@ export class MerchantsService {
     });
     return { id: created.id, email: created.email, role: created.role as MerchantRole };
   }
+
+  // ── Part 2 of 4: Merchant config and settings ──────────────────────────
+
+  async getMerchantConfig(merchantId: string): Promise<{
+    shopifyDomain: string;
+    gtmId: string | null;
+    ga4Id: string | null;
+    allowsBackOrders: boolean;
+  }> {
+    const merchant = await this.prisma.merchant.findUniqueOrThrow({
+      where: { id: merchantId },
+      select: {
+        shopifyDomain: true,
+        gtmId: true,
+        ga4Id: true,
+        allowsBackOrders: true,
+      },
+    });
+    return merchant;
+  }
+
+  async updateMerchantSettings(
+    merchantId: string,
+    dto: {
+      allowsBackOrders?: boolean;
+      gtmId?: string;
+      ga4Id?: string;
+      invoicePrefix?: string;
+      paymentInstructions?: string | null;
+    },
+    correlationId?: string,
+  ): Promise<void> {
+    await this.merchantContext.run(merchantId, () =>
+      this.prisma.merchant.update({
+        where: { id: merchantId },
+        data: {
+          ...(dto.allowsBackOrders !== undefined && { allowsBackOrders: dto.allowsBackOrders }),
+          ...(dto.gtmId !== undefined && { gtmId: dto.gtmId }),
+          ...(dto.ga4Id !== undefined && { ga4Id: dto.ga4Id }),
+          ...(dto.invoicePrefix !== undefined && { invoicePrefix: dto.invoicePrefix }),
+          ...(dto.paymentInstructions !== undefined && { paymentInstructions: dto.paymentInstructions }),
+        },
+      }),
+    );
+
+    this.logger.log('Merchant settings updated', { merchantId, correlationId });
+  }
 }

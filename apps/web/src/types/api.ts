@@ -205,6 +205,13 @@ export interface OrderDetail {
   dueDate: string | null;
   notes: string | null;
   createdAt: string;
+  /** Part 2/3: back-order flag + Shopify fulfillment tracking (buyer order detail). */
+  containsBackOrder: boolean;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  fulfillmentService: string | null;
+  shippedAt: string | null;
+  estimatedDeliveryAt: string | null;
   lineItems: OrderLineDetail[];
   invoice: {
     id: string;

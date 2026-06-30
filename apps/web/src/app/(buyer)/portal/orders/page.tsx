@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/shared/PageHeader';
 import {
   Table,
@@ -19,6 +20,7 @@ import type { OrderSummary } from '@/types/api';
 
 /** Buyer's own order history (cursor paginated). */
 export default function BuyerOrdersPage(): JSX.Element {
+  const router = useRouter();
   const [pageIndex, setPageIndex] = useState(0);
   const query = useOrders({ mode: 'buyer' });
 
@@ -58,7 +60,11 @@ export default function BuyerOrdersPage(): JSX.Element {
                   </TableRow>
                 ) : (
                   orders.map((order) => (
-                    <TableRow key={order.id}>
+                    <TableRow
+                      key={order.id}
+                      className="cursor-pointer hover:bg-neutral-bg"
+                      onClick={() => router.push(`/portal/orders/${order.id}`)}
+                    >
                       <TableCell className="font-mono text-xs text-gray-700">
                         {order.shopifyOrderNumber ?? '—'}
                       </TableCell>

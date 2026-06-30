@@ -3,20 +3,28 @@
 import { forwardRef, type InputHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
+export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  /** Render the error treatment (danger border + ring). */
+  error?: boolean;
+}
+
 /**
- * Recessed text input. `shadow-inner` is the only depth cue (no focus glow ring,
- * per CLAUDE.md). On focus the surface lifts from gray-50 to white.
+ * Text input on the design-system token scale. Focus shows an accent border +
+ * 2px accent-tinted ring (the one focus affordance — no glow). Token colors
+ * only; no hardcoded hex.
  */
-export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, type = 'text', ...props }, ref) => (
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type = 'text', error = false, ...props }, ref) => (
     <input
       ref={ref}
       type={type}
+      aria-invalid={error || undefined}
       className={cn(
-        'h-9 w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900',
-        'shadow-inner transition-colors duration-75 placeholder:text-gray-400',
-        'focus:border-gray-400 focus:bg-white focus:outline-none focus:ring-0',
-        'disabled:cursor-not-allowed disabled:opacity-50',
+        'h-9 w-full rounded-md border border-border bg-surface px-3 text-base text-text-primary',
+        'transition-colors duration-fast placeholder:text-text-tertiary',
+        'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-border focus:ring-offset-0',
+        'disabled:cursor-not-allowed disabled:bg-neutral-bg disabled:text-text-tertiary',
+        error && 'border-danger focus:border-danger focus:ring-red-200',
         className,
       )}
       {...props}

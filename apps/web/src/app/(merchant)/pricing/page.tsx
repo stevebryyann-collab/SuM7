@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Plus, Tags } from 'lucide-react';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
@@ -63,20 +63,11 @@ export default function PricingPage(): JSX.Element {
   const list = tiers ?? [];
 
   return (
-    <>
-      <PageHeader
-        title="Pricing Tiers"
-        description="Unlimited tiers: percentage, fixed price list, or volume breaks."
-        actions={
-          list.length > 0 ? (
-            <Button variant="primary" size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              New tier
-            </Button>
-          ) : undefined
-        }
-      />
-
+    <PageLayout
+      title="Pricing Tiers"
+      subtitle="Unlimited tiers: percentage, fixed price list, or volume breaks."
+      action={list.length > 0 ? { label: 'New tier', onClick: openCreate, icon: Plus } : undefined}
+    >
       {isLoading ? (
         <section className="panel">
           <LoadingSkeleton rows={4} columns={[3, 2, 1, 1, 1]} />
@@ -128,7 +119,7 @@ export default function PricingPage(): JSX.Element {
         isLoading={del.isPending}
         onConfirm={confirmDelete}
       />
-    </>
+    </PageLayout>
   );
 }
 

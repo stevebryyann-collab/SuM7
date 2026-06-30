@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Download } from 'lucide-react';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import {
@@ -65,18 +65,16 @@ export default function ArAgingPage(): JSX.Element {
   };
 
   return (
-    <>
-      <PageHeader
-        title="AR Aging"
-        description="Outstanding receivables by age."
-        actions={
-          <Button variant="default" size="sm" onClick={handleExport} disabled={exportCsv.isPending}>
-            {exportCsv.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Download className="h-4 w-4" />}
-            Export CSV
-          </Button>
-        }
-      />
-
+    <PageLayout
+      title="AR Aging"
+      subtitle="Outstanding receivables by age."
+      headerActions={
+        <Button variant="secondary" size="sm" onClick={handleExport} disabled={exportCsv.isPending}>
+          {exportCsv.isPending ? <Spinner className="h-3.5 w-3.5" /> : <Download className="h-4 w-4" />}
+          Export CSV
+        </Button>
+      }
+    >
       <nav className="mb-4 text-xs text-gray-500">
         <Link href="/invoices" className="hover:text-gray-700">
           Invoices
@@ -147,6 +145,6 @@ export default function ArAgingPage(): JSX.Element {
           </section>
         </div>
       )}
-    </>
+    </PageLayout>
   );
 }

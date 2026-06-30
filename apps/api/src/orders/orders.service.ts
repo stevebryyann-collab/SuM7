@@ -40,6 +40,8 @@ export interface OrderCreatedResult {
   paymentTerms: PaymentTerms;
   dueDate: string | null;
   estimatedInvoiceDelivery: string;
+  containsBackOrder: boolean;
+  backOrderItems: string[];
 }
 
 /** Compact order row for list views (merchant + buyer). */
@@ -95,6 +97,13 @@ export interface OrderDetail {
   dueDate: string | null;
   notes: string | null;
   createdAt: string;
+  // Part 2/3: back-order flag + fulfillment tracking (surfaced in the buyer portal).
+  containsBackOrder: boolean;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  fulfillmentService: string | null;
+  shippedAt: string | null;
+  estimatedDeliveryAt: string | null;
   lineItems: OrderLineDetail[];
   invoice: {
     id: string;
@@ -166,6 +175,8 @@ export class OrdersService {
     merchantId: string,
     dto: BulkOrderInput,
     idempotencyKey: string,
+    discountCodesService?: any, // Injected via controller
+    inventoryService?: any, // Injected via controller
   ): Promise<OrderCreatedResult> {
     this.assertUuid(merchantId);
     this.assertUuid(buyerId);
@@ -185,7 +196,53 @@ export class OrdersService {
     }
 
     const currency = resolved[0]?.currency ?? 'USD';
-    const subtotal = this.sumLineTotals(resolved);
+    let subtotal = this.sumLineTotals(resolved);
+
+    // Part 2 of 4: Validate discount code if provided
+    let discountCodeId: string | null = null;
+    let discountAmount = new Money(0);
+    if (dto.discountCode && discountCodesService) {
+      const validation = await discountCodesService.validateCode(
+        merchantId,
+        dto.discountCode,
+        subtotal,
+      );
+      if (!validation.valid) {
+        throw new BadRequestException({
+          code: 'INVALID_DISCOUNT_CODE',
+          reason: validation.invalidReason,
+        });
+      }
+      discountCodeId = validation.code!.id;
+      discountAmount = validation.discountAmount!;
+      subtotal = validation.discountedTotal!;
+    }
+
+    // Part 2 of 4: Check inventory and back-order status
+    let containsBackOrder = false;
+    const backOrderItems: string[] = [];
+    if (inventoryService) {
+      const variantIds = resolved.map((line) => line.shopifyVariantId);
+      const inventory = await inventoryService.getInventoryForVariants(
+        merchantId,
+        merchant.shopifyAccessToken,
+        variantIds,
+      );
+
+      for (const line of resolved) {
+        const level = inventory.get(line.shopifyVariantId);
+        if (level && level.status === 'out_of_stock') {
+          if (!level.allowsBackOrder) {
+            throw new BadRequestException({
+              code: 'OUT_OF_STOCK_ITEMS',
+              items: [{ shopifyVariantId: line.shopifyVariantId, productTitle: line.productTitle, variantTitle: line.variantTitle }],
+            });
+          }
+          containsBackOrder = true;
+          backOrderItems.push(line.shopifyVariantId);
+        }
+      }
+    }
 
     // Steps 2 + 6: FOR SHARE the relationship (blocks concurrent approval /
     // suspension changes) and reserve credit with an optimistic version CAS.
@@ -194,7 +251,7 @@ export class OrdersService {
     const paymentTerms = reserved.paymentTerms;
     const dueDate = this.computeDueDate(paymentTerms);
 
-    // Step 5: minimum order check against the resolved (server) subtotal.
+    // Step 5: minimum order check against the resolved (server) subtotal (after discount).
     await this.enforceMinimumOrder(merchantId, reserved.pricingTierId, subtotal);
 
     // Steps 7–9: create + complete the Shopify draft order. Any failure releases
@@ -243,7 +300,15 @@ export class OrdersService {
         pricingTierIdAtOrder: reserved.pricingTierId,
         notes: dto.notes ?? null,
         lines: resolved,
+        discountCodeId,
+        discountAmount,
+        containsBackOrder,
       });
+
+      // Apply discount code usage increment inside transaction
+      if (discountCodeId && discountCodesService) {
+        await discountCodesService.applyCodeToOrder(discountCodeId);
+      }
     } catch (persistError) {
       // The order exists in Shopify but could not be recorded locally. Release the
       // reserved credit and flag for reconciliation (a Shopify cancel endpoint is
@@ -278,6 +343,8 @@ export class OrdersService {
       paymentTerms,
       dueDate: dueDate ? dueDate.toISOString() : null,
       estimatedInvoiceDelivery: 'within 60 seconds',
+      containsBackOrder,
+      backOrderItems,
     };
   }
 
@@ -378,6 +445,12 @@ export class OrdersService {
           dueDate: true,
           notes: true,
           createdAt: true,
+          containsBackOrder: true,
+          trackingNumber: true,
+          trackingUrl: true,
+          fulfillmentService: true,
+          shippedAt: true,
+          estimatedDeliveryAt: true,
           buyer: { select: { companyName: true } },
           lineItems: {
             select: {
@@ -428,6 +501,12 @@ export class OrdersService {
       dueDate: order.dueDate ? order.dueDate.toISOString() : null,
       notes: order.notes,
       createdAt: order.createdAt.toISOString(),
+      containsBackOrder: order.containsBackOrder,
+      trackingNumber: order.trackingNumber,
+      trackingUrl: order.trackingUrl,
+      fulfillmentService: order.fulfillmentService,
+      shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
+      estimatedDeliveryAt: order.estimatedDeliveryAt ? order.estimatedDeliveryAt.toISOString() : null,
       lineItems: order.lineItems.map((li) => ({
         shopifyVariantId: li.shopifyVariantId,
         shopifyProductId: li.shopifyProductId,
@@ -642,8 +721,12 @@ export class OrdersService {
     pricingTierIdAtOrder: string | null;
     notes: string | null;
     lines: ResolvedOrderLine[];
+    discountCodeId?: string | null;
+    discountAmount?: Decimal;
+    containsBackOrder?: boolean;
   }): Promise<string> {
     const subtotalStr = params.subtotal.toFixed(2);
+    const discountAmountStr = params.discountAmount?.toFixed(2) ?? '0';
     for (let attempt = 0; attempt < SERIALIZABLE_RETRIES; attempt += 1) {
       try {
         return await this.prisma.$transaction(
@@ -664,6 +747,9 @@ export class OrdersService {
                 syncStatus: 'synced',
                 pricingTierIdAtOrder: params.pricingTierIdAtOrder,
                 notes: params.notes,
+                discountCodeId: params.discountCodeId ?? null,
+                discountAmount: discountAmountStr,
+                containsBackOrder: params.containsBackOrder ?? false,
               },
               create: {
                 merchantId: params.merchantId,
@@ -681,6 +767,9 @@ export class OrdersService {
                 syncStatus: 'synced',
                 pricingTierIdAtOrder: params.pricingTierIdAtOrder,
                 notes: params.notes,
+                discountCodeId: params.discountCodeId ?? null,
+                discountAmount: discountAmountStr,
+                containsBackOrder: params.containsBackOrder ?? false,
               },
               select: { id: true },
             });

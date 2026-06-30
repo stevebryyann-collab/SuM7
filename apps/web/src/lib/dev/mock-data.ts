@@ -567,6 +567,12 @@ function buildOrderDetail(summary: OrderSummary): OrderDetail {
     dueDate: summary.dueDate,
     notes: null,
     createdAt: summary.createdAt,
+    containsBackOrder: false,
+    trackingNumber: summary.status === 'fulfilled' ? `1Z999AA1${String(1000000 + seed).slice(0, 7)}` : null,
+    trackingUrl: summary.status === 'fulfilled' ? 'https://www.ups.com/track' : null,
+    fulfillmentService: summary.status === 'fulfilled' ? 'UPS' : null,
+    shippedAt: summary.status === 'fulfilled' ? summary.createdAt : null,
+    estimatedDeliveryAt: null,
     lineItems: buildOrderLines(subtotal, summary.itemCount, seed, summary.currency),
     invoice: invoiceLinkForOrder(summary),
   };

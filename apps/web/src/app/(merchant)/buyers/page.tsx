@@ -2,20 +2,27 @@
 
 import { Suspense, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { toast } from 'sonner';
-import { Link2 } from 'lucide-react';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { useSession } from 'next-auth/react';
+import { Check, Clipboard, Search, Users } from 'lucide-react';
+import { PageLayout, PageContainer } from '@/components/merchant/PageLayout';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  DataTable,
+  DataTableHeader,
+  DataTableHeaderCell,
+  DataTableBody,
+  DataTableRow,
+  DataTableCell,
+  DataTableEmpty,
+} from '@/components/shared/DataTable';
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -25,8 +32,9 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
+import { BuyerTableSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { toast } from '@/components/shared/toasts';
 import {
   BuyerApprovalPanel,
   type BuyerPanelTarget,
@@ -36,10 +44,13 @@ import {
   usePendingApplications,
   useReinstateBuyer,
   useSuspendBuyer,
+  useBuyerGdprExport,
+  useEraseBuyer,
 } from '@/hooks/useBuyers';
 import { usePricingTiers } from '@/hooks/usePricingTiers';
 import { ApiClientError } from '@/lib/api/error';
 import { formatMoney, formatRelative } from '@/lib/format';
+import { cn } from '@/lib/cn';
 import type { BuyerApplication, BuyerSummary } from '@/types/api';
 
 type BuyerTab = 'all' | 'pending' | 'approved' | 'suspended';
@@ -50,25 +61,36 @@ const BUYER_STATUS: Record<Exclude<BuyerTab, 'pending'>, string | undefined> = {
   suspended: 'suspended',
 };
 
+const VALID_TABS: BuyerTab[] = ['all', 'pending', 'approved', 'suspended'];
+
+function initialTab(status: string | null): BuyerTab {
+  return status && (VALID_TABS as string[]).includes(status) ? (status as BuyerTab) : 'all';
+}
+
 /**
  * Merchant buyers admin. One tabbed surface: Pending shows registration
  * applications (Review → approve/reject + audited PII reveal); All / Approved /
- * Suspended show buyer records (row → read-only view, with inline edit for
- * approved buyers). A filter bar adds pricing-tier filtering and company search;
- * Suspend / Reinstate are confirmed. Copy application link shares the buyer
- * apply URL.
+ * Suspended show buyer records with a per-row {@link DropdownMenu} (Review, View
+ * orders, Adjust tier, Suspend/Reinstate, and owner-only GDPR export/erase). A
+ * Credit Utilization column shows AR consumed against each buyer's credit limit.
+ * Copy application link shares the buyer apply URL. Tab is also settable via the
+ * `status` query the dashboard links use.
  */
 function BuyersView(): JSX.Element {
   const searchParams = useSearchParams();
   const initialTier = searchParams.get('tier') ?? 'all';
-  const [tab, setTab] = useState<BuyerTab>('all');
+  const [tab, setTab] = useState<BuyerTab>(() => initialTab(searchParams.get('status')));
   const [search, setSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<string>(initialTier);
   const [target, setTarget] = useState<BuyerPanelTarget | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [suspendTarget, setSuspendTarget] = useState<BuyerSummary | null>(null);
   const [reinstateTarget, setReinstateTarget] = useState<BuyerSummary | null>(null);
+  const [eraseTarget, setEraseTarget] = useState<BuyerSummary | null>(null);
+  const [copied, setCopied] = useState(false);
 
+  const { data: session } = useSession();
+  const isOwner = session?.role === 'owner';
   const applications = usePendingApplications();
   const { data: tiers } = usePricingTiers();
   const isPending = tab === 'pending';
@@ -79,6 +101,8 @@ function BuyersView(): JSX.Element {
   });
   const suspend = useSuspendBuyer();
   const reinstate = useReinstateBuyer();
+  const gdprExport = useBuyerGdprExport();
+  const erase = useEraseBuyer();
 
   const rows = useMemo<BuyerSummary[]>(
     () => (buyers.data?.pages ?? []).flatMap((page) => page.data),
@@ -112,18 +136,27 @@ function BuyersView(): JSX.Element {
       typeof window !== 'undefined' ? `${window.location.origin}/portal/apply` : '/portal/apply';
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Application link copied');
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error('Could not copy link');
     }
   };
 
+  const runGdprExport = (buyer: BuyerSummary): void => {
+    gdprExport.mutate(buyer.buyerId, {
+      onSuccess: () => toast.success(`GDPR export downloaded for ${buyer.companyName}`),
+      onError: (error) =>
+        toast.error(error instanceof ApiClientError ? error.message : 'GDPR export failed'),
+    });
+  };
+
   const confirmSuspend = (): void => {
     if (!suspendTarget) return;
-    const targetBuyer = suspendTarget;
-    suspend.mutate(targetBuyer.buyerId, {
+    const buyer = suspendTarget;
+    suspend.mutate(buyer.buyerId, {
       onSuccess: () => {
-        toast.success(`${targetBuyer.companyName} suspended`);
+        toast.success(`${buyer.companyName} suspended`);
         setSuspendTarget(null);
       },
       onError: (error) => {
@@ -135,10 +168,10 @@ function BuyersView(): JSX.Element {
 
   const confirmReinstate = (): void => {
     if (!reinstateTarget) return;
-    const targetBuyer = reinstateTarget;
-    reinstate.mutate(targetBuyer.buyerId, {
+    const buyer = reinstateTarget;
+    reinstate.mutate(buyer.buyerId, {
       onSuccess: () => {
-        toast.success(`${targetBuyer.companyName} reinstated`);
+        toast.success(`${buyer.companyName} reinstated`);
         setReinstateTarget(null);
       },
       onError: (error) => {
@@ -148,94 +181,118 @@ function BuyersView(): JSX.Element {
     });
   };
 
-  return (
-    <>
-      <PageHeader
-        title="Buyers"
-        description="Review applications and manage approved buyers."
-        actions={
-          <Button variant="default" size="sm" onClick={() => void copyApplicationLink()}>
-            <Link2 className="h-4 w-4" />
-            Copy application link
-          </Button>
-        }
-      />
+  const confirmErase = (): void => {
+    if (!eraseTarget) return;
+    const buyer = eraseTarget;
+    erase.mutate(buyer.buyerId, {
+      onSuccess: () => {
+        toast.success(`${buyer.companyName} erased`);
+        setEraseTarget(null);
+      },
+      onError: (error) => {
+        setEraseTarget(null);
+        toast.error(error instanceof ApiClientError ? error.message : 'Erase failed');
+      },
+    });
+  };
 
-      <section className="panel">
-        <div className="flex flex-col gap-3 border-b border-gray-200 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Tabs value={tab} onValueChange={(v) => setTab(v as BuyerTab)}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="pending">
-                  Pending
-                  {pendingCount > 0 ? (
-                    <span className="ml-1.5 rounded-full bg-yellow-100 px-1.5 text-xs font-medium text-yellow-800">
+  return (
+    <PageLayout
+      title="Buyers"
+      subtitle="Review applications and manage approved buyers."
+      headerActions={
+        <Button variant="secondary" size="sm" onClick={() => void copyApplicationLink()}>
+          {copied ? <Check className="h-4 w-4 text-success" /> : <Clipboard className="h-4 w-4" />}
+          {copied ? 'Copied' : 'Copy application link'}
+        </Button>
+      }
+    >
+      {/* Tabs + search */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as BuyerTab)}>
+          <TabsList>
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="pending">
+              <span className="flex items-center gap-1.5">
+                Pending
+                {pendingCount > 0 ? (
+                  <>
+                    <span className="rounded-full border border-border-strong bg-warning-bg px-1.5 text-2xs font-medium text-warning">
                       {pendingCount}
                     </span>
-                  ) : null}
-                </TabsTrigger>
-                <TabsTrigger value="approved">Approved</TabsTrigger>
-                <TabsTrigger value="suspended">Suspended</TabsTrigger>
-              </TabsList>
-            </Tabs>
+                    <span className="relative flex h-2 w-2" aria-hidden>
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-warning" />
+                    </span>
+                  </>
+                ) : null}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="approved">Approved</TabsTrigger>
+            <TabsTrigger value="suspended">Suspended</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" />
             <Input
               placeholder="Search company…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-56"
+              className="h-9 w-56 pl-9"
             />
           </div>
           {!isPending ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <Select value={tierFilter} onValueChange={setTierFilter}>
-                <SelectTrigger className="h-8 w-48">
-                  <SelectValue placeholder="All tiers" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All tiers</SelectItem>
-                  {(tiers ?? []).map((tier) => (
-                    <SelectItem key={tier.id} value={tier.id}>
-                      {tier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={tierFilter} onValueChange={setTierFilter}>
+              <SelectTrigger className="h-9 w-44">
+                <SelectValue placeholder="All tiers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tiers</SelectItem>
+                {(tiers ?? []).map((tier) => (
+                  <SelectItem key={tier.id} value={tier.id}>
+                    {tier.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           ) : null}
         </div>
+      </div>
 
-        {isPending ? (
-          <PendingTable
-            isLoading={applications.isLoading}
-            rows={pendingRows}
-            onOpen={openApplication}
-          />
-        ) : buyers.isLoading ? (
-          <LoadingSkeleton rows={8} columns={[3, 2, 1, 2, 2, 1]} />
-        ) : (
-          <BuyersTable
-            rows={rows}
-            onView={openBuyer}
-            onSuspend={setSuspendTarget}
-            onReinstate={setReinstateTarget}
-          />
-        )}
+      {isPending ? (
+        <PendingTable
+          isLoading={applications.isLoading}
+          rows={pendingRows}
+          onOpen={openApplication}
+        />
+      ) : buyers.isLoading ? (
+        <BuyerTableSkeleton rows={8} />
+      ) : (
+        <BuyersTable
+          rows={rows}
+          isOwner={isOwner}
+          onView={openBuyer}
+          onSuspend={setSuspendTarget}
+          onReinstate={setReinstateTarget}
+          onGdprExport={runGdprExport}
+          onErase={setEraseTarget}
+        />
+      )}
 
-        {!isPending && buyers.hasNextPage ? (
-          <div className="flex justify-center border-t border-gray-200 py-3">
-            <Button
-              variant="default"
-              size="sm"
-              disabled={buyers.isFetchingNextPage}
-              onClick={() => void buyers.fetchNextPage()}
-            >
-              {buyers.isFetchingNextPage ? <Spinner className="h-3.5 w-3.5" /> : null}
-              Load more
-            </Button>
-          </div>
-        ) : null}
-      </section>
+      {!isPending && buyers.hasNextPage ? (
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={buyers.isFetchingNextPage}
+            onClick={() => void buyers.fetchNextPage()}
+          >
+            {buyers.isFetchingNextPage ? <Spinner className="h-3.5 w-3.5" /> : null}
+            Load more
+          </Button>
+        </div>
+      ) : null}
 
       <BuyerApprovalPanel target={target} open={panelOpen} onOpenChange={setPanelOpen} />
 
@@ -269,7 +326,50 @@ function BuyersView(): JSX.Element {
         isLoading={reinstate.isPending}
         onConfirm={confirmReinstate}
       />
-    </>
+
+      <ConfirmDialog
+        open={eraseTarget !== null}
+        onOpenChange={(open) => !open && setEraseTarget(null)}
+        title="Erase this buyer (GDPR)?"
+        description={
+          eraseTarget ? (
+            <span>
+              {eraseTarget.companyName} will be permanently anonymized and their account unlinked. This cannot be
+              undone, and is refused while unpaid invoices remain.
+            </span>
+          ) : null
+        }
+        confirmLabel="Erase permanently"
+        destructive
+        isLoading={erase.isPending}
+        onConfirm={confirmErase}
+      />
+    </PageLayout>
+  );
+}
+
+/** AR consumed against a buyer's credit limit, or null when the relationship is uncapped. */
+function utilization(buyer: BuyerSummary): { pct: number; used: number; limit: number } | null {
+  const limit = buyer.creditLimit ? Number(buyer.creditLimit) : null;
+  if (!limit || limit <= 0) return null;
+  const used = Number(buyer.outstandingInvoiceTotal) || 0;
+  return { pct: Math.round((used / limit) * 100), used, limit };
+}
+
+function CreditUtilizationCell({ buyer }: { buyer: BuyerSummary }): JSX.Element {
+  const util = utilization(buyer);
+  if (!util) return <span className="text-xs text-text-tertiary">No limit</span>;
+
+  const fill = util.pct >= 90 ? 'bg-danger' : util.pct >= 70 ? 'bg-warning' : 'bg-success';
+  return (
+    <Tooltip content={`${formatMoney(util.used)} of ${formatMoney(util.limit)} used`}>
+      <span className="inline-flex items-center gap-2">
+        <span className="tabular-nums text-text-primary">{util.pct}%</span>
+        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-neutral-bg">
+          <span className={cn('block h-full rounded-full', fill)} style={{ width: `${Math.min(util.pct, 100)}%` }} />
+        </span>
+      </span>
+    </Tooltip>
   );
 }
 
@@ -282,146 +382,148 @@ function PendingTable({
   rows: BuyerApplication[];
   onOpen: (application: BuyerApplication) => void;
 }): JSX.Element {
-  if (isLoading) return <LoadingSkeleton rows={3} columns={[3, 2, 2, 1]} />;
-  if (rows.length === 0) {
-    return <p className="px-4 py-6 text-sm text-gray-500">No applications awaiting review.</p>;
-  }
+  if (isLoading) return <BuyerTableSkeleton rows={4} />;
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Company</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Submitted</TableHead>
-          <TableHead className="text-right">Action</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((app) => (
-          <TableRow key={app.id} className="cursor-pointer hover:bg-blue-50" onClick={() => onOpen(app)}>
-            <TableCell className="font-medium">{app.companyName}</TableCell>
-            <TableCell className="text-gray-600">{app.email}</TableCell>
-            <TableCell className="text-gray-600">{formatRelative(app.createdAt)}</TableCell>
-            <TableCell className="text-right">
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpen(app);
-                }}
-              >
-                Review
-              </Button>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <DataTable>
+      <DataTableHeader>
+        <tr>
+          <DataTableHeaderCell>Company</DataTableHeaderCell>
+          <DataTableHeaderCell>Email</DataTableHeaderCell>
+          <DataTableHeaderCell>Submitted</DataTableHeaderCell>
+          <DataTableHeaderCell align="right">Action</DataTableHeaderCell>
+        </tr>
+      </DataTableHeader>
+      <DataTableBody>
+        {rows.length === 0 ? (
+          <DataTableEmpty
+            colSpan={4}
+            icon={<Users className="h-6 w-6" />}
+            title="No applications awaiting review"
+            message="New wholesale applications will appear here for approval."
+          />
+        ) : (
+          rows.map((app) => (
+            <DataTableRow key={app.id} clickable onClick={() => onOpen(app)}>
+              <DataTableCell className="font-medium">{app.companyName}</DataTableCell>
+              <DataTableCell className="text-text-secondary">{app.email}</DataTableCell>
+              <DataTableCell className="text-text-secondary">{formatRelative(app.createdAt)}</DataTableCell>
+              <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
+                <Button variant="primary" size="sm" onClick={() => onOpen(app)}>
+                  Review
+                </Button>
+              </DataTableCell>
+            </DataTableRow>
+          ))
+        )}
+      </DataTableBody>
+    </DataTable>
   );
 }
 
 function BuyersTable({
   rows,
+  isOwner,
   onView,
   onSuspend,
   onReinstate,
+  onGdprExport,
+  onErase,
 }: {
   rows: BuyerSummary[];
+  isOwner: boolean;
   onView: (buyer: BuyerSummary) => void;
   onSuspend: (buyer: BuyerSummary) => void;
   onReinstate: (buyer: BuyerSummary) => void;
+  onGdprExport: (buyer: BuyerSummary) => void;
+  onErase: (buyer: BuyerSummary) => void;
 }): JSX.Element {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Company</TableHead>
-          <TableHead>Tier</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Orders</TableHead>
-          <TableHead className="text-right">Outstanding</TableHead>
-          <TableHead>Last Order</TableHead>
-          <TableHead className="text-right">Action</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <DataTable>
+      <DataTableHeader>
+        <tr>
+          <DataTableHeaderCell>Company</DataTableHeaderCell>
+          <DataTableHeaderCell>Tier</DataTableHeaderCell>
+          <DataTableHeaderCell>Status</DataTableHeaderCell>
+          <DataTableHeaderCell align="right">Orders</DataTableHeaderCell>
+          <DataTableHeaderCell align="right">Outstanding</DataTableHeaderCell>
+          <DataTableHeaderCell>Credit Utilization</DataTableHeaderCell>
+          <DataTableHeaderCell>Last Order</DataTableHeaderCell>
+          <DataTableHeaderCell align="right">Actions</DataTableHeaderCell>
+        </tr>
+      </DataTableHeader>
+      <DataTableBody>
         {rows.length === 0 ? (
-          <TableRow>
-            <TableCell colSpan={7} className="py-8 text-center text-sm text-gray-500">
-              No buyers found.
-            </TableCell>
-          </TableRow>
+          <DataTableEmpty
+            colSpan={8}
+            icon={<Users className="h-6 w-6" />}
+            title="No buyers found"
+            message="Approved buyers will appear here."
+          />
         ) : (
           rows.map((buyer) => (
-            <TableRow
-              key={buyer.buyerId}
-              className="cursor-pointer hover:bg-blue-50"
-              onClick={() => onView(buyer)}
-            >
-              <TableCell>
-                <div className="font-medium text-gray-900">{buyer.companyName}</div>
-                <div className="text-xs text-gray-500">{buyer.email}</div>
-              </TableCell>
-              <TableCell className="text-gray-600">{buyer.pricingTierName ?? 'Default'}</TableCell>
-              <TableCell>
+            <DataTableRow key={buyer.buyerId} clickable onClick={() => onView(buyer)}>
+              <DataTableCell>
+                <div className="font-medium text-text-primary">{buyer.companyName}</div>
+                <div className="text-xs text-text-secondary">{buyer.email}</div>
+              </DataTableCell>
+              <DataTableCell className="text-text-secondary">{buyer.pricingTierName ?? 'Default'}</DataTableCell>
+              <DataTableCell>
                 <StatusBadge status={buyer.approvalStatus} />
-              </TableCell>
-              <TableCell className="text-right tabular-nums">{buyer.orderCount}</TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
+              </DataTableCell>
+              <DataTableCell align="right">{buyer.orderCount}</DataTableCell>
+              <DataTableCell align="right" className="font-mono">
                 {formatMoney(buyer.outstandingInvoiceTotal)}
-              </TableCell>
-              <TableCell className="text-gray-600">{formatRelative(buyer.lastOrderAt)}</TableCell>
-              <TableCell className="text-right">
-                <div className="flex items-center justify-end gap-2">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onView(buyer);
-                    }}
-                  >
-                    View
-                  </Button>
-                  {buyer.approvalStatus === 'suspended' ? (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onReinstate(buyer);
-                      }}
-                    >
-                      Reinstate
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      disabled={buyer.approvalStatus !== 'approved'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSuspend(buyer);
-                      }}
-                    >
-                      Suspend
-                    </Button>
-                  )}
+              </DataTableCell>
+              <DataTableCell>
+                <CreditUtilizationCell buyer={buyer} />
+              </DataTableCell>
+              <DataTableCell className="text-text-secondary">{formatRelative(buyer.lastOrderAt)}</DataTableCell>
+              <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-end">
+                  <DropdownMenu label={`Actions for ${buyer.companyName}`}>
+                    <DropdownMenuItem onSelect={() => onView(buyer)}>Review</DropdownMenuItem>
+                    <DropdownMenuItem href={`/orders?buyerId=${buyer.buyerId}`}>View orders</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onView(buyer)}>Adjust tier</DropdownMenuItem>
+                    {buyer.approvalStatus === 'suspended' ? (
+                      <DropdownMenuItem onSelect={() => onReinstate(buyer)}>Reinstate</DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        disabled={buyer.approvalStatus !== 'approved'}
+                        onSelect={() => onSuspend(buyer)}
+                      >
+                        Suspend
+                      </DropdownMenuItem>
+                    )}
+                    {isOwner ? (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => onGdprExport(buyer)}>GDPR export</DropdownMenuItem>
+                        <DropdownMenuItem destructive onSelect={() => onErase(buyer)}>
+                          GDPR erase
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
+                  </DropdownMenu>
                 </div>
-              </TableCell>
-            </TableRow>
+              </DataTableCell>
+            </DataTableRow>
           ))
         )}
-      </TableBody>
-    </Table>
+      </DataTableBody>
+    </DataTable>
   );
 }
 
 export default function BuyersPage(): JSX.Element {
   // useSearchParams requires a Suspense boundary in the App Router.
   return (
-    <Suspense fallback={<LoadingSkeleton rows={8} columns={[3, 2, 1, 2, 2, 1]} />}>
+    <Suspense
+      fallback={
+        <PageContainer>
+          <BuyerTableSkeleton rows={8} />
+        </PageContainer>
+      }
+    >
       <BuyersView />
     </Suspense>
   );

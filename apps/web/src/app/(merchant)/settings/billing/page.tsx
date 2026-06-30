@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Check, X } from 'lucide-react';
 import type { SubscriptionTier } from '@b2b/shared/types';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { SettingsTabs } from '@/components/merchant/SettingsTabs';
 import {
   Dialog,
@@ -70,8 +70,7 @@ export default function BillingSettingsPage(): JSX.Element {
   };
 
   return (
-    <>
-      <PageHeader title="Billing" description="Your plan, GMV usage, and payment method." />
+    <PageLayout title="Billing" subtitle="Your plan, GMV usage, and payment method.">
       <SettingsTabs />
 
       <div className="space-y-6">
@@ -152,7 +151,7 @@ export default function BillingSettingsPage(): JSX.Element {
         isLoading={changePlan.isPending}
         onConfirm={confirmChange}
       />
-    </>
+    </PageLayout>
   );
 }
 

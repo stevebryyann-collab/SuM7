@@ -34,3 +34,21 @@ export function useUpdateSettings() {
     },
   });
 }
+
+/** Buyer-portal analytics integration IDs (GTM container + GA4 measurement). */
+export interface AnalyticsSettingsInput {
+  gtmId?: string;
+  ga4Id?: string;
+}
+
+/**
+ * Persist the buyer-portal analytics IDs via PATCH /merchants/settings (owner /
+ * admin only, enforced server-side). Written through to the merchant record and
+ * read by the buyer portal's GTM/GA4 bootstrap.
+ */
+export function useUpdateAnalyticsSettings() {
+  return useMutation({
+    mutationFn: (input: AnalyticsSettingsInput) =>
+      merchantFetch<void>('/merchants/settings', { method: 'PATCH', body: input }),
+  });
+}

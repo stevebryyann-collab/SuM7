@@ -41,7 +41,12 @@ interface MerchantJwtClaims {
   email?: unknown;
 }
 
-const VALID_ROLES: ReadonlySet<MerchantRole> = new Set<MerchantRole>(['owner', 'admin', 'staff']);
+const VALID_ROLES: ReadonlySet<MerchantRole> = new Set<MerchantRole>([
+  'owner',
+  'admin',
+  'staff',
+  'sales_rep',
+]);
 
 function extractBearer(req: Request): string | null {
   const header = req.headers.authorization;

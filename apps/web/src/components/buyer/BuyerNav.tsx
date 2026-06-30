@@ -9,6 +9,7 @@ const ITEMS = [
   { href: '/portal/catalog', label: 'Catalog' },
   { href: '/portal/orders', label: 'Orders' },
   { href: '/portal/invoices', label: 'Invoices' },
+  { href: '/portal/account', label: 'Account' },
 ] as const;
 
 /** Buyer portal top nav with the Clerk user button (buyer identity is Clerk). */

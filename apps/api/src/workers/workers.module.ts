@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { InvoiceWorker } from './invoice-generate.worker';
 import { InvoiceMarkPaidService } from './invoice-mark-paid.worker';
 import { OrderSyncWorker } from './order-sync.worker';
+import { FulfillmentSyncService } from './fulfillment-sync.worker';
+import { ShippingEmailService } from './shipping-email.worker';
 import { CatalogSyncWorker } from './catalog-sync.worker';
 import { BuyerSyncWorker } from './buyer-sync.worker';
 import { MerchantWorker } from './merchant-cleanup.worker';
@@ -20,6 +22,8 @@ import { MerchantPurgeService } from './merchant-purge-data.worker';
     InvoiceWorker,
     InvoiceMarkPaidService,
     OrderSyncWorker,
+    FulfillmentSyncService,
+    ShippingEmailService,
     CatalogSyncWorker,
     BuyerSyncWorker,
     MerchantWorker,

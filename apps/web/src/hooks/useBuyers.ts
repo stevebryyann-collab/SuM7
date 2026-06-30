@@ -64,6 +64,25 @@ export function usePendingApplications(): UseQueryResult<BuyerApplication[]> {
 }
 
 /**
+ * Count of pending applications, polled every 60s for the sidebar badge.
+ * Reuses the known-good applications endpoint and derives the count client-side
+ * (no separate count route), so it works with the demo mock layer too.
+ */
+export function usePendingBuyersCount(): UseQueryResult<number> {
+  return useQuery({
+    queryKey: [...buyerKeys.applications(), 'count'] as const,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    queryFn: async ({ signal }) => {
+      const apps = await merchantFetch<BuyerApplication[]>('/buyers/applications?status=pending', {
+        signal,
+      });
+      return apps.length;
+    },
+  });
+}
+
+/**
  * Full per-buyer detail (View panel + approved-buyer inline edit). Disabled
  * until a buyerId is supplied so the slide-over only fetches when opened.
  */
@@ -155,5 +174,47 @@ export function useRevealApplicationPii() {
       merchantFetch<ApplicationPii>(`/buyers/applications/${applicationId}/reveal`, {
         method: 'POST',
       }),
+  });
+}
+
+/**
+ * GDPR subject-access export for one buyer (owner only). The API returns the
+ * export as JSON; we wrap it in a Blob and trigger a client-side `.json` download.
+ */
+export function useBuyerGdprExport() {
+  return useMutation({
+    mutationFn: (buyerId: string) =>
+      merchantFetch<Record<string, unknown>>(`/api/v1/data-export/gdpr/${buyerId}`, { method: 'GET' }),
+    onSuccess: (data, buyerId) => {
+      if (typeof window === 'undefined') return;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gdpr-export-${buyerId}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
+}
+
+/**
+ * GDPR right-to-erasure for one buyer (owner only). The server requires an
+ * explicit `?confirm=DELETE` guard rail and refuses while unpaid invoices remain.
+ */
+export function useEraseBuyer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (buyerId: string) =>
+      merchantFetch<{ erased: true; timestamp: string }>(
+        `/api/v1/data-export/gdpr/${buyerId}?confirm=DELETE`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: buyerKeys.all });
+      void qc.invalidateQueries({ queryKey: merchantDashboardKeys.all });
+    },
   });
 }

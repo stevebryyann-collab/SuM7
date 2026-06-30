@@ -15,6 +15,7 @@ import {
   JOB_INVOICE_MARK_PAID,
   JOB_MERCHANT_CLEANUP,
   JOB_ORDER_SYNC,
+  JOB_ORDER_FULFILLMENT_SYNC,
   QUEUE_BUYER,
   QUEUE_CATALOG,
   QUEUE_INVOICE,
@@ -71,6 +72,18 @@ export class WebhooksController {
   @HttpCode(200)
   ordersPaid(@Req() req: ShopifyWebhookRequest): Promise<WebhookAck> {
     return this.ingest(req, 'orders/paid', this.invoiceQueue, JOB_INVOICE_MARK_PAID, 1);
+  }
+
+  @Post('fulfillments/create')
+  @HttpCode(200)
+  fulfillmentsCreate(@Req() req: ShopifyWebhookRequest): Promise<WebhookAck> {
+    return this.ingest(req, 'fulfillments/create', this.orderQueue, JOB_ORDER_FULFILLMENT_SYNC, 3);
+  }
+
+  @Post('fulfillments/update')
+  @HttpCode(200)
+  fulfillmentsUpdate(@Req() req: ShopifyWebhookRequest): Promise<WebhookAck> {
+    return this.ingest(req, 'fulfillments/update', this.orderQueue, JOB_ORDER_FULFILLMENT_SYNC, 3);
   }
 
   @Post('products/created')

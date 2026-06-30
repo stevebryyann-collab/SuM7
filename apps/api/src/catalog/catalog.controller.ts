@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ClerkBuyerGuard, type BuyerAuthenticatedRequest } from '../auth/guards/clerk-buyer.guard';
 import { CatalogService, type CatalogPage } from './catalog.service';
+import { InventoryService, type InventoryLevel } from './inventory.service';
 
 /** Buyer catalog query — cursor + optional free-text search + page size. */
 const CatalogQuerySchema = z.object({
@@ -12,11 +13,18 @@ const CatalogQuerySchema = z.object({
 });
 type CatalogQueryInput = z.infer<typeof CatalogQuerySchema>;
 
+/** Inventory query — comma-separated variant IDs (max 200). */
+const InventoryQuerySchema = z.object({
+  variantIds: z.string().transform((val) => val.split(',').slice(0, 200)),
+});
+type InventoryQueryInput = z.infer<typeof InventoryQuerySchema>;
+
 /**
  * Buyer-facing catalog HTTP surface.
  *
  *   Buyer portal (Clerk):
  *     GET /buyer/catalog   tier-resolved, cursor-paginated product catalog
+ *     GET /buyer/catalog/inventory   batch inventory lookup for variants
  *
  * The buyer's tenant is the merchant resolved by {@link ClerkBuyerGuard} from the
  * App-Proxy cookie — never a client-supplied id. Pricing is resolved server-side
@@ -25,7 +33,10 @@ type CatalogQueryInput = z.infer<typeof CatalogQuerySchema>;
  */
 @Controller()
 export class CatalogController {
-  constructor(private readonly catalog: CatalogService) {}
+  constructor(
+    private readonly catalog: CatalogService,
+    private readonly inventory: InventoryService,
+  ) {}
 
   @Get('buyer/catalog')
   @UseGuards(ClerkBuyerGuard)
@@ -39,5 +50,26 @@ export class CatalogController {
       search: query.search,
       limit: query.limit,
     });
+  }
+
+  @Get('buyer/catalog/inventory')
+  @UseGuards(ClerkBuyerGuard)
+  async getInventory(
+    @Req() req: BuyerAuthenticatedRequest,
+    @Query(new ZodValidationPipe(InventoryQuerySchema)) query: InventoryQueryInput,
+  ): Promise<Record<string, InventoryLevel>> {
+    const { merchantId } = req.buyer!;
+
+    // For now, pass empty string for encrypted token since inventory service
+    // doesn't actually fetch from Shopify yet (placeholder implementation)
+    const levels = await this.inventory.getInventoryForVariants(
+      merchantId,
+      '', // Encrypted token - to be implemented when ShopifyApiService adds getVariant
+      query.variantIds,
+      req.headers['x-correlation-id'] as string | undefined,
+    );
+
+    // Convert Map to plain object for JSON serialization
+    return Object.fromEntries(levels);
   }
 }

@@ -9,6 +9,7 @@ export const Select = SelectPrimitive.Root;
 export const SelectGroup = SelectPrimitive.Group;
 export const SelectValue = SelectPrimitive.Value;
 
+/** Trigger matches the {@link Input} treatment: token border, accent focus ring. */
 export const SelectTrigger = forwardRef<
   ElementRef<typeof SelectPrimitive.Trigger>,
   ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
@@ -16,17 +17,17 @@ export const SelectTrigger = forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-9 w-full items-center justify-between rounded-md border border-gray-300 bg-gray-50',
-      'px-3 py-2 text-sm text-gray-900 shadow-inner transition-colors duration-75',
-      'focus:border-gray-400 focus:bg-white focus:outline-none focus:ring-0',
-      'data-[placeholder]:text-gray-400 disabled:cursor-not-allowed disabled:opacity-50',
+      'flex h-9 w-full items-center justify-between rounded-md border border-border bg-surface',
+      'px-3 text-base text-text-primary transition-colors duration-fast',
+      'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-border focus:ring-offset-0',
+      'data-[placeholder]:text-text-tertiary disabled:cursor-not-allowed disabled:bg-neutral-bg disabled:text-text-tertiary',
       className,
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 text-gray-500" />
+      <ChevronDown className="h-4 w-4 text-text-tertiary" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
@@ -41,8 +42,8 @@ export const SelectContent = forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        'relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-md border border-gray-200',
-        'bg-white text-gray-900 shadow-sm',
+        'relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-md border border-border',
+        'bg-surface text-text-primary shadow-md',
         position === 'popper' && 'data-[side=bottom]:translate-y-1',
         className,
       )}
@@ -66,8 +67,8 @@ export const SelectItem = forwardRef<
     ref={ref}
     className={cn(
       'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2',
-      'text-sm outline-none data-[highlighted]:bg-gray-100 data-[disabled]:pointer-events-none',
-      'data-[disabled]:opacity-50',
+      'text-base text-text-primary outline-none data-[highlighted]:bg-neutral-bg',
+      'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       className,
     )}
     {...props}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { UserPlus } from 'lucide-react';
 import type { TeamMemberRole } from '@b2b/shared/schemas';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { SettingsTabs } from '@/components/merchant/SettingsTabs';
 import {
   Table,
@@ -82,17 +82,11 @@ export default function TeamSettingsPage(): JSX.Element {
   };
 
   return (
-    <>
-      <PageHeader
-        title="Team"
-        description="Manage who can access this store's admin."
-        actions={
-          <Button variant="primary" size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus className="h-4 w-4" />
-            Invite team member
-          </Button>
-        }
-      />
+    <PageLayout
+      title="Team"
+      subtitle="Manage who can access this store's admin."
+      action={{ label: 'Invite team member', onClick: () => setInviteOpen(true), icon: UserPlus }}
+    >
       <SettingsTabs />
 
       <section className="panel">
@@ -181,7 +175,7 @@ export default function TeamSettingsPage(): JSX.Element {
         isLoading={removeMember.isPending}
         onConfirm={confirmRemove}
       />
-    </>
+    </PageLayout>
   );
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Copy, ExternalLink } from 'lucide-react';
 import { UpdateMerchantSettingsSchema } from '@b2b/shared/schemas';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { SettingsTabs } from '@/components/merchant/SettingsTabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
-import { useSettings, useUpdateSettings } from '@/hooks/useSettings';
+import { useSettings, useUpdateSettings, useUpdateAnalyticsSettings } from '@/hooks/useSettings';
 import { ApiClientError } from '@/lib/api/error';
 import { cn } from '@/lib/cn';
 import type { NotificationPrefs } from '@/types/api';
@@ -34,6 +34,9 @@ export default function SettingsPage(): JSX.Element {
   });
   const [prefixError, setPrefixError] = useState<string | null>(null);
   const [savingSection, setSavingSection] = useState<Section | null>(null);
+  const [gtmId, setGtmId] = useState('');
+  const [ga4Id, setGa4Id] = useState('');
+  const analytics = useUpdateAnalyticsSettings();
 
   // Hydrate the form once settings load.
   useEffect(() => {
@@ -68,6 +71,22 @@ export default function SettingsPage(): JSX.Element {
     });
   };
 
+  const saveAnalytics = (): void => {
+    analytics.mutate(
+      { gtmId: gtmId.trim(), ga4Id: ga4Id.trim() },
+      {
+        onSuccess: () =>
+          toast.success(
+            'Analytics settings saved. Changes apply to the buyer portal within 5 minutes.',
+          ),
+        onError: (error) =>
+          toast.error(
+            error instanceof ApiClientError ? error.message : 'Could not save analytics settings',
+          ),
+      },
+    );
+  };
+
   const copyLink = async (): Promise<void> => {
     if (!data) return;
     try {
@@ -79,8 +98,7 @@ export default function SettingsPage(): JSX.Element {
   };
 
   return (
-    <>
-      <PageHeader title="Settings" description="General, invoice, and notification preferences." />
+    <PageLayout title="Settings" subtitle="General, invoice, and notification preferences.">
       <SettingsTabs />
 
       {isLoading || !data ? (
@@ -200,9 +218,68 @@ export default function SettingsPage(): JSX.Element {
               </Button>
             </div>
           </section>
+
+          {/* Analytics integration */}
+          <section className="panel p-5">
+            <h2 className="text-base font-semibold text-gray-900">Analytics Integration</h2>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Connect Google Tag Manager or GA4 to track buyer-portal activity.
+            </p>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:max-w-md">
+              <div className="space-y-1.5">
+                <Label htmlFor="gtmId">Google Tag Manager Container ID</Label>
+                <Input
+                  id="gtmId"
+                  value={gtmId}
+                  maxLength={50}
+                  onChange={(e) => setGtmId(e.target.value)}
+                  placeholder="GTM-XXXXXXX"
+                  className="font-mono"
+                />
+                <p className="text-xs text-gray-500">
+                  Add this to track buyer portal events in Google Tag Manager.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ga4Id">Google Analytics 4 Measurement ID</Label>
+                <Input
+                  id="ga4Id"
+                  value={ga4Id}
+                  maxLength={50}
+                  onChange={(e) => setGa4Id(e.target.value)}
+                  placeholder="G-XXXXXXXXXX"
+                  className="font-mono"
+                />
+                <p className="text-xs text-gray-500">Only needed if you&apos;re not using GTM.</p>
+              </div>
+            </div>
+            <details className="mt-4 text-xs text-gray-500">
+              <summary className="cursor-pointer select-none text-accent">
+                View available events
+              </summary>
+              <ul className="mt-2 list-disc space-y-0.5 pl-5 font-mono">
+                <li>b2b_catalog_view</li>
+                <li>b2b_add_to_cart</li>
+                <li>b2b_order_placed</li>
+                <li>b2b_discount_applied</li>
+                <li>b2b_list_saved</li>
+              </ul>
+            </details>
+            <div className="mt-4">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={analytics.isPending}
+                onClick={saveAnalytics}
+              >
+                {analytics.isPending ? <Spinner /> : null}
+                Save
+              </Button>
+            </div>
+          </section>
         </div>
       )}
-    </>
+    </PageLayout>
   );
 }
 

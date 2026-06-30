@@ -10,6 +10,7 @@ import {
   type BulkPricingOverrideInput,
 } from '@b2b/shared/schemas';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { PageContainer } from '@/components/merchant/PageLayout';
 import {
   Table,
   TableBody,
@@ -141,7 +142,7 @@ export default function PricingTierDetailPage(): JSX.Element {
   };
 
   return (
-    <>
+    <PageContainer>
       <Link
         href="/pricing"
         className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
@@ -357,7 +358,7 @@ export default function PricingTierDetailPage(): JSX.Element {
         isLoading={del.isPending}
         onConfirm={confirmDelete}
       />
-    </>
+    </PageContainer>
   );
 }
 

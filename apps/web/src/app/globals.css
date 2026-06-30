@@ -1,21 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /*
- * Global base styles. Minimalism governs: a single gray-50 page background,
- * white content panels, one accent color. No gradients, no frosted/translucent
+ * Global base styles. Minimalism governs: a single #FAFAFA page background,
+ * white content surfaces, one accent color. No gradients, no frosted/translucent
  * surfaces, no decorative shadows on layout containers (see CLAUDE.md).
+ *
+ * CSS custom properties below mirror the Tailwind token system so non-Tailwind
+ * surfaces (e.g. the sonner Toaster's inline style) can reference the same
+ * values. Tokens are the only source of color/shadow — never hardcode a hex.
  */
+:root {
+  --color-bg: #fafafa;
+  --color-surface: #ffffff;
+  --color-border: #e4e4e7;
+  --color-border-strong: #d4d4d8;
+
+  --color-text-primary: #18181b;
+  --color-text-secondary: #71717a;
+  --color-text-tertiary: #a1a1aa;
+  --color-text-inverse: #ffffff;
+
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-subtle: #eff6ff;
+  --color-accent-border: #bfdbfe;
+
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-neutral: #71717a;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px 0 rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 24px 0 rgba(0, 0, 0, 0.08);
+}
 
 @layer base {
   html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: var(--color-text-primary);
+    background-color: var(--color-bg);
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
   }
 
   body {
-    @apply bg-background text-gray-900 antialiased;
+    @apply bg-bg text-text-primary antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
@@ -26,15 +61,17 @@
 
   /* Tabular numerals everywhere money or counts are shown. */
   .tabular-nums {
+    font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
   }
 }
 
 @layer components {
   /*
    * Skeuomorphic interactive depth cues — shadow-only, no transforms (Safari
-   * repaint safety). These mirror the exact rules in CLAUDE.md so feature code
-   * can opt into them by class name.
+   * repaint safety, per CLAUDE.md). These mirror the exact rules in CLAUDE.md so
+   * feature code can opt into them by class name.
    */
 
   /* Default button: appears slightly raised; shadow collapses on press. */
@@ -78,6 +115,6 @@
 
   /* One layer of depth only — never stacked, never hover:shadow-md. */
   .panel {
-    @apply rounded-lg border border-gray-200 bg-white shadow-sm;
+    @apply rounded-lg border border-border bg-surface shadow-sm;
   }
 }

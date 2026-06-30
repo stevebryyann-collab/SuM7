@@ -288,6 +288,8 @@ export const BulkOrderSchema = z.object({
   merchantId: uuid,
   lineItems: z.array(BulkOrderLineItemSchema).min(1).max(500),
   notes: z.string().trim().max(2000).optional(),
+  /** Optional discount code to apply to the order. */
+  discountCode: z.string().trim().max(50).optional(),
 });
 export type BulkOrderInput = z.infer<typeof BulkOrderSchema>;
 

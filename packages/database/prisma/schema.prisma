@@ -36,6 +36,7 @@ enum MerchantUserRole {
   owner
   admin
   staff
+  sales_rep
 }
 
 enum PaymentTerms {
@@ -129,17 +130,25 @@ model Merchant {
   notifyNewApplication          Boolean          @default(true) @map("notify_new_application")
   notifyInvoiceOverdue          Boolean          @default(true) @map("notify_invoice_overdue")
   notifyPaymentReceived         Boolean          @default(false) @map("notify_payment_received")
+  // Analytics and inventory settings (Part 2 of 4)
+  gtmId                         String?          @map("gtm_id") @db.VarChar(50)
+  ga4Id                         String?          @map("ga4_id") @db.VarChar(50)
+  allowsBackOrders              Boolean          @default(false) @map("allows_back_orders")
   isActive                      Boolean          @default(true) @map("is_active")
   deletedAt                     DateTime?        @map("deleted_at") @db.Timestamptz(6)
   createdAt                     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users         MerchantUser[]
-  relationships MerchantBuyerRelationship[]
-  pricingTiers  PricingTier[]
-  orders        Order[]
-  invoices      Invoice[]
-  applications  BuyerRegistrationApplication[]
+  users            MerchantUser[]
+  relationships    MerchantBuyerRelationship[]
+  pricingTiers     PricingTier[]
+  orders           Order[]
+  invoices         Invoice[]
+  applications     BuyerRegistrationApplication[]
+  discountCodes    B2bDiscountCode[]
+  shoppingLists    ShoppingList[]
+  salesRepSessions SalesRepSession[]
+  standingOrders   StandingOrder[]
 
   @@index([subscriptionTier])
   @@map("merchants")
@@ -158,9 +167,12 @@ model MerchantUser {
   createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  merchant             Merchant                       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  approvedRelationships MerchantBuyerRelationship[]   @relation("RelationshipApprover")
-  reviewedApplications BuyerRegistrationApplication[] @relation("ApplicationReviewer")
+  merchant              Merchant                       @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  approvedRelationships MerchantBuyerRelationship[]    @relation("RelationshipApprover")
+  reviewedApplications  BuyerRegistrationApplication[] @relation("ApplicationReviewer")
+  ordersAsSalesRep      Order[]                        @relation("OrderSalesRep")
+  createdDiscountCodes  B2bDiscountCode[]              @relation("DiscountCodeCreator")
+  salesRepSessions      SalesRepSession[]              @relation("SalesRepSessionRep")
 
   @@unique([merchantId, email])
   @@map("merchant_users")
@@ -190,9 +202,12 @@ model Buyer {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  relationships MerchantBuyerRelationship[]
-  orders        Order[]
-  invoices      Invoice[]
+  relationships    MerchantBuyerRelationship[]
+  orders           Order[]
+  invoices         Invoice[]
+  shoppingLists    ShoppingList[]
+  salesRepSessions SalesRepSession[]
+  standingOrders   StandingOrder[]
 
   // GIN trigram index on company_name is created in migrations/001_extensions.sql
   @@map("buyers")
@@ -290,13 +305,29 @@ model Order {
   syncStatus          OrderSyncStatus @default(sync_pending) @map("sync_status")
   pricingTierIdAtOrder String?        @map("pricing_tier_id_at_order") @db.Uuid
   notes               String?         @db.Text
+  // Part 2 of 4: discount codes and back-orders
+  discountCodeId      String?         @map("discount_code_id") @db.Uuid
+  discountAmount      Decimal         @default(0) @map("discount_amount") @db.Decimal(15, 2)
+  containsBackOrder   Boolean         @default(false) @map("contains_back_order")
+  salesRepId          String?         @map("sales_rep_id") @db.Uuid
+  // Part 3 of 4: sales-rep impersonation session + fulfillment tracking
+  repSessionId        String?         @map("rep_session_id") @db.Uuid
+  trackingNumber      String?         @map("tracking_number") @db.VarChar(100)
+  trackingUrl         String?         @map("tracking_url") @db.Text
+  fulfillmentService  String?         @map("fulfillment_service") @db.VarChar(100)
+  shippedAt           DateTime?       @map("shipped_at") @db.Timestamptz(6)
+  estimatedDeliveryAt DateTime?       @map("estimated_delivery_at") @db.Timestamptz(6)
   createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  merchant  Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  buyer     Buyer           @relation(fields: [buyerId], references: [id], onDelete: Restrict)
-  lineItems OrderLineItem[]
-  invoice   Invoice?
+  merchant     Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  buyer        Buyer            @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+  discountCode B2bDiscountCode? @relation(fields: [discountCodeId], references: [id], onDelete: SetNull)
+  salesRep     MerchantUser?    @relation("OrderSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
+  repSession   SalesRepSession? @relation(fields: [repSessionId], references: [id], onDelete: SetNull)
+  lineItems    OrderLineItem[]
+  invoice      Invoice?
+  standingOrders StandingOrder[]
 
   @@index([merchantId, createdAt(sort: Desc)])
   @@index([merchantId, status])
@@ -457,4 +488,134 @@ model AuditLog {
   @@index([merchantId, createdAt(sort: Desc)])
   @@index([correlationId])
   @@map("audit_log")
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Shopping lists (Part 2 of 4)
+// ──────────────────────────────────────────────────────────────────────
+
+model ShoppingList {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyerId    String   @map("buyer_id") @db.Uuid
+  merchantId String   @map("merchant_id") @db.Uuid
+  name       String   @db.VarChar(100)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  buyer    Buyer                @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  merchant Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  items    ShoppingListItem[]
+
+  @@unique([buyerId, merchantId, name])
+  @@index([buyerId, merchantId])
+  @@map("shopping_lists")
+}
+
+model ShoppingListItem {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listId           String   @map("list_id") @db.Uuid
+  shopifyVariantId String   @map("shopify_variant_id") @db.VarChar(100)
+  shopifyProductId String   @map("shopify_product_id") @db.VarChar(100)
+  productTitle     String   @map("product_title") @db.VarChar(255)
+  variantTitle     String?  @map("variant_title") @db.VarChar(255)
+  sku              String?  @db.VarChar(100)
+  quantity         Int
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  list ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, shopifyVariantId])
+  @@index([listId])
+  @@map("shopping_list_items")
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// B2B discount codes (Part 2 of 4)
+// ──────────────────────────────────────────────────────────────────────
+
+enum DiscountType {
+  pct_off
+  fixed_amount
+}
+
+model B2bDiscountCode {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantId     String        @map("merchant_id") @db.Uuid
+  code           String        @db.VarChar(50)
+  description    String?       @db.VarChar(255)
+  discountType   DiscountType  @map("discount_type")
+  discountValue  Decimal       @map("discount_value") @db.Decimal(15, 2)
+  minOrderAmount Decimal?      @map("min_order_amount") @db.Decimal(15, 2)
+  maxUses        Int?          @map("max_uses")
+  usedCount      Int           @default(0) @map("used_count")
+  validFrom      DateTime?     @map("valid_from") @db.Timestamptz(6)
+  validTo        DateTime?     @map("valid_to") @db.Timestamptz(6)
+  appliesTo      String        @default("all") @map("applies_to") @db.VarChar(50)
+  isActive       Boolean       @default(true) @map("is_active")
+  createdBy      String?       @map("created_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  merchant Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  creator  MerchantUser? @relation("DiscountCodeCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  orders   Order[]
+
+  @@index([merchantId, isActive])
+  @@map("b2b_discount_codes")
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Sales-rep portal (Part 3 of 4)
+// ──────────────────────────────────────────────────────────────────────
+
+// A short-lived (4h) impersonation session: a merchant staff member with the
+// `sales_rep` role places an order on behalf of an approved buyer. The buyer
+// portal reads exactly what the buyer would see; the session id is recorded on
+// any order placed during it (orders.rep_session_id) for attribution.
+model SalesRepSession {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  repId        String    @map("rep_id") @db.Uuid
+  merchantId   String    @map("merchant_id") @db.Uuid
+  buyerId      String    @map("buyer_id") @db.Uuid
+  sessionToken String    @unique @map("session_token") @db.VarChar(64)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rep      MerchantUser @relation("SalesRepSessionRep", fields: [repId], references: [id], onDelete: Cascade)
+  merchant Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  buyer    Buyer        @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@index([repId, merchantId])
+  @@map("sales_rep_sessions")
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Standing orders — reorder reminders (Part 3 of 4)
+// ──────────────────────────────────────────────────────────────────────
+
+// A buyer-configured reorder reminder. The daily cron sweeps rows whose
+// `nextReminderAt` is due, emails the buyer (optionally summarising the source
+// order), and rolls the schedule forward by `reminderFrequencyDays`.
+model StandingOrder {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  buyerId               String    @map("buyer_id") @db.Uuid
+  merchantId            String    @map("merchant_id") @db.Uuid
+  sourceOrderId         String?   @map("source_order_id") @db.Uuid
+  name                  String    @default("Regular Order") @db.VarChar(100)
+  reminderFrequencyDays Int       @default(7) @map("reminder_frequency_days")
+  lastReminderAt        DateTime? @map("last_reminder_at") @db.Timestamptz(6)
+  nextReminderAt        DateTime  @map("next_reminder_at") @db.Timestamptz(6)
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  buyer       Buyer    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  merchant    Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  sourceOrder Order?   @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+
+  @@index([nextReminderAt])
+  @@index([buyerId, merchantId])
+  @@map("standing_orders")
 }

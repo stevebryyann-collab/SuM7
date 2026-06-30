@@ -34,6 +34,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { BillingModule } from './billing/billing.module';
 import { BnplModule } from './bnpl/bnpl.module';
+import { DiscountCodesModule } from './discount-codes/discount-codes.module';
+import { ShoppingListsModule } from './shopping-lists/shopping-lists.module';
+import { SalesRepModule } from './sales-rep/sales-rep.module';
+import { StandingOrdersModule } from './standing-orders/standing-orders.module';
 
 import { RateLimitGuard } from './common/guards/rate-limit.guard';
 import { TenantContextInterceptor } from './common/interceptors/tenant-context.interceptor';
@@ -113,6 +117,10 @@ import { IdempotencyMiddleware } from './common/middleware/idempotency.middlewar
     DashboardModule,
     BillingModule,
     BnplModule,
+    DiscountCodesModule,
+    ShoppingListsModule,
+    SalesRepModule,
+    StandingOrdersModule,
 
     // API surfaces.
     GraphQLModule,

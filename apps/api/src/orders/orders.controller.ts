@@ -30,6 +30,8 @@ import {
   type OrderFilters,
   type OrderSummary,
 } from './orders.service';
+import { DiscountCodesService } from '../discount-codes/discount-codes.service';
+import { InventoryService } from '../catalog/inventory.service';
 import type { PaginatedResponse } from '@b2b/shared';
 
 /**
@@ -50,7 +52,11 @@ import type { PaginatedResponse } from '@b2b/shared';
  */
 @Controller()
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly discountCodes: DiscountCodesService,
+    private readonly inventory: InventoryService,
+  ) {}
 
   // ── Buyer portal ────────────────────────────────────────────────────────
 
@@ -70,7 +76,14 @@ export class OrdersController {
       });
     }
     // The buyer's merchant is authoritative (the App-Proxy cookie), not the body.
-    return this.orders.createBulkOrder(buyer.buyerId, buyer.merchantId, dto, idempotencyKey.trim());
+    return this.orders.createBulkOrder(
+      buyer.buyerId,
+      buyer.merchantId,
+      dto,
+      idempotencyKey.trim(),
+      this.discountCodes,
+      this.inventory,
+    );
   }
 
   @Get('buyer/orders')

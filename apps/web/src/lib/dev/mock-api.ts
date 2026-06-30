@@ -521,6 +521,11 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
     return DEMO_SETTINGS as T;
   }
 
+  // Analytics integration IDs (Part 3 — written through, no echo needed).
+  if (url === '/merchants/settings' && method === 'PATCH') {
+    return undefined as T;
+  }
+
   // ── Team (Stage 4) — static /invite must precede the /:id matchers ────────────
   if (url === '/api/v1/team' && method === 'GET') {
     return DEMO_TEAM as unknown as T;
@@ -562,6 +567,83 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
   }
   if (url === '/api/v1/billing/create-portal-session' && method === 'POST') {
     return { url: 'https://billing.stripe.com/p/session/demo' } as T;
+  }
+
+  // ── Sales-rep portal (Part 3) ─────────────────────────────────────────────────
+  if (url === '/rep/buyers' && method === 'GET') {
+    const search = query.get('search')?.toLowerCase() ?? '';
+    let rows = DEMO_BUYERS.filter((b) => b.approvalStatus === 'approved');
+    if (search) rows = rows.filter((b) => b.companyName.toLowerCase().includes(search));
+    const buyers = rows.map((b) => ({
+      buyerId: b.buyerId,
+      companyName: b.companyName,
+      email: b.email,
+      pricingTierName: b.pricingTierName,
+      paymentTerms: b.paymentTerms,
+      lastOrderAt: b.lastOrderAt,
+      totalOrderCount: b.orderCount,
+      outstandingBalance: b.outstandingInvoiceTotal,
+      creditUsed: '0.00',
+      creditLimit: b.creditLimit,
+    }));
+    return { buyers, nextCursor: null } as T;
+  }
+
+  if (url === '/rep/sessions' && method === 'POST') {
+    const buyerId = (options.body as { buyerId?: string } | undefined)?.buyerId ?? '';
+    const buyer = DEMO_BUYERS.find((b) => b.buyerId === buyerId);
+    return {
+      sessionToken: newUuid().replace(/-/g, ''),
+      expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+      buyerCompanyName: buyer?.companyName ?? 'Demo Buyer',
+      buyerEmail: buyer?.email ?? 'buyer@example.com',
+    } as T;
+  }
+
+  if (method === 'DELETE' && /^\/rep\/sessions\/[^/]+$/.test(url)) {
+    return { ended: true } as T;
+  }
+
+  if (method === 'GET' && /^\/rep\/buyers\/[^/]+\/orders$/.test(url)) {
+    const orders = DEMO_ORDERS.slice(0, 8).map((o) => ({
+      id: o.id,
+      shopifyOrderNumber: o.shopifyOrderNumber,
+      createdAt: o.createdAt,
+      itemCount: o.itemCount,
+      total: o.total,
+      currency: o.currency,
+      status: o.status,
+      syncStatus: o.syncStatus,
+      invoiceStatus: o.invoiceStatus,
+      invoiceNumber: null,
+    }));
+    return { orders, nextCursor: null } as T;
+  }
+
+  // ── GDPR data export / erasure (Part 3 buyers dropdown) ───────────────────────
+  if (method === 'GET' && /^\/api\/v1\/data-export\/gdpr\/[^/]+$/.test(url)) {
+    const buyerId = segment(url, 4);
+    const buyer = DEMO_BUYERS.find((b) => b.buyerId === buyerId);
+    return {
+      buyer: {
+        companyName: buyer?.companyName ?? 'Demo Buyer',
+        email: buyer?.email ?? 'buyer@example.com',
+        businessType: 'retailer',
+        createdAt: buyer?.createdAt ?? new Date().toISOString(),
+      },
+      relationship: {
+        approvalStatus: buyer?.approvalStatus ?? 'approved',
+        pricingTierName: buyer?.pricingTierName ?? null,
+        paymentTerms: buyer?.paymentTerms ?? 'net30',
+        creditLimit: buyer?.creditLimit ?? null,
+      },
+      orders: [],
+      invoices: [],
+      applications: [],
+    } as T;
+  }
+  if (method === 'DELETE' && /^\/api\/v1\/data-export\/gdpr\/[^/]+$/.test(url)) {
+    return { erased: true, timestamp: new Date().toISOString() } as T;
   }
 
   return notFound(`${method} ${url}`);

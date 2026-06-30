@@ -24,6 +24,14 @@ import {
   renderMerchantNewApplicationEmail,
   type MerchantNewApplicationEmailModel,
 } from './templates/merchant-new-application.email';
+import {
+  renderOrderShippedEmail,
+  type OrderShippedEmailModel,
+} from './templates/order-shipped.email';
+import {
+  renderStandingOrderReminderEmail,
+  type StandingOrderReminderEmailModel,
+} from './templates/standing-order-reminder.email';
 import type { RenderedEmail, LineItemRow } from './templates/layout';
 
 /** Uniform result for every email method. NEVER throws — failures are logged. */
@@ -107,6 +115,26 @@ export interface VoidNotificationParams {
   merchantName: string;
   invoiceNumber: string;
   reason: string;
+}
+
+export interface OrderShippedEmailParams {
+  to: string;
+  merchantName: string;
+  orderNumber: string;
+  carrierName: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+}
+
+export interface StandingOrderReminderEmailParams {
+  to: string;
+  merchantName: string;
+  buyerCompany: string;
+  standingOrderName: string;
+  frequencyLabel: string;
+  portalUrl: string;
+  manageUrl: string;
+  lastOrder: { total: string; currency: string; lineItems: LineItemRow[] } | null;
 }
 
 interface DeliveryResult {
@@ -246,6 +274,32 @@ export class EmailService implements OnModuleInit {
       ),
     };
     return this.send(params.to, rendered, 'invoice_void');
+  }
+
+  async sendOrderShippedEmail(params: OrderShippedEmailParams): Promise<EmailSendResult> {
+    const model: OrderShippedEmailModel = {
+      merchantName: params.merchantName,
+      orderNumber: params.orderNumber,
+      carrierName: params.carrierName,
+      trackingNumber: params.trackingNumber,
+      trackingUrl: params.trackingUrl,
+    };
+    return this.send(params.to, renderOrderShippedEmail(model), 'order_shipped');
+  }
+
+  async sendStandingOrderReminderEmail(
+    params: StandingOrderReminderEmailParams,
+  ): Promise<EmailSendResult> {
+    const model: StandingOrderReminderEmailModel = {
+      merchantName: params.merchantName,
+      buyerCompany: params.buyerCompany,
+      standingOrderName: params.standingOrderName,
+      frequencyLabel: params.frequencyLabel,
+      portalUrl: params.portalUrl,
+      manageUrl: params.manageUrl,
+      lastOrder: params.lastOrder,
+    };
+    return this.send(params.to, renderStandingOrderReminderEmail(model), 'standing_order_reminder');
   }
 
   // ── Internals ─────────────────────────────────────────────────────────

@@ -20,6 +20,8 @@ import { ApiClientError } from '@/lib/api/error';
 import { formatMoney, formatDate, formatPaymentTerms, paymentTermsDays } from '@/lib/format';
 import { useCreateOrder } from '@/hooks/useCreateOrder';
 import { useBnplInitiate } from '@/hooks/useBnpl';
+import { useCreateStandingOrder } from '@/hooks/useStandingOrders';
+import { toast } from '@/components/shared/toasts';
 import { BnplSection } from './BnplSection';
 import type { BuyerMe, OrderCreatedResult } from '@/types/api';
 
@@ -161,6 +163,7 @@ export function ReviewOrderModal({
                     {bnplNotice}
                   </p>
                 ) : null}
+                <ReorderReminderPrompt orderId={result.orderId} />
               </div>
             </DialogBody>
             <DialogFooter>
@@ -341,6 +344,68 @@ function OrderErrorBanner({
     <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
       <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
       <p>{message}</p>
+    </div>
+  );
+}
+
+const REORDER_OPTIONS = [
+  { days: 7, label: 'Every week' },
+  { days: 14, label: 'Every 2 weeks' },
+  { days: 30, label: 'Monthly' },
+] as const;
+
+/**
+ * Post-placement "set a reorder reminder?" prompt. Creates a standing order tied
+ * to the just-placed order; once chosen (or dismissed) it collapses to a single
+ * confirmation line. Remounts fresh each time the success state is shown.
+ */
+function ReorderReminderPrompt({ orderId }: { orderId: string }): JSX.Element {
+  const create = useCreateStandingOrder();
+  const [chosen, setChosen] = useState<string | null>(null);
+
+  const choose = (days: 7 | 14 | 30, label: string): void => {
+    create.mutate(
+      { sourceOrderId: orderId, frequencyDays: days },
+      {
+        onSuccess: () => {
+          setChosen(label);
+          toast.success(`We'll remind you to reorder ${label.toLowerCase()}.`);
+        },
+        onError: (error) =>
+          toast.error(error instanceof ApiClientError ? error.message : 'Could not set reminder'),
+      },
+    );
+  };
+
+  if (chosen === 'none') return <span aria-hidden />;
+  if (chosen) {
+    return (
+      <p className="mt-4 flex items-center justify-center gap-1.5 text-sm text-gray-600">
+        <CheckCircle2 className="h-4 w-4 text-green-600" />
+        We&apos;ll remind you to reorder {chosen.toLowerCase()}.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 w-full max-w-md rounded-md border border-gray-200 bg-gray-50 p-3 text-center">
+      <p className="text-sm font-medium text-gray-900">Set a reminder to reorder?</p>
+      <div className="mt-2 flex flex-wrap justify-center gap-2">
+        {REORDER_OPTIONS.map((option) => (
+          <Button
+            key={option.days}
+            variant="default"
+            size="sm"
+            disabled={create.isPending}
+            onClick={() => choose(option.days, option.label)}
+          >
+            {option.label}
+          </Button>
+        ))}
+        <Button variant="ghost" size="sm" disabled={create.isPending} onClick={() => setChosen('none')}>
+          No thanks
+        </Button>
+      </div>
     </div>
   );
 }

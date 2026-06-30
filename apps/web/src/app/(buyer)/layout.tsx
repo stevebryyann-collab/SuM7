@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { BuyerProviders } from '@/components/providers/BuyerProviders';
 import { BuyerNav } from '@/components/buyer/BuyerNav';
+import { RepSessionBanner } from '@/components/buyer/RepSessionBanner';
 import { getMerchantContextServer } from '@/lib/api/buyer-server';
 
 /**
@@ -17,6 +18,7 @@ export default async function BuyerLayout({ children }: { children: ReactNode })
   return (
     <BuyerProviders merchantId={merchantId}>
       <div className="flex min-h-screen flex-col bg-background">
+        <RepSessionBanner />
         <header className="border-b border-gray-200 bg-white">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
             <Link href="/portal/catalog" className="text-sm font-semibold text-gray-900">

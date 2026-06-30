@@ -3,16 +3,23 @@
 import { forwardRef, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
-/** Recessed multiline input. Matches {@link Input}'s shadow-inner depth cue. */
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...props }, ref) => (
+export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  /** Render the error treatment (danger border + ring). */
+  error?: boolean;
+}
+
+/** Multiline input matching {@link Input}'s border/focus treatment. No fixed height. */
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, error = false, ...props }, ref) => (
     <textarea
       ref={ref}
+      aria-invalid={error || undefined}
       className={cn(
-        'w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900',
-        'shadow-inner transition-colors duration-75 placeholder:text-gray-400',
-        'focus:border-gray-400 focus:bg-white focus:outline-none focus:ring-0',
-        'disabled:cursor-not-allowed disabled:opacity-50',
+        'min-h-[80px] w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-text-primary',
+        'transition-colors duration-fast placeholder:text-text-tertiary',
+        'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-border focus:ring-offset-0',
+        'disabled:cursor-not-allowed disabled:bg-neutral-bg disabled:text-text-tertiary',
+        error && 'border-danger focus:border-danger focus:ring-red-200',
         className,
       )}
       {...props}

@@ -7,7 +7,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { ShopifyApiService } from '../shopify/shopify-api.service';
 import type { ShopifyOrder } from '../shopify/shopify.types';
-import { QUEUE_ORDER } from '../queues/queue.module';
+import {
+  JOB_ORDER_FULFILLMENT_SYNC,
+  JOB_ORDER_SHIPPING_EMAIL,
+  JOB_ORDER_SYNC,
+  QUEUE_ORDER,
+} from '../queues/queue.module';
+import { FulfillmentSyncService } from './fulfillment-sync.worker';
+import { ShippingEmailService } from './shipping-email.worker';
 import { asShopifyId, isFinalAttempt, type WebhookJobData } from './worker-helpers';
 
 /** Map Shopify financial + fulfillment status to the platform order status. */
@@ -31,12 +38,34 @@ export class OrderSyncWorker extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly merchantContext: MerchantContextService,
     private readonly shopify: ShopifyApiService,
+    private readonly fulfillmentSync: FulfillmentSyncService,
+    private readonly shippingEmail: ShippingEmailService,
   ) {
     super();
   }
 
+  /**
+   * Sole consumer of the `order` queue. Dispatches by job name so sync,
+   * fulfillment and shipping-email jobs are never split across competing
+   * workers (which would silently drop jobs); fulfillment + email are delegated
+   * to their services. All run inside one SYSTEM (bypass-RLS) context.
+   */
   async process(job: Job<WebhookJobData>): Promise<void> {
-    await this.merchantContext.runAsSystem(() => this.handle(job));
+    await this.merchantContext.runAsSystem(async () => {
+      switch (job.name) {
+        case JOB_ORDER_SYNC:
+          await this.handle(job);
+          break;
+        case JOB_ORDER_FULFILLMENT_SYNC:
+          await this.fulfillmentSync.run(job);
+          break;
+        case JOB_ORDER_SHIPPING_EMAIL:
+          await this.shippingEmail.run(job);
+          break;
+        default:
+          this.logger.warn(`Unknown order job: ${job.name}`);
+      }
+    });
   }
 
   private async handle(job: Job<WebhookJobData>): Promise<void> {

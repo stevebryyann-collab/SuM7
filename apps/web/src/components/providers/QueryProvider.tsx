@@ -19,12 +19,20 @@ export function QueryProvider({ children }: { children: ReactNode }): JSX.Elemen
     <QueryClientProvider client={queryClient}>
       {children}
       <Toaster
-        position="top-right"
+        position="bottom-right"
         toastOptions={{
-          // Solid, non-translucent toasts to match the design system.
-          style: { border: '1px solid #e5e7eb', background: '#ffffff', color: '#111827' },
+          // Solid, non-translucent toasts on the token system (CSS vars defined
+          // in globals.css :root). One layer of depth (shadow-md), 8px radius.
+          style: {
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-text-primary)',
+            borderRadius: '8px',
+            fontSize: '14px',
+            boxShadow: 'var(--shadow-md)',
+          },
+          duration: 4000,
         }}
-        duration={4000}
       />
     </QueryClientProvider>
   );
