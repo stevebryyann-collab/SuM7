@@ -8,10 +8,10 @@
 - `pnpm --filter @b2b/web build` → **exit 0, 26/26 routes** (incl. new `/rep`, `/rep/buyer/[buyerId]/orders`)
 
 This part adds the **sales-rep portal**, **order fulfillment tracking + shipping emails**,
-**standing-order reorder reminders**, and the **settings analytics-integration tab**. The
-heavy net-new backend (Tasks 1, 3, 4) is complete and verified; the merchant rep frontend
-(Task 2) and settings tab (Task 10) are complete. Design-system reskins of already-working
-pages (Tasks 5–9) and buyer-portal UI for tracking/reminders remain — see **NOT DONE** below.
+**standing-order reorder reminders**, and the **settings analytics-integration tab**. **All
+ten tasks are now complete and verified** — including the Task 5 dashboard redesign, the
+Tasks 6–9 design-system reskins, and the buyer-portal tracking + reminders UI (see
+**SESSION 2 COMPLETION** below).
 
 ---
 
@@ -107,16 +107,27 @@ pages (Tasks 5–9) and buyer-portal UI for tracking/reminders remain — see **
 
 ---
 
-## NOT DONE / NEXT SESSION
+## SESSION 2 COMPLETION (Tasks 5–9 + buyer-portal UI) ✅
 
-- **Task 5 — Dashboard full redesign** (KPI row / charts row / action-items row). The current
-  dashboard works and is on `PageLayout`; the redesign is a polish rewrite.
-- **Tasks 6–9 — Orders / Invoices / Buyers / Analytics reskins** (DataTable adoption, filter bars,
-  DropdownMenu actions, credit-utilization column, new charts). All four pages already function.
-- **Task 3/4 buyer-portal UI** — fulfillment tracking card on the buyer order-detail page and the
-  standing-order reminder UI (account list + order-success reorder prompt). These target buyer pages
-  that **do not exist** in this repo (`(buyer)/portal` has only apply/catalog/invoices/orders — no
-  order-detail or account page), so they need new pages, not edits.
+All remaining tasks landed; gate re-run green (db:generate, typecheck 6/6, @b2b/api build,
+@b2b/web build 28 routes).
+
+| Task | What landed |
+|---|---|
+| 5 — Dashboard | Full redesign: KPI row, AR-aging + GMV-trend chart row, "Needs Attention" invoices + pending-applications action row. Dedicated skeletons (`KpiCardSkeleton`/`ChartSkeleton`/`InvoiceTableSkeleton`), `EmptyState`, tokens. |
+| 6 — Orders | `DataTable` + filter bar (search icon, status, buyer, date range), tokenized `SyncStatusBadge` (CheckCircle2 / Loader2 / AlertTriangle+Tooltip), `buyerId` query support. |
+| 7 — Invoices | `InvoiceTable` rebuilt on `DataTable` with a **Days-Overdue** column + **DropdownMenu** actions (View / Resend w/ cooldown / Mark paid / Verify integrity / Void). Page: Download Report, `status`-query → tab, tokenized summary bar. |
+| 8 — Buyers | Pending-tab badge + pulse, **Credit Utilization** column (AR ÷ creditLimit, progress bar + tooltip), DropdownMenu row actions incl. owner-only **GDPR export/erase** (wired to `/api/v1/data-export/gdpr/:buyerId`), copy-link icon swap. |
+| 9 — Analytics | Header 7D/30D/90D/12M presets, KPI row, full-width GMV trend, **TopBuyersChart** (horizontal bar) + **MonthlyGmvChart** (bar), tabbed detail tables, DropdownMenu export. |
+| 3/4 — Buyer UI | API `OrderDetail` now exposes tracking + `containsBackOrder`; new **`/portal/orders/[id]`** (Shipment Status card, back-order notice, reorder prompt) + **`/portal/account`** (Order Reminders). `useStandingOrders` hooks; reorder prompt in `ReviewOrderModal`; Account nav entry; demo mock GDPR + buyer-detail tracking. |
+
+New shared component: **`components/ui/dropdown-menu.tsx`** — dependency-free, portals out of the
+`overflow-hidden` `DataTable` so row menus are never clipped.
+
+**Deviation:** GDPR export/erase reuse the existing analytics-controller routes
+(`/api/v1/data-export/gdpr/:buyerId`, owner-only) rather than new buyer-controller routes — the
+service logic already lived there. The merchant rep `/rep/buyer/[id]/orders` page predates this and
+remains the rep-scoped order view.
 
 ## MIGRATIONS / ENV
 
