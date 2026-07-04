@@ -115,7 +115,7 @@ jobs:
       - run: pnpm --filter @b2b/database generate
       - run: pnpm build
       - name: Upload web build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-build
           path: apps/web/.next
@@ -145,7 +145,7 @@ jobs:
         run: pnpm dlx playwright@1.47.2 install --with-deps chromium
       - name: Run E2E
         run: pnpm dlx playwright@1.47.2 test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
