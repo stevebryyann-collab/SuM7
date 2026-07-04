@@ -3,7 +3,7 @@
 # No secrets are baked into any layer; configuration is injected at runtime.
 
 # ── Base: pnpm via corepack ───────────────────────────────────────────────
-FROM node:20-alpine AS base
+FROM node:26-alpine AS base
 ENV PNPM_HOME="/pnpm" \
     PATH="/pnpm:$PATH"
 RUN corepack enable
