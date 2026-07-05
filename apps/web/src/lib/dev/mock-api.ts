@@ -361,7 +361,15 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
 
   // ── Pricing tiers ─────────────────────────────────────────────────────────────
   if (url === '/api/v1/pricing-tiers' && method === 'GET') {
-    return DEMO_PRICING_TIERS as unknown as T;
+    // Recompute conditionsJson/overrideCount fresh from the live detail maps —
+    // matches the real backend's query-time subqueries so bulk-override and
+    // create mutations are reflected immediately, not just after a detail visit.
+    const withDetails: PricingTierSummary[] = DEMO_PRICING_TIERS.map((tier) => ({
+      ...tier,
+      conditionsJson: DEMO_TIER_CONDITIONS[tier.id] ?? null,
+      overrideCount: (DEMO_TIER_OVERRIDES[tier.id] ?? []).length,
+    }));
+    return withDetails as unknown as T;
   }
 
   if (url === '/api/v1/pricing-tiers' && method === 'POST') {
@@ -377,6 +385,8 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
       priority: dto.priority,
       isActive: dto.isActive,
       buyerCount: 0,
+      conditionsJson: dto.conditionsJson ?? null,
+      overrideCount: 0,
       createdAt: new Date().toISOString(),
     };
     if (summary.isDefault) {
@@ -524,6 +534,38 @@ export async function mockMerchantRequest<T>(path: string, options: ApiRequestOp
   // Analytics integration IDs (Part 3 — written through, no echo needed).
   if (url === '/merchants/settings' && method === 'PATCH') {
     return undefined as T;
+  }
+
+  // System Health (Part 4) — merchant-facing reliability dashboard.
+  if (url === '/system-health' && method === 'GET') {
+    return {
+      checkedAt: new Date().toISOString(),
+      services: { database: 'up', redisCache: 'up', redisQueue: 'up' },
+      breakers: [
+        { name: 'shopify', state: 'closed', stats: { fires: 1284, successes: 1277, failures: 5, fallbacks: 0, timeouts: 2 } },
+        { name: 'stripe', state: 'closed', stats: { fires: 412, successes: 412, failures: 0, fallbacks: 0, timeouts: 0 } },
+        { name: 'resolve', state: 'closed', stats: { fires: 88, successes: 87, failures: 1, fallbacks: 1, timeouts: 0 } },
+        { name: 'resend', state: 'closed', stats: { fires: 356, successes: 356, failures: 0, fallbacks: 0, timeouts: 0 } },
+      ],
+      queues: [
+        { name: 'invoice', active: 0, waiting: 1, delayed: 0, failed: 0, deadLetterDepth: 0, averageCompletionMs: 842 },
+        { name: 'order', active: 1, waiting: 0, delayed: 0, failed: 0, deadLetterDepth: 0, averageCompletionMs: 331 },
+        { name: 'email', active: 0, waiting: 0, delayed: 2, failed: 0, deadLetterDepth: 0, averageCompletionMs: 128 },
+        { name: 'webhook', active: 0, waiting: 0, delayed: 0, failed: 0, deadLetterDepth: 0, averageCompletionMs: 96 },
+        { name: 'analytics', active: 0, waiting: 0, delayed: 0, failed: 0, deadLetterDepth: 0, averageCompletionMs: null },
+      ],
+    } as T;
+  }
+  if (url === '/webhooks/stats' && method === 'GET') {
+    return {
+      windowHours: 24,
+      total: 342,
+      processed: 339,
+      failed: 0,
+      processingRatePct: 99.1,
+      avgProcessingMs: 214,
+      lastReceivedAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+    } as T;
   }
 
   // ── Team (Stage 4) — static /invite must precede the /:id matchers ────────────

@@ -15,11 +15,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       ref={ref}
       aria-invalid={error || undefined}
       className={cn(
-        'min-h-[80px] w-full rounded-md border border-border bg-surface px-3 py-2 text-base text-text-primary',
-        'transition-colors duration-fast placeholder:text-text-tertiary',
-        'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-border focus:ring-offset-0',
-        'disabled:cursor-not-allowed disabled:bg-neutral-bg disabled:text-text-tertiary',
-        error && 'border-danger focus:border-danger focus:ring-red-200',
+        'min-h-[80px] w-full rounded-md border border-border bg-white/60 px-3.5 py-2.5 text-base text-text-primary',
+        'backdrop-blur-sm transition-all duration-fast placeholder:text-text-tertiary',
+        'focus:border-ocean focus:bg-white/90 focus:outline-none focus:ring-4 focus:ring-ocean/15',
+        'disabled:cursor-not-allowed disabled:bg-neutral-bg/60 disabled:text-text-tertiary',
+        error && 'border-coral focus:border-coral focus:ring-coral/20',
         className,
       )}
       {...props}

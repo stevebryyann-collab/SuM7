@@ -42,26 +42,26 @@ export function MatrixView({ product, quantities, onQtyChange }: MatrixViewProps
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-left text-label uppercase tracking-wide text-gray-500">
+            <th className="border-b border-border px-2 py-1.5 text-left text-label uppercase tracking-wide text-text-secondary">
               Color \ Size
             </th>
             {sizes.map((size) => (
               <th
                 key={size}
-                className="border-b border-gray-200 px-2 py-1.5 text-center text-xs font-medium text-gray-700"
+                className="border-b border-border px-2 py-1.5 text-center text-xs font-medium text-text-secondary"
               >
                 {size}
               </th>
             ))}
-            <th className="border-b border-l border-gray-200 px-2 py-1.5 text-right text-label uppercase tracking-wide text-gray-500">
+            <th className="border-b border-l border-border px-2 py-1.5 text-right text-label uppercase tracking-wide text-text-secondary">
               Total
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.color} className="border-b border-gray-100">
-              <td className="px-2 py-1 text-xs text-gray-700">{row.color}</td>
+            <tr key={row.color} className="border-b border-border">
+              <td className="px-2 py-1 text-xs text-text-secondary">{row.color}</td>
               {row.cells.map(({ size, variant, qty }) => (
                 <td key={size} className="px-1 py-1 text-center">
                   {variant ? (
@@ -76,28 +76,28 @@ export function MatrixView({ product, quantities, onQtyChange }: MatrixViewProps
                       aria-label={`Quantity for ${product.title} ${row.color} ${size}`}
                     />
                   ) : (
-                    <span className="text-gray-300">—</span>
+                    <span className="text-text-tertiary">—</span>
                   )}
                 </td>
               ))}
-              <td className="border-l border-gray-200 px-2 py-1 text-right font-medium tabular-nums text-gray-900">
+              <td className="border-l border-border px-2 py-1 text-right font-medium tabular-nums text-text-primary">
                 {row.rowTotal}
               </td>
             </tr>
           ))}
         </tbody>
         <tfoot>
-          <tr className="border-t border-gray-200 bg-gray-50">
-            <td className="px-2 py-1.5 text-label uppercase tracking-wide text-gray-500">Total</td>
+          <tr className="border-t border-border bg-white/40">
+            <td className="px-2 py-1.5 text-label uppercase tracking-wide text-text-secondary">Total</td>
             {colTotals.map((total, index) => (
               <td
                 key={sizes[index]}
-                className="px-2 py-1.5 text-center font-medium tabular-nums text-gray-900"
+                className="px-2 py-1.5 text-center font-medium tabular-nums text-text-primary"
               >
                 {total}
               </td>
             ))}
-            <td className="border-l border-gray-200 px-2 py-1.5 text-right font-semibold tabular-nums text-gray-900">
+            <td className="border-l border-border px-2 py-1.5 text-right font-semibold tabular-nums text-text-primary">
               {grandTotal}
             </td>
           </tr>

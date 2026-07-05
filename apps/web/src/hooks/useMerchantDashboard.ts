@@ -10,6 +10,7 @@ const DASHBOARD_QUERY = /* GraphQL */ `
     getMerchantDashboard {
       gmvCurrentMonth
       gmvPreviousMonth
+      allTimeGmv
       gmvChangePercent
       outstandingArBalance
       overdueInvoiceCount

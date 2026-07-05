@@ -8,41 +8,50 @@ import { cn } from '@/lib/cn';
 
 /**
  * Button — design-system variants (token colors only, no hardcoded hex).
- * Transitions are color-only at duration-fast (80ms); there are no transforms
- * on press (Safari repaint safety, per CLAUDE.md).
+ * The Apple-Weather glass language (CLAUDE.md): primary is an Ocean Blue
+ * gradient with a soft glow, secondary/default is translucent glass, and every
+ * solid button lifts on hover and presses on click with spring easing.
  *
  * Variant names are backward compatible: `default` is an alias of `secondary`
  * so already-shipped `variant="default"` callers keep their intended look.
  */
 const buttonVariants = cva(
   'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium ' +
-    'transition-colors duration-fast focus-visible:outline focus-visible:outline-2 ' +
-    'focus-visible:outline-accent disabled:opacity-50 disabled:cursor-not-allowed ' +
-    'disabled:pointer-events-none',
+    'transition-all duration-fast ease-spring active:scale-[0.97] ' +
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40 ' +
+    'focus-visible:ring-offset-2 focus-visible:ring-offset-transparent ' +
+    'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
   {
     variants: {
       variant: {
-        primary: 'bg-accent text-white hover:bg-accent-hover',
+        primary:
+          'bg-gradient-to-br from-ocean-bright via-ocean to-ocean-deep text-white ' +
+          'shadow-glow hover:-translate-y-0.5 hover:shadow-glow-hover',
         secondary:
-          'bg-transparent text-text-primary border border-border-strong hover:bg-neutral-bg',
+          'bg-glass-strong backdrop-blur-nav text-text-primary border border-glass-border ' +
+          'shadow-sm hover:-translate-y-0.5 hover:bg-white hover:shadow-glass',
         // Alias of `secondary` — retained for backward compatibility.
         default:
-          'bg-transparent text-text-primary border border-border-strong hover:bg-neutral-bg',
+          'bg-glass-strong backdrop-blur-nav text-text-primary border border-glass-border ' +
+          'shadow-sm hover:-translate-y-0.5 hover:bg-white hover:shadow-glass',
         /**
-         * Destructive (red). Used ONLY inside {@link ConfirmDialog} for
+         * Destructive (Coral). Used ONLY inside {@link ConfirmDialog} for
          * irreversible actions (void invoice, reject buyer). Do not use as a
          * standalone page CTA.
          */
-        destructive: 'bg-danger text-white hover:bg-red-700',
+        destructive:
+          'bg-gradient-to-br from-coral via-coral to-coral-deep text-white ' +
+          'shadow-md hover:-translate-y-0.5 hover:shadow-lg',
         ghost:
-          'bg-transparent text-text-secondary hover:text-text-primary hover:bg-neutral-bg',
-        link: 'bg-transparent text-accent underline-offset-4 hover:underline',
+          'bg-transparent text-text-secondary hover:text-text-primary hover:bg-white/60 ' +
+          'hover:backdrop-blur-sm active:scale-100',
+        link: 'bg-transparent text-ocean underline-offset-4 hover:underline active:scale-100',
       },
       size: {
-        default: 'h-9 px-4 text-base',
-        sm: 'h-8 px-2 text-sm',
-        lg: 'h-10 px-4 text-base',
-        icon: 'h-9 w-9',
+        default: 'h-10 px-4 text-base',
+        sm: 'h-8 px-3 text-sm',
+        lg: 'h-11 px-5 text-md',
+        icon: 'h-10 w-10',
       },
     },
     defaultVariants: { variant: 'default', size: 'default' },

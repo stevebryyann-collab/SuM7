@@ -184,7 +184,7 @@ export class EmailService implements OnModuleInit {
       presignedUrl: params.presignedUrl,
       lineItems: params.lineItems,
     };
-    return this.send(params.to, renderInvoiceEmail(model), 'invoice');
+    return this.send(params.to, renderInvoiceEmail(model), 'invoice', params.merchantName);
   }
 
   async sendPaymentReminderEmail(params: PaymentReminderEmailParams): Promise<EmailSendResult> {
@@ -199,7 +199,7 @@ export class EmailService implements OnModuleInit {
       reminderCount: params.reminderCount,
       portalUrl: params.portalUrl,
     };
-    return this.send(params.to, renderPaymentReminderEmail(model), 'payment_reminder');
+    return this.send(params.to, renderPaymentReminderEmail(model), 'payment_reminder', params.merchantName);
   }
 
   async sendBuyerRegistrationConfirmation(
@@ -209,12 +209,12 @@ export class EmailService implements OnModuleInit {
       subject: `We received your application — ${params.merchantName}`,
       html: this.simpleLayout(
         'Application received',
-        `Hello ${params.applicantCompany}, we've received your wholesale application to ${params.merchantName}. ` +
+        `Hello ${params.applicantCompany}, we've received your trade account application to ${params.merchantName}. ` +
           `We'll review it and send a decision — typically within 1 business day. ` +
           `You'll receive an email once a decision has been made.`,
       ),
     };
-    return this.send(params.to, rendered, 'registration_confirm');
+    return this.send(params.to, rendered, 'registration_confirm', params.merchantName);
   }
 
   async sendBuyerApprovalEmail(params: BuyerApprovalEmailParams): Promise<EmailSendResult> {
@@ -227,7 +227,7 @@ export class EmailService implements OnModuleInit {
       currency: params.currency,
       portalUrl: params.portalUrl,
     };
-    return this.send(params.to, renderBuyerApprovalEmail(model), 'buyer_approval');
+    return this.send(params.to, renderBuyerApprovalEmail(model), 'buyer_approval', params.merchantName);
   }
 
   async sendBuyerRejectionEmail(params: BuyerRejectionEmailParams): Promise<EmailSendResult> {
@@ -237,7 +237,7 @@ export class EmailService implements OnModuleInit {
       merchantEmail: params.merchantEmail,
       rejectionReason: params.rejectionReason,
     };
-    return this.send(params.to, renderBuyerRejectionEmail(model), 'buyer_rejection');
+    return this.send(params.to, renderBuyerRejectionEmail(model), 'buyer_rejection', params.merchantName);
   }
 
   async sendMerchantNewApplicationAlert(
@@ -273,7 +273,7 @@ export class EmailService implements OnModuleInit {
           `(${params.reason}). No payment is due on this invoice. A corrected invoice may follow.`,
       ),
     };
-    return this.send(params.to, rendered, 'invoice_void');
+    return this.send(params.to, rendered, 'invoice_void', params.merchantName);
   }
 
   async sendOrderShippedEmail(params: OrderShippedEmailParams): Promise<EmailSendResult> {
@@ -284,7 +284,7 @@ export class EmailService implements OnModuleInit {
       trackingNumber: params.trackingNumber,
       trackingUrl: params.trackingUrl,
     };
-    return this.send(params.to, renderOrderShippedEmail(model), 'order_shipped');
+    return this.send(params.to, renderOrderShippedEmail(model), 'order_shipped', params.merchantName);
   }
 
   async sendStandingOrderReminderEmail(
@@ -299,15 +299,37 @@ export class EmailService implements OnModuleInit {
       manageUrl: params.manageUrl,
       lastOrder: params.lastOrder,
     };
-    return this.send(params.to, renderStandingOrderReminderEmail(model), 'standing_order_reminder');
+    return this.send(params.to, renderStandingOrderReminderEmail(model), 'standing_order_reminder', params.merchantName);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────
 
-  private async send(to: string, rendered: RenderedEmail, kind: string): Promise<EmailSendResult> {
+  /** The bare sender address from RESEND_FROM_ADDRESS ("Name <addr>" or "addr"). */
+  private senderAddress(): string {
+    const match = this.from.match(/<([^>]+)>/);
+    return match && match[1] ? match[1] : this.from;
+  }
+
+  /**
+   * Build the `from` header. Buyer-facing mail is sent as "{merchantName} Trade"
+   * so it reads as the merchant's own trade desk (e.g. "Acme Brand Trade"), never
+   * the platform. Merchant-facing alerts pass no name and use the default sender.
+   */
+  private fromFor(merchantName?: string): string {
+    if (!merchantName || merchantName.trim().length === 0) return this.from;
+    const safe = merchantName.trim().replace(/["\r\n]/g, '');
+    return `"${safe} Trade" <${this.senderAddress()}>`;
+  }
+
+  private async send(
+    to: string,
+    rendered: RenderedEmail,
+    kind: string,
+    fromName?: string,
+  ): Promise<EmailSendResult> {
     try {
       const result = await this.breaker.fire({
-        from: this.from,
+        from: this.fromFor(fromName),
         to,
         subject: rendered.subject,
         html: rendered.html,

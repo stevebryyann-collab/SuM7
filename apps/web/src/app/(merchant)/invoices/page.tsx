@@ -18,6 +18,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { InvoiceTable } from '@/components/merchant/InvoiceTable';
 import { InvoiceTableSkeleton } from '@/components/shared/LoadingSkeleton';
+import { FadeIn } from '@/components/shared/FadeIn';
 import { toast } from '@/components/shared/toasts';
 import { useInvoices } from '@/hooks/useInvoices';
 import { useArAging } from '@/hooks/useMerchantDashboard';
@@ -224,7 +225,13 @@ function InvoicesView(): JSX.Element {
         ) : null}
       </div>
 
-      {query.isLoading ? <InvoiceTableSkeleton rows={10} /> : <InvoiceTable invoices={filtered} />}
+      {query.isLoading ? (
+        <InvoiceTableSkeleton rows={10} />
+      ) : (
+        <FadeIn>
+          <InvoiceTable invoices={filtered} />
+        </FadeIn>
+      )}
 
       {query.hasNextPage ? (
         <div className="mt-4 flex justify-center">

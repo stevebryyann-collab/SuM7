@@ -9,9 +9,9 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 /**
- * Text input on the design-system token scale. Focus shows an accent border +
- * 2px accent-tinted ring (the one focus affordance — no glow). Token colors
- * only; no hardcoded hex.
+ * Text input in the glass language (CLAUDE.md → Forms). Translucent Cloud White
+ * over blur, soft border, and a soft outer glow on focus (no browser outline).
+ * Token colors only; no hardcoded hex.
  */
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className, type = 'text', error = false, ...props }, ref) => (
@@ -20,11 +20,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       type={type}
       aria-invalid={error || undefined}
       className={cn(
-        'h-9 w-full rounded-md border border-border bg-surface px-3 text-base text-text-primary',
-        'transition-colors duration-fast placeholder:text-text-tertiary',
-        'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-border focus:ring-offset-0',
-        'disabled:cursor-not-allowed disabled:bg-neutral-bg disabled:text-text-tertiary',
-        error && 'border-danger focus:border-danger focus:ring-red-200',
+        'h-10 w-full rounded-md border border-border bg-white/60 px-3.5 text-base text-text-primary',
+        'backdrop-blur-sm transition-all duration-fast placeholder:text-text-tertiary',
+        'focus:border-ocean focus:bg-white/90 focus:outline-none focus:ring-4 focus:ring-ocean/15',
+        'disabled:cursor-not-allowed disabled:bg-neutral-bg/60 disabled:text-text-tertiary',
+        error && 'border-coral focus:border-coral focus:ring-coral/20',
         className,
       )}
       {...props}

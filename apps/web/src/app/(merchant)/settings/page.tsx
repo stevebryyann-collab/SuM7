@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Copy, ExternalLink } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
 import { UpdateMerchantSettingsSchema } from '@b2b/shared/schemas';
 import { PageLayout } from '@/components/merchant/PageLayout';
 import { SettingsTabs } from '@/components/merchant/SettingsTabs';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { useSettings, useUpdateSettings, useUpdateAnalyticsSettings } from '@/hooks/useSettings';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { ApiClientError } from '@/lib/api/error';
 import { cn } from '@/lib/cn';
 import type { NotificationPrefs } from '@/types/api';
@@ -87,15 +88,7 @@ export default function SettingsPage(): JSX.Element {
     );
   };
 
-  const copyLink = async (): Promise<void> => {
-    if (!data) return;
-    try {
-      await navigator.clipboard.writeText(data.applicationLink);
-      toast.success('Copied');
-    } catch {
-      toast.error('Could not copy link');
-    }
-  };
+  const { copy: copyLink, copied: linkCopied } = useCopyToClipboard();
 
   return (
     <PageLayout title="Settings" subtitle="General, invoice, and notification preferences.">
@@ -109,8 +102,8 @@ export default function SettingsPage(): JSX.Element {
         <div className="space-y-6">
           {/* General */}
           <section className="panel p-5">
-            <h2 className="text-base font-semibold text-gray-900">General</h2>
-            <p className="mt-0.5 text-sm text-gray-500">Read-only details from your Shopify store.</p>
+            <h2 className="text-base font-semibold text-text-primary">General</h2>
+            <p className="mt-0.5 text-sm text-text-secondary">Read-only details from your Shopify store.</p>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <ReadOnlyField label="Store Name" value={data.storeName} />
               <ReadOnlyField label="Shopify Domain" value={data.shopifyDomain} />
@@ -121,9 +114,9 @@ export default function SettingsPage(): JSX.Element {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Input readOnly value={data.applicationLink} className="font-mono text-xs sm:flex-1" />
                 <div className="flex items-center gap-2">
-                  <Button variant="default" size="sm" onClick={() => void copyLink()}>
-                    <Copy className="h-4 w-4" />
-                    Copy link
+                  <Button variant="default" size="sm" onClick={() => void copyLink(data.applicationLink)}>
+                    {linkCopied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                    {linkCopied ? 'Copied!' : 'Copy link'}
                   </Button>
                   <Button variant="default" size="sm" asChild>
                     <a href={data.applicationLink} target="_blank" rel="noopener noreferrer">
@@ -138,7 +131,7 @@ export default function SettingsPage(): JSX.Element {
 
           {/* Invoice settings */}
           <section className="panel p-5">
-            <h2 className="text-base font-semibold text-gray-900">Invoice Settings</h2>
+            <h2 className="text-base font-semibold text-text-primary">Invoice Settings</h2>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:max-w-md">
               <div className="space-y-1.5">
                 <Label htmlFor="invoicePrefix">Invoice Prefix</Label>
@@ -150,7 +143,7 @@ export default function SettingsPage(): JSX.Element {
                   placeholder="INV"
                   className="w-32"
                 />
-                <p className="text-xs text-gray-500">Applies to future invoices only. Max 8 characters.</p>
+                <p className="text-xs text-text-secondary">Applies to future invoices only. Max 8 characters.</p>
                 {prefixError ? <p className="text-xs text-red-700">{prefixError}</p> : null}
               </div>
               <div className="space-y-1.5">
@@ -163,10 +156,10 @@ export default function SettingsPage(): JSX.Element {
                   onChange={(e) => setPaymentInstructions(e.target.value)}
                   placeholder="e.g. Remit by ACH to…"
                 />
-                <p className="text-right text-xs text-gray-400">
+                <p className="text-right text-xs text-text-tertiary">
                   {paymentInstructions.length}/{MAX_INSTRUCTIONS}
                 </p>
-                <p className="text-xs text-gray-500">Shown on all invoices.</p>
+                <p className="text-xs text-text-secondary">Shown on all invoices.</p>
               </div>
             </div>
             <div className="mt-4">
@@ -184,9 +177,9 @@ export default function SettingsPage(): JSX.Element {
 
           {/* Notifications */}
           <section className="panel p-5">
-            <h2 className="text-base font-semibold text-gray-900">Notifications</h2>
-            <p className="mt-0.5 text-sm text-gray-500">Owner email alerts.</p>
-            <div className="mt-4 divide-y divide-gray-200 border-y border-gray-200">
+            <h2 className="text-base font-semibold text-text-primary">Notifications</h2>
+            <p className="mt-0.5 text-sm text-text-secondary">Owner email alerts.</p>
+            <div className="mt-4 divide-y divide-border border-y border-border">
               <ToggleRow
                 label="New buyer application"
                 description="Email the owner when a buyer applies."
@@ -221,8 +214,8 @@ export default function SettingsPage(): JSX.Element {
 
           {/* Analytics integration */}
           <section className="panel p-5">
-            <h2 className="text-base font-semibold text-gray-900">Analytics Integration</h2>
-            <p className="mt-0.5 text-sm text-gray-500">
+            <h2 className="text-base font-semibold text-text-primary">Analytics Integration</h2>
+            <p className="mt-0.5 text-sm text-text-secondary">
               Connect Google Tag Manager or GA4 to track buyer-portal activity.
             </p>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:max-w-md">
@@ -236,7 +229,7 @@ export default function SettingsPage(): JSX.Element {
                   placeholder="GTM-XXXXXXX"
                   className="font-mono"
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-secondary">
                   Add this to track buyer portal events in Google Tag Manager.
                 </p>
               </div>
@@ -250,10 +243,10 @@ export default function SettingsPage(): JSX.Element {
                   placeholder="G-XXXXXXXXXX"
                   className="font-mono"
                 />
-                <p className="text-xs text-gray-500">Only needed if you&apos;re not using GTM.</p>
+                <p className="text-xs text-text-secondary">Only needed if you&apos;re not using GTM.</p>
               </div>
             </div>
-            <details className="mt-4 text-xs text-gray-500">
+            <details className="mt-4 text-xs text-text-secondary">
               <summary className="cursor-pointer select-none text-accent">
                 View available events
               </summary>
@@ -287,7 +280,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }): JSX.
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <Input readOnly value={value} className="text-gray-600" />
+      <Input readOnly value={value} className="text-text-secondary" />
     </div>
   );
 }
@@ -306,8 +299,8 @@ function ToggleRow({
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-gray-900">{label}</p>
-        <p className="text-xs text-gray-500">{description}</p>
+        <p className="text-sm font-medium text-text-primary">{label}</p>
+        <p className="text-xs text-text-secondary">{description}</p>
       </div>
       <button
         type="button"
@@ -317,7 +310,7 @@ function ToggleRow({
         className={cn(
           'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors duration-75',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
-          checked ? 'border-accent-dark bg-accent' : 'border-gray-300 bg-gray-200',
+          checked ? 'border-accent-dark bg-accent' : 'border-border-strong bg-fog-soft',
         )}
       >
         <span

@@ -13,7 +13,9 @@ import { MerchantTopbar } from '@/components/merchant/MerchantTopbar';
 export default function MerchantLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
     <MerchantSessionProvider>
-      <div className="min-h-screen bg-bg">
+      {/* Transparent so the atmospheric sky painted on <body> shows through the
+          glass chrome (CLAUDE.md → Background System). */}
+      <div className="min-h-screen">
         <Sidebar />
         <div className="flex min-h-screen min-w-0 flex-col pl-[220px]">
           <MerchantTopbar />

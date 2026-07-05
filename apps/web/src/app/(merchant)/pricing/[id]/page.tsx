@@ -145,7 +145,7 @@ export default function PricingTierDetailPage(): JSX.Element {
     <PageContainer>
       <Link
         href="/pricing"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+        className="mb-4 inline-flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to pricing
@@ -181,7 +181,7 @@ export default function PricingTierDetailPage(): JSX.Element {
               />
               <Stat label="Priority" value={String(detail.priority)} />
               <div className="flex flex-col gap-0.5">
-                <dt className="text-label uppercase tracking-wider text-gray-500">State</dt>
+                <dt className="text-label uppercase tracking-wider text-text-secondary">State</dt>
                 <dd>
                   <StatusBadge
                     status={detail.isActive ? 'approved' : 'cancelled'}
@@ -192,13 +192,13 @@ export default function PricingTierDetailPage(): JSX.Element {
             </dl>
 
             {detail.conditionsJson && detail.conditionsJson.brackets.length > 0 ? (
-              <div className="mt-4 border-t border-gray-200 pt-4">
-                <h3 className="text-label uppercase tracking-wider text-gray-500">Volume Brackets</h3>
+              <div className="mt-4 border-t border-border pt-4">
+                <h3 className="text-label uppercase tracking-wider text-text-secondary">Volume Brackets</h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {detail.conditionsJson.brackets.map((b, i) => (
                     <span
                       key={i}
-                      className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700"
+                      className="rounded-md border border-border bg-white/40 px-2 py-1 text-xs text-text-secondary"
                     >
                       <span className="font-mono tabular-nums">{b.minQty}+</span> →{' '}
                       <span className="font-mono tabular-nums">{b.discountPct}%</span>
@@ -211,7 +211,7 @@ export default function PricingTierDetailPage(): JSX.Element {
 
           {/* Add override */}
           <section className="panel mb-6 p-4">
-            <h2 className="text-label uppercase tracking-wider text-gray-500">Add Override</h2>
+            <h2 className="text-label uppercase tracking-wider text-text-secondary">Add Override</h2>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="ovProduct">Product ID</Label>
@@ -270,8 +270,8 @@ export default function PricingTierDetailPage(): JSX.Element {
 
           {/* Override table */}
           <section className="panel">
-            <div className="border-b border-gray-200 px-4 py-3">
-              <h2 className="text-label uppercase tracking-wider text-gray-500">Price Overrides</h2>
+            <div className="border-b border-border px-4 py-3">
+              <h2 className="text-label uppercase tracking-wider text-text-secondary">Price Overrides</h2>
             </div>
             {overridesQuery.isLoading ? (
               <LoadingSkeleton rows={6} columns={[3, 2, 1, 1, 1]} />
@@ -291,7 +291,7 @@ export default function PricingTierDetailPage(): JSX.Element {
                   <TableBody>
                     {overrides.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-sm text-gray-500">
+                        <TableCell colSpan={6} className="py-8 text-center text-sm text-text-secondary">
                           No price overrides yet. Add one above or import a CSV.
                         </TableCell>
                       </TableRow>
@@ -301,16 +301,16 @@ export default function PricingTierDetailPage(): JSX.Element {
                           <TableCell className="max-w-[220px] truncate font-mono text-xs">
                             {ov.shopifyProductId}
                           </TableCell>
-                          <TableCell className="max-w-[200px] truncate font-mono text-xs text-gray-500">
+                          <TableCell className="max-w-[200px] truncate font-mono text-xs text-text-secondary">
                             {ov.shopifyVariantId ?? '— all variants —'}
                           </TableCell>
                           <TableCell className="text-right font-mono tabular-nums">
                             {formatMoney(ov.price)}
                           </TableCell>
-                          <TableCell className="text-right font-mono tabular-nums text-gray-500">
+                          <TableCell className="text-right font-mono tabular-nums text-text-secondary">
                             {ov.compareAtPrice ? formatMoney(ov.compareAtPrice) : '—'}
                           </TableCell>
-                          <TableCell className="text-gray-600">{ov.currency}</TableCell>
+                          <TableCell className="text-text-secondary">{ov.currency}</TableCell>
                           <TableCell className="text-right">
                             <Button
                               variant="default"
@@ -365,8 +365,8 @@ export default function PricingTierDetailPage(): JSX.Element {
 function Stat({ label, value }: { label: string; value: string }): JSX.Element {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-label uppercase tracking-wider text-gray-500">{label}</dt>
-      <dd className="font-mono tabular-nums text-gray-900">{value}</dd>
+      <dt className="text-label uppercase tracking-wider text-text-secondary">{label}</dt>
+      <dd className="font-mono tabular-nums text-text-primary">{value}</dd>
     </div>
   );
 }

@@ -35,7 +35,7 @@ function MerchantLoginForm(): JSX.Element {
     <div className="panel p-8">
       <div className="mb-6 flex items-center gap-2">
         <BarChart3 className="h-6 w-6 text-accent" />
-        <span className="text-base font-semibold text-gray-900">Wholesale Admin</span>
+        <span className="text-base font-semibold text-text-primary">Wholesale Admin</span>
       </div>
       <form onSubmit={start} className="space-y-4">
         <div className="space-y-1.5">
@@ -56,7 +56,7 @@ function MerchantLoginForm(): JSX.Element {
           Connect with Shopify
         </Button>
       </form>
-      <p className="mt-4 text-center text-xs text-gray-400">
+      <p className="mt-4 text-center text-xs text-text-tertiary">
         Buyers should use the storefront wholesale portal, not this admin login.
       </p>
       {isDemoEnabled() ? <DemoLoginSection /> : null}
@@ -79,8 +79,8 @@ function DemoLoginSection(): JSX.Element {
   };
 
   return (
-    <div className="mt-6 border-t border-dashed border-gray-300 pt-5">
-      <p className="mb-2 text-label uppercase tracking-wider text-gray-500">Development</p>
+    <div className="mt-6 border-t border-dashed border-border-strong pt-5">
+      <p className="mb-2 text-label uppercase tracking-wider text-text-secondary">Development</p>
       <Button
         type="button"
         variant="default"
@@ -91,7 +91,7 @@ function DemoLoginSection(): JSX.Element {
         {loading ? <Spinner /> : null}
         Demo Merchant Login
       </Button>
-      <p className="mt-2 text-center text-xs text-gray-400">
+      <p className="mt-2 text-center text-xs text-text-tertiary">
         Loads sample data without Shopify. Local development only.
       </p>
     </div>
@@ -100,7 +100,7 @@ function DemoLoginSection(): JSX.Element {
 
 export default function MerchantLoginPage(): JSX.Element {
   return (
-    <Suspense fallback={<div className="panel p-8 text-sm text-gray-500">Loading…</div>}>
+    <Suspense fallback={<div className="panel p-8 text-sm text-text-secondary">Loading…</div>}>
       <MerchantLoginForm />
     </Suspense>
   );

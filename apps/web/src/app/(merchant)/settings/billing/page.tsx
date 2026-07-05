@@ -82,10 +82,10 @@ export default function BillingSettingsPage(): JSX.Element {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold capitalize text-gray-900">{plan.tier} plan</h2>
+                  <h2 className="text-base font-semibold capitalize text-text-primary">{plan.tier} plan</h2>
                   <PlanStatusBadge status={String(plan.status)} />
                 </div>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-text-secondary">
                   {plan.priceLabel}
                   {plan.nextBillingDate ? (
                     <>
@@ -110,7 +110,7 @@ export default function BillingSettingsPage(): JSX.Element {
 
         {/* GMV usage */}
         <section className="panel p-5">
-          <h2 className="text-base font-semibold text-gray-900">GMV usage this month</h2>
+          <h2 className="text-base font-semibold text-text-primary">GMV usage this month</h2>
           {usageLoading || !usage ? (
             <div className="mt-4">
               <LoadingSkeleton rows={2} columns={[4]} />
@@ -128,8 +128,8 @@ export default function BillingSettingsPage(): JSX.Element {
 
         {/* Plan comparison */}
         <section className="panel overflow-hidden">
-          <div className="border-b border-gray-200 px-4 py-3">
-            <h2 className="text-label uppercase tracking-wider text-gray-500">Plan comparison</h2>
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-label uppercase tracking-wider text-text-secondary">Plan comparison</h2>
           </div>
           <PlanComparison currentTier={plan ? (plan.tier as SubscriptionTier) : null} />
         </section>
@@ -158,12 +158,12 @@ export default function BillingSettingsPage(): JSX.Element {
 function PlanStatusBadge({ status }: { status: string }): JSX.Element {
   const tone: Record<string, string> = {
     active: 'bg-green-100 text-green-800',
-    trial: 'bg-blue-100 text-blue-800',
+    trial: 'bg-ocean-soft text-ocean-deep',
     inactive: 'bg-red-100 text-red-800',
   };
   const label = status.length > 0 ? status[0]!.toUpperCase() + status.slice(1) : status;
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', tone[status] ?? 'bg-gray-100 text-gray-800')}>
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', tone[status] ?? 'bg-fog-soft text-text-primary')}>
       {label}
     </span>
   );
@@ -187,22 +187,22 @@ function UsageMeter({
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-700">
+        <span className="text-text-secondary">
           {formatMoney(gmv)} of {formatMoney(freeThreshold)} free tier used
         </span>
-        <span className="tabular-nums text-gray-500">{pct}%</span>
+        <span className="tabular-nums text-text-secondary">{pct}%</span>
       </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-fog-soft">
         <div
           className={cn('h-full rounded-full', overFreeTier ? 'bg-red-500' : 'bg-accent')}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <p className="mt-2 text-sm text-gray-500">
+      <p className="mt-2 text-sm text-text-secondary">
         {overFreeTier ? (
           <>
             You have used {formatMoney(gmv)} of GMV. {formatMoney(billable)} is billable at {rateLabel} ={' '}
-            <span className="font-medium text-gray-900">{formatMoney(estimatedFee)}</span> in usage fees.
+            <span className="font-medium text-text-primary">{formatMoney(estimatedFee)}</span> in usage fees.
           </>
         ) : (
           'No usage fees this month.'
@@ -225,10 +225,10 @@ function PlanComparison({ currentTier }: { currentTier: SubscriptionTier | null 
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-200">
-            <th className="px-4 py-2 text-left font-medium text-gray-500">Feature</th>
+          <tr className="border-b border-border">
+            <th className="px-4 py-2 text-left font-medium text-text-secondary">Feature</th>
             {PLANS.map((plan) => (
-              <th key={plan.tier} className="px-4 py-2 text-center font-semibold text-gray-900">
+              <th key={plan.tier} className="px-4 py-2 text-center font-semibold text-text-primary">
                 {plan.name}
                 {currentTier === plan.tier ? (
                   <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent-fg">
@@ -241,10 +241,10 @@ function PlanComparison({ currentTier }: { currentTier: SubscriptionTier | null 
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.label} className="border-b border-gray-200 last:border-0">
-              <td className="px-4 py-2 text-gray-600">{row.label}</td>
+            <tr key={row.label} className="border-b border-border last:border-0">
+              <td className="px-4 py-2 text-text-secondary">{row.label}</td>
               {PLANS.map((plan) => (
-                <td key={plan.tier} className="px-4 py-2 text-center tabular-nums text-gray-900">
+                <td key={plan.tier} className="px-4 py-2 text-center tabular-nums text-text-primary">
                   {row.render(plan)}
                 </td>
               ))}
@@ -260,7 +260,7 @@ function BoolMark({ on }: { on: boolean }): JSX.Element {
   return on ? (
     <Check className="mx-auto h-4 w-4 text-green-600" />
   ) : (
-    <X className="mx-auto h-4 w-4 text-gray-300" />
+    <X className="mx-auto h-4 w-4 text-text-tertiary" />
   );
 }
 
@@ -291,20 +291,20 @@ function ChangePlanModal({
                   key={plan.tier}
                   className={cn(
                     'flex flex-col rounded-lg border p-4',
-                    isCurrent ? 'border-accent bg-accent/5' : 'border-gray-200',
+                    isCurrent ? 'border-accent bg-accent/5' : 'border-glass-border',
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-900">{plan.name}</h3>
+                    <h3 className="text-sm font-semibold text-text-primary">{plan.name}</h3>
                     {isCurrent ? (
                       <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent-fg">
                         Current plan
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">{plan.price}</p>
-                  <p className="text-xs text-gray-500">per month</p>
-                  <ul className="mt-3 flex-1 space-y-1 text-xs text-gray-600">
+                  <p className="mt-1 text-2xl font-semibold tracking-tight text-text-primary">{plan.price}</p>
+                  <p className="text-xs text-text-secondary">per month</p>
+                  <ul className="mt-3 flex-1 space-y-1 text-xs text-text-secondary">
                     <li>{plan.freeTier} GMV free tier</li>
                     <li>{plan.rate} on GMV above</li>
                     {plan.bnpl ? <li>BNPL enabled</li> : null}

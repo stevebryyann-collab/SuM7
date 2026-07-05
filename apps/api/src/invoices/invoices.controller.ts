@@ -228,4 +228,25 @@ export class InvoicesController {
     const url = await this.invoices.getPresignedUrl(id, req.buyer!.buyerId);
     return { url };
   }
+
+  /**
+   * Fast "is this invoice cryptographically sealed?" probe for the buyer portal
+   * download page. Ownership-checked in the service; cached 1h (the hash presence
+   * only flips once, at generation). Returns { hasIntegrityHash, invoiceNumber }.
+   */
+  @Get('buyer/invoices/:id/integrity-status')
+  @UseGuards(ClerkBuyerGuard)
+  async invoiceIntegrityStatus(
+    @Req() req: BuyerAuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<{ hasIntegrityHash: boolean; invoiceNumber: string }> {
+    const cacheKey = `invoice:integrity:${id}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as { hasIntegrityHash: boolean; invoiceNumber: string };
+    }
+    const result = await this.invoices.getBuyerInvoiceIntegrity(id, req.buyer!.buyerId);
+    await this.cache.set(cacheKey, JSON.stringify(result), 'EX', 3600);
+    return result;
+  }
 }

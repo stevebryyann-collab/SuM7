@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { KpiCardSkeleton, ChartSkeleton } from '@/components/shared/LoadingSkeleton';
+import { FadeIn } from '@/components/shared/FadeIn';
 import { toast } from '@/components/shared/toasts';
 import { useAnalytics, useAnalyticsExport } from '@/hooks/useAnalytics';
 import { ApiClientError } from '@/lib/api/error';
@@ -102,31 +103,51 @@ export default function AnalyticsPage(): JSX.Element {
           {isLoading || !data ? (
             <KpiCardSkeleton />
           ) : (
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <DashboardKpiCard title="Total GMV" value={formatMoney(data.kpis.gmv)} />
-              <DashboardKpiCard title="Orders Placed" value={String(data.kpis.orders)} />
-              <DashboardKpiCard title="Avg Order Value" value={formatMoney(data.kpis.avgOrderValue)} />
-              <DashboardKpiCard title="Active Buyers" value={String(data.kpis.activeBuyers)} />
-            </div>
+            <FadeIn delay={0}>
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <DashboardKpiCard title="Total GMV" value={formatMoney(data.kpis.gmv)} />
+                <DashboardKpiCard title="Orders Placed" value={String(data.kpis.orders)} />
+                <DashboardKpiCard title="Avg Order Value" value={formatMoney(data.kpis.avgOrderValue)} />
+                <DashboardKpiCard title="Active Buyers" value={String(data.kpis.activeBuyers)} />
+              </div>
+            </FadeIn>
           )}
 
           {/* Row 2 — GMV trend (full width) */}
           <ChartCard title="GMV Trend" period="Daily" className="mt-6">
-            {isLoading || !data ? <ChartSkeleton height={200} /> : <GmvTrendChart data={data.trend} />}
+            {isLoading || !data ? (
+              <ChartSkeleton height={200} />
+            ) : (
+              <FadeIn delay={50}>
+                <GmvTrendChart data={data.trend} />
+              </FadeIn>
+            )}
           </ChartCard>
 
           {/* Row 3 — top buyers + monthly GMV */}
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ChartCard title="Top 10 Buyers" period="By GMV">
-              {isLoading || !data ? <ChartSkeleton height={288} /> : <TopBuyersChart data={data.topBuyers} />}
+              {isLoading || !data ? (
+                <ChartSkeleton height={288} />
+              ) : (
+                <FadeIn delay={50}>
+                  <TopBuyersChart data={data.topBuyers} />
+                </FadeIn>
+              )}
             </ChartCard>
             <ChartCard title="Monthly GMV" period="Last 12 months">
-              {isLoading || !data ? <ChartSkeleton height={288} /> : <MonthlyGmvChart data={data.monthly} />}
+              {isLoading || !data ? (
+                <ChartSkeleton height={288} />
+              ) : (
+                <FadeIn delay={50}>
+                  <MonthlyGmvChart data={data.monthly} />
+                </FadeIn>
+              )}
             </ChartCard>
           </div>
 
           {/* Row 4 — detail tables */}
-          <div className="mt-6">
+          <FadeIn delay={100} className="mt-6">
             <Tabs defaultValue="buyers">
               <TabsList>
                 <TabsTrigger value="buyers">Top Buyers</TabsTrigger>
@@ -187,7 +208,7 @@ export default function AnalyticsPage(): JSX.Element {
                 </DataTable>
               </TabsContent>
             </Tabs>
-          </div>
+          </FadeIn>
         </>
       )}
     </PageLayout>

@@ -289,89 +289,679 @@ INTERNAL_API_SECRET (min 32 chars)
 
 ---
 
-## UI DESIGN SYSTEM — MINIMALISM WITH FUNCTIONAL DEPTH
+# WHOLESALE PORTAL DESIGN SYSTEM
+## Apple Weather Inspired Premium Glass Design Language
 
-### Philosophy:
-Minimalism dominates all layout, spacing, and color decisions.
-Skeuomorphic depth cues are applied only to interactive elements
-where they reduce cognitive load (buttons that look pressable,
-inputs that look writable). If a depth cue does not help the user
-understand what to do, it does not exist.
+---
 
-This is accounting software used by wholesale buyers placing large orders
-and merchant staff managing receivables. Every pixel must earn its place.
+# Core Philosophy
 
-### FORBIDDEN — never use:
-- backdrop-filter: blur
-- Frosted or translucent backgrounds
-- Gradient backgrounds of any kind
-- shadow-md, shadow-lg, shadow-xl, shadow-2xl on any layout container
-- active:translate-y-px or any transform on interactive elements
-  (causes layout repaints; unreliable on Safari without touch listeners)
-- Animated backgrounds or transitions longer than 100ms
-- Decorative shapes, blobs, or fills
-- More than 2 font weights in any single view
-- Icon-only buttons on any primary action
-- Multiple accent colors
+Wholesale Portal is not enterprise software that feels cold.
 
-### Layout rules (minimalism governs):
-- Page background: gray-50 (#f9fafb)
-- Content panels: white (#ffffff)
-- Secondary panels, sidebars: gray-100 (#f3f4f6)
-- Single accent color for all CTAs — one color, used consistently
-- Table rows: compact, 20+ visible without vertical scroll
-- Typography: 3 sizes maximum per view (heading, body, label)
-- Structure comes from 1px borders and consistent spacing
-- Status badges: solid fill only (bg-green-100 text-green-800)
-  Never outlined. Never translucent.
+It is a premium Shopify application that feels calm, elegant,
+and effortless while handling extremely complex wholesale workflows.
 
-### Interactive element depth cues (skeuomorphism, shadow-only):
+Every page should feel like looking through glass into a peaceful sky.
 
-Button — default state (appears slightly raised):
-  border border-gray-300 bg-white shadow-sm
-  transition-shadow duration-75
+The interface should reduce stress while managing large catalogs,
+bulk orders, invoices, receivables and analytics.
 
-Button — active/pressed state (shadow collapses = pressed feel):
-  active:shadow-none active:border-gray-400
-  No translate. No movement. Shadow removal signals press universally,
-  including Safari, without requiring touch event listeners or cursor-pointer
-  on non-button elements.
+The visual language is inspired by Apple's Weather application.
 
-Button — primary CTA:
-  bg-{accent} border border-{accent-dark} shadow-sm
-  active:shadow-none active:brightness-95
-  transition-shadow duration-75
+The experience must feel alive without becoming distracting.
 
-Form inputs (appear recessed into the surface):
-  bg-gray-50 border border-gray-300 shadow-inner
-  focus:bg-white focus:border-gray-400 focus:ring-0
-  transition-colors duration-75
-  Note: shadow-inner is the only skeuomorphic cue here.
-  Do not add focus glow rings — they are decorative in this context.
+Every page should belong to the exact same design system.
 
-Cards and panels (one layer of depth only):
-  border border-gray-200 shadow-sm bg-white
-  Never stack shadows. Never add hover:shadow-md.
+There should never be a page that feels like it was designed by
+a different person.
 
-Data tables:
-  Alternating bg-white / bg-gray-50 rows
-  border-b border-gray-200 between rows
-  Clickable rows: hover:bg-blue-50 (only if row triggers navigation)
-  No hover effect on non-clickable rows
+If two screenshots are placed side by side,
+they should obviously belong to the same application.
 
-Invoice PDF:
-  Background: #fafaf8 (paper tone, not pure white)
-  Rule lines: 0.5pt, #d1d5db
-  Numbers: monospace font, right-aligned
-  Labels: regular weight, left-aligned
-  No decorative boxes, colored headers, or rounded corners
-  Looks like a printed accounting document from a reputable firm
+---
 
-### What this combination produces:
-A UI that feels physically real in its interactive elements
-while maintaining the density and clarity of enterprise software.
-The benchmark is a well-designed physical ledger combined with
-Shopify Admin information architecture.
+# Design Principles
+
+Elegant
+
+Airy
+
+Premium
+
+Soft
+
+Calm
+
+Organic
+
+Fluid
+
+Highly readable
+
+Content first
+
+Beautiful second
+
+Animations never exist for decoration.
+
+Animations always explain.
+
+---
+
+# Visual Identity
+
+The application always feels like morning.
+
+Large atmospheric gradients.
+
+Blue skies.
+
+Soft mint.
+
+Cloud white.
+
+Subtle light.
+
+Never harsh.
+
+Never dark unless dark mode exists.
+
+No corporate gray dashboards.
+
+No Bootstrap.
+
+No Material UI.
+
+No Shopify Polaris visual style.
+
+---
+
+# Background System
+
+Every page uses an atmospheric background.
+
+The background never feels static.
+
+Use layered gradients.
+
+Large blurred cloud shapes.
+
+Subtle animated movement.
+
+Very slow.
+
+Movement should almost not be noticeable.
+
+Animation duration
+
+20s–40s
+
+Ease-in-out
+
+Infinite alternate
+
+Never distracting.
+
+Never looping aggressively.
+
+---
+
+# Glass System
+
+Every surface is glass.
+
+Cards
+
+Navigation
+
+Sidebar
+
+Modal
+
+Dropdown
+
+Popover
+
+Search
+
+Filter menus
+
+Tables
+
+Charts
+
+Everything.
+
+Glass recipe
+
+background:
+rgba(255,255,255,0.72)
+
+backdrop-filter:
+blur(28px)
+
+border:
+1px solid rgba(255,255,255,.85)
+
+Large soft shadow
+
+No heavy borders.
+
+No flat white cards.
+
+---
+
+# Corner Radius
+
+Primary cards
+
+28px
+
+Secondary cards
+
+22px
+
+Buttons
+
+16px
+
+Inputs
+
+16px
+
+Modal
+
+32px
+
+Small chips
+
+9999px
+
+Everything should feel soft.
+
+Never sharp.
+
+---
+
+# Shadows
+
+Soft.
+
+Wide.
+
+Diffuse.
+
+Never harsh.
+
+Cards appear to float.
+
+Hover slightly increases shadow.
+
+Never black shadows.
+
+Always use blue-gray shadows.
+
+---
+
+# Color Palette
+
+Ocean Blue
+
+Primary actions
+
+Sky Blue
+
+Highlights
+
+Mint Green
+
+Success
+
+Cloud White
+
+Glass
+
+Fog Gray
+
+Secondary text
+
+Coral
+
+Danger
+
+Amber
+
+Warning
+
+Only these colors exist.
+
+Never introduce random accent colors.
+
+---
+
+# Typography
+
+Inter
+
+Large headings
+
+Very bold
+
+Body
+
+Regular
+
+Labels
+
+Medium
+
+Large spacing between sections.
+
+Very generous whitespace.
+
+Never cram content together.
+
+---
+
+# Navigation
+
+Sidebar is translucent glass.
+
+Floating.
+
+Soft blur.
+
+Navigation items have:
+
+hover glow
+
+slight background tint
+
+left indicator
+
+spring animation
+
+Selected navigation softly glows.
+
+Never harsh blue blocks.
+
+---
+
+# Buttons
+
+Primary buttons
+
+Gradient
+
+Ocean Blue
+
+Soft glow
+
+Rounded
+
+Lift slightly on hover
+
+Spring animation
+
+Hover
+
+translateY(-2px)
+
+Pressed
+
+scale(.97)
+
+150ms spring
+
+Secondary buttons
+
+Glass
+
+Transparent
+
+Border
+
+Hover tint
+
+Ghost buttons
+
+Transparent
+
+Text only
+
+Hover background
+
+---
+
+# Forms
+
+Inputs are glass.
+
+Soft border.
+
+Placeholder uses fog gray.
+
+Focus state
+
+Blue border
+
+Soft outer glow
+
+No browser outlines.
+
+Dropdowns
+
+Same glass.
+
+Autocomplete
+
+Same glass.
+
+Everything consistent.
+
+---
+
+# Tables
+
+Tables are floating glass surfaces.
+
+Rows
+
+Large enough to breathe.
+
+Hover
+
+Soft blue tint.
+
+Selected row
+
+Ocean blue tint.
+
+Rounded table container.
+
+Never spreadsheet styling.
+
+---
+
+# Cards
+
+Every card floats independently.
+
+Hover
+
+Lift 2–4px
+
+Shadow increases
+
+Animation
+
+250ms spring
+
+Cards never jump.
+
+Cards glide.
+
+---
+
+# Charts
+
+Charts are elegant.
+
+Rounded.
+
+Soft gradients.
+
+Minimal grid lines.
+
+Large numbers.
+
+Lots of whitespace.
+
+Charts should feel like Apple's Health app.
+
+---
+
+# Icons
+
+Thin stroke icons.
+
+Rounded ends.
+
+Never filled icons unless required.
+
+Consistent stroke width.
+
+---
+
+# Animations
+
+Everything animates.
+
+Page transitions
+
+Fade
+
+Slide
+
+Scale
+
+Navigation transitions
+
+250–350ms
+
+Spring easing
+
+Cards
+
+Fade upward
+
+12px
+
+Modals
+
+Scale
+
+Opacity
+
+Blur
+
+Dropdowns
+
+Fade
+
+Scale
+
+Buttons
+
+Spring
+
+Hover
+
+Lift
+
+Pressed
+
+Scale
+
+Nothing appears instantly.
+
+Nothing disappears abruptly.
+
+Everything feels alive.
+
+---
+
+# Page Transitions
+
+Changing pages should never flash.
+
+Old page
+
+Fades
+
+Moves upward
+
+New page
+
+Fades in
+
+Moves upward
+
+Duration
+
+300ms
+
+Spring easing.
+
+The transition should feel almost identical to Apple's Weather app.
+
+---
+
+# Loading States
+
+Skeletons
+
+Glass
+
+Shimmer
+
+Rounded
+
+Never spinners unless absolutely necessary.
+
+---
+
+# Empty States
+
+Large illustration
+
+Soft colors
+
+Friendly message
+
+Primary CTA
+
+Never blank pages.
+
+---
+
+# Modals
+
+Blur background.
+
+Scale animation.
+
+Glass container.
+
+Large spacing.
+
+Rounded corners.
+
+Soft shadow.
+
+---
+
+# Notifications
+
+Floating glass toast.
+
+Slides from top right.
+
+Soft blur.
+
+Auto dismiss.
+
+---
+
+# Buyer Portal
+
+Uses exactly the same design language.
+
+Never looks different from Merchant Portal.
+
+Only the workflow changes.
+
+Not the visual language.
+
+---
+
+# Landing Page
+
+Uses the exact same design language.
+
+Atmospheric sky.
+
+Floating hero.
+
+Glass navigation.
+
+Floating pricing cards.
+
+Glass feature cards.
+
+Beautiful animations.
+
+Looks like a premium Apple product page.
+
+---
+
+# Consistency Rules
+
+Every page must use
+
+✔ Same spacing
+
+✔ Same shadows
+
+✔ Same typography
+
+✔ Same animation speed
+
+✔ Same blur
+
+✔ Same gradients
+
+✔ Same glass
+
+✔ Same radius
+
+✔ Same colors
+
+No exceptions.
+
+---
+
+# Absolutely Forbidden
+
+Bootstrap appearance
+
+Material UI appearance
+
+Flat dashboards
+
+Corporate admin templates
+
+Dark borders
+
+Heavy shadows
+
+Rectangular cards
+
+Tiny spacing
+
+Abrupt animations
+
+Instant page changes
+
+Random colors
+
+Random border radius
+
+Pages with different visual styles
+
+Components that don't match the design system
+
+Anything that breaks the Apple Weather visual language
 
 ---
 
@@ -530,16 +1120,20 @@ Never create:
 
 ## VERIFICATION — RUN AFTER EVERY PROMPT
 
+Package scope in this repo is **`@b2b/*`** (`@b2b/api`, `@b2b/web`, `@b2b/shared`,
+`@b2b/database`) — not `@wholesale-portal/*`. Use `@b2b/*` in every filtered command
+below; the original build prompts used the wrong scope.
+
 After any backend change:
-  pnpm --filter=@wholesale-portal/api build
+  pnpm --filter=@b2b/api build
   pnpm typecheck
 
 After pricing or financial logic:
-  pnpm --filter=@wholesale-portal/api test:unit -- --testPathPattern=pricing
+  pnpm --filter=@b2b/api test:unit -- --testPathPattern=pricing
   pnpm typecheck
 
 After any frontend change:
-  pnpm --filter=@wholesale-portal/web build
+  pnpm --filter=@b2b/web build
   pnpm typecheck
 
 After schema changes:
@@ -553,10 +1147,86 @@ Zero errors required. Do not proceed until verification passes.
 
 ---
 
-Last updated: Hybrid auth locked — NextAuth v4 + Shopify OAuth for merchants
-(Shopify embedded app requirement), Clerk for buyers. Supabase replaces
-Railway PostgreSQL. buyers table cleaned of Clerk-owned auth fields.
-refresh_tokens table removed. emailVerifiedAt synced via Clerk user.updated
-webhook. Minimalism dominates layout. Skeuomorphic depth cues use
-shadow-only press states — no translate transforms (Safari compatibility,
-no layout repaints).
+## PARTS 1–4 OF 4 COMPLETED
+
+The full build (design-system foundation → buyer features → merchant admin →
+polish) is done. Full per-file detail lives in the three implementation docs;
+this section is the consolidated reference so a fresh session doesn't have to
+re-derive it from git history.
+
+| Part | Scope | Doc |
+|---|---|---|
+| 1 | Design-system foundation: tokens (`tailwind.config.ts` + `globals.css`), `DataTable`, `StatusBadge`, `DashboardKpiCard`, `Sidebar`, `PageLayout`, `EmptyState`, `ConfirmDialog`, typed `toasts`, all 13 merchant pages wired to `PageLayout` | `CONTEXT_HANDOFF.md` |
+| 2 | Buyer features: inventory visibility, shopping lists, discount codes (backend only, no admin UI), GA4/GTM analytics | `PART_2_IMPLEMENTATION.md` |
+| 3 | Merchant admin: sales-rep portal, fulfillment tracking + shipping emails, standing-order reminders, settings analytics tab, full design-system reskin of dashboard/orders/invoices/buyers/analytics | `PART_3_IMPLEMENTATION.md` |
+| 4 | Polish: micro-interactions, invoice PDF redesign, GMV-milestone + first-buyer-approval celebrations, system health dashboard, pricing table redesign, `FadeIn` page-load choreography, Playwright visual-consistency suite | `PART_4_IMPLEMENTATION.md` |
+
+Note: a separate design-system rollout was originally planned as its own
+"Parts 2–4" (see `CONTEXT_HANDOFF.md` → NOT DONE) but never shipped as
+standalone prompts. That reskin work landed instead inside Part 3's session 2
+(orders/invoices/buyers/analytics onto `DataTable`) and Part 4 (`FadeIn` +
+the pricing table rebuild). Do not go looking for a separate "design-system
+Part 2" branch or doc — it doesn't exist; the work is folded into Parts 3–4.
+
+### New database tables / columns added since the schema in this file
+- `shopping_lists`, `shopping_list_items`, `b2b_discount_codes` (migration 008)
+- `merchants.gtmId`, `merchants.ga4Id`, `merchants.allowsBackOrders` (migration 009)
+- `sales_rep` value on the merchant-role enum, `sales_rep_sessions` table (RLS'd), `orders.rep_session_id` (migration 010)
+- `orders.tracking_number`, `orders.tracking_url`, `orders.fulfillment_service`, `orders.shipped_at`, `orders.estimated_delivery_at` (migration 011)
+- `standing_orders` (migration 012 — **no RLS**, same reasoning as `shopping_lists`: buyer-portal handlers run without a tenant context, so RLS would fail those reads closed; isolation is app-layer `where:{buyerId,merchantId}`)
+- No new environment variables were added across Parts 2–4.
+
+### Net-new frontend components/hooks worth knowing about
+`DataTable` family, `DropdownMenu` (dependency-free, portals out of
+`overflow-hidden` tables so row menus are never clipped), `FadeIn`,
+`CopyButton` + `useCopyToClipboard`, `GmvMilestoneToast`, `FirstUseWelcome`,
+`RepSessionBanner`, the system health dashboard (`useHealth.ts` +
+`/settings/health`), `useStandingOrders`.
+
+### Design-system enforcement (binding, not aspirational)
+- Tokens in `tailwind.config.ts` / `globals.css` are the *only* source of
+  color, shadow, radius, and duration values — no hardcoded hex, no arbitrary
+  Tailwind values, no shadow outside the token scale.
+- Every financial/money-value cell renders with `tabular-nums` (enforced by
+  `DataTable`'s `align="right"`, spot-checked by
+  `tests/e2e/visual-consistency.spec.ts`).
+- Status badges are soft solid-fill chips (tinted fill + matching-hue label),
+  never transparent — spot-checked by the same Playwright spec.
+- The glass system must be present: cards, navigation, sidebar, modals, tables
+  and toasts are translucent Cloud White over `backdrop-filter: blur(28px)`.
+  Interactive elements lift/press with spring transforms; shadows are soft,
+  wide, blue-gray, and may layer. `visual-consistency.spec.ts` asserts (via
+  computed style) that glass surfaces are actually rendered — the inverse of the
+  old minimalist rule that forbade blur/transforms.
+
+### Competitive positioning (why GMV-milestone messaging exists)
+The platform's core pitch versus marketplace alternatives (Faire, etc.) is
+**zero marketplace commission** — merchants keep 100% of GMV processed
+through their own wholesale channel instead of paying a ~15% marketplace
+take rate. `GmvMilestoneToast` reinforces this at $1K/$10K/$50K/$100K/$500K
+lifetime GMV by stating the dollar amount of commission the merchant would
+have paid Faire and didn't. This is a retention/expansion lever, not
+decoration — preserve the commission-comparison framing if these thresholds
+or messages are ever revised.
+
+### Verification (last run at the Part 4 handoff, 2026-07-02)
+```
+pnpm typecheck                       # 6/6 successful
+pnpm --filter @b2b/api build         # ok
+pnpm --filter @b2b/web build         # exit 0, 30/30 routes (25 static)
+```
+
+---
+
+Last updated: Parts 1–4 of 4 complete (see PARTS 1–4 OF 4 COMPLETED above).
+Hybrid auth locked — NextAuth v4 + Shopify OAuth for merchants (Shopify
+embedded app requirement), Clerk for buyers. Supabase replaces Railway
+PostgreSQL. buyers table cleaned of Clerk-owned auth fields. refresh_tokens
+table removed. emailVerifiedAt synced via Clerk user.updated webhook.
+Design language is the Apple-Weather premium glass system (see "WHOLESALE PORTAL
+DESIGN SYSTEM" above): atmospheric morning-sky background, translucent glass
+surfaces over blur, soft blue-gray floating shadows, large radii, spring
+lift/press animations. The former flat-minimalist system (no blur, no gradients,
+no transforms, shadow-only press) has been fully replaced — do not reintroduce
+it. Verification commands use the real `@b2b/*` package scope, not
+`@wholesale-portal/*`.

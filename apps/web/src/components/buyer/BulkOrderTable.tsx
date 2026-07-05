@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Info, LayoutGrid, List } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -88,6 +88,35 @@ export function BulkOrderTable({
   const [matrixProductIds, setMatrixProductIds] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Micro-interaction: briefly flash a unit-price cell to the accent color when a
+  // quantity edit crosses a volume-break bracket (i.e. the unit price changed).
+  const [priceFlashing, setPriceFlashing] = useState<Set<string>>(new Set());
+  const flashTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const flashPrice = useCallback((variantId: string): void => {
+    setPriceFlashing((prev) => new Set(prev).add(variantId));
+    const existing = flashTimers.current.get(variantId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      setPriceFlashing((prev) => {
+        const next = new Set(prev);
+        next.delete(variantId);
+        return next;
+      });
+      flashTimers.current.delete(variantId);
+    }, 300);
+    flashTimers.current.set(variantId, timer);
+  }, []);
+  useEffect(
+    () => () => {
+      for (const timer of flashTimers.current.values()) clearTimeout(timer);
+    },
+    [],
+  );
+
+  // Micro-interaction: pulse the footer item-count number when it changes.
+  const [cartCountPulsing, setCartCountPulsing] = useState(false);
+  const prevItemCount = useRef(0);
+
   // List-mode rows exclude products currently shown as a matrix.
   const rows = useMemo<VariantRow[]>(
     () =>
@@ -110,6 +139,14 @@ export function BulkOrderTable({
 
   const setQty = (variantId: string, raw: string): void => {
     const qty = Math.max(0, Math.min(9999, Math.floor(Number(raw) || 0)));
+    // Flash the price cell when this quantity crosses a volume-break bracket.
+    const row = variantIndex.get(variantId);
+    if (row) {
+      const prevQty = quantities[variantId] ?? 0;
+      const before = effectiveUnitPrice(row.variant, Math.max(prevQty, 1));
+      const after = effectiveUnitPrice(row.variant, Math.max(qty, 1));
+      if (before !== after) flashPrice(variantId);
+    }
     setQuantities((prev) => {
       const next = { ...prev };
       if (qty <= 0) delete next[variantId];
@@ -177,20 +214,46 @@ export function BulkOrderTable({
   const subtotal = reviewLines.reduce((sum, line) => sum + line.lineTotal, 0);
   const variantCount = reviewLines.length;
 
+  useEffect(() => {
+    if (itemCount === prevItemCount.current) return;
+    prevItemCount.current = itemCount;
+    setCartCountPulsing(true);
+    const timer = setTimeout(() => setCartCountPulsing(false), 200);
+    return () => clearTimeout(timer);
+  }, [itemCount]);
+
   const minOrder = buyerMe?.minOrderAmount ? Number(buyerMe.minOrderAmount) : 0;
   const belowMinimum = minOrder > 0 && subtotal < minOrder;
   const shortage = belowMinimum ? minOrder - subtotal : 0;
-  const canReview = variantCount > 0 && !belowMinimum;
+
+  // Credit utilization (Task 8) — reuses the buyer's own snapshot (no extra call).
+  // The bar reflects committed used + the current cart; an order that would breach
+  // the limit turns the bar red and blocks Review.
+  const creditLimitNum = buyerMe?.creditLimit ? Number(buyerMe.creditLimit) : 0;
+  const creditUsedNum = buyerMe?.creditUsed ? Number(buyerMe.creditUsed) : 0;
+  const hasCredit = creditLimitNum > 0;
+  const projectedCredit = creditUsedNum + subtotal;
+  const creditUtil = hasCredit ? projectedCredit / creditLimitNum : 0;
+  const exceedsCredit = hasCredit && projectedCredit > creditLimitNum;
+  const creditBarPct = Math.min(creditUtil * 100, 100);
+  const creditColor =
+    exceedsCredit || creditUtil >= 0.9
+      ? 'var(--color-danger)'
+      : creditUtil >= 0.7
+        ? 'var(--color-warning)'
+        : 'var(--color-success)';
+
+  const canReview = variantCount > 0 && !belowMinimum && !exceedsCredit;
 
   return (
     <div className="panel flex flex-col">
       {/* Matrix-mode products render above the virtualized list. */}
       {matrixProducts.length > 0 ? (
-        <div className="space-y-4 border-b border-gray-200 p-4">
+        <div className="space-y-4 border-b border-border p-4">
           {matrixProducts.map((product) => (
-            <div key={product.shopifyProductId} className="rounded-md border border-gray-200">
-              <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2">
-                <p className="text-sm font-medium text-gray-900">{product.title}</p>
+            <div key={product.shopifyProductId} className="rounded-md border border-border">
+              <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                <p className="text-sm font-medium text-text-primary">{product.title}</p>
                 <Button variant="ghost" size="sm" onClick={() => toggleMatrix(product.shopifyProductId)}>
                   <List className="h-3.5 w-3.5" /> List view
                 </Button>
@@ -204,10 +267,10 @@ export function BulkOrderTable({
       ) : null}
 
       {/* Header row */}
-      <div className="grid grid-cols-[1fr_120px_140px_110px_120px] gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-label uppercase tracking-wider text-gray-500">
+      <div className="grid grid-cols-[1fr_84px_96px] gap-2 border-b border-border bg-fog-soft px-4 py-2 text-label uppercase tracking-wider text-text-secondary md:grid-cols-[1fr_120px_140px_110px_120px]">
         <span>Product</span>
-        <span>SKU</span>
-        <span className="text-right">Unit Price</span>
+        <span className="hidden md:inline">SKU</span>
+        <span className="hidden text-right md:inline">Unit Price</span>
         <span className="text-right">Qty</span>
         <span className="text-right">Line Total</span>
       </div>
@@ -215,7 +278,7 @@ export function BulkOrderTable({
       {/* Virtualized body */}
       <div ref={scrollRef} className="h-[480px] overflow-auto">
         {rows.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-500">
+          <p className="py-12 text-center text-sm text-text-secondary">
             {matrixProducts.length > 0 ? 'All products are in matrix view.' : 'No products available.'}
           </p>
         ) : (
@@ -236,9 +299,12 @@ export function BulkOrderTable({
                 <div
                   key={variant.shopifyVariantId}
                   className={cn(
-                    'grid grid-cols-[1fr_120px_140px_110px_120px] items-center gap-2 border-b border-gray-100 px-4',
-                    !variant.available && 'border-l-2 border-l-red-400',
-                    variant.available && qty > 0 && 'border-l-2 border-l-accent',
+                    'grid grid-cols-[1fr_84px_96px] items-center gap-2 border-b border-l-2 border-border px-4 md:grid-cols-[1fr_120px_140px_110px_120px]',
+                    !variant.available
+                      ? 'border-l-red-400'
+                      : qty > 0
+                        ? 'border-l-accent'
+                        : 'border-l-transparent',
                   )}
                   style={{
                     position: 'absolute',
@@ -247,37 +313,45 @@ export function BulkOrderTable({
                     width: '100%',
                     height: ROW_HEIGHT,
                     transform: `translateY(${item.start}px)`,
+                    transition: 'border-left-color 150ms ease',
                   }}
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-sm text-gray-900">{highlight(product.title, search)}</p>
+                      <p className="truncate text-sm text-text-primary">{highlight(product.title, search)}</p>
                       {showMatrixToggle ? (
                         <button
                           type="button"
                           onClick={() => toggleMatrix(product.shopifyProductId)}
-                          className="flex flex-shrink-0 items-center gap-0.5 rounded text-[11px] text-gray-400 hover:text-gray-700"
+                          className="flex flex-shrink-0 items-center gap-0.5 rounded text-[11px] text-text-tertiary hover:text-text-secondary"
                           aria-label={`Matrix view for ${product.title}`}
                         >
                           <LayoutGrid className="h-3 w-3" /> Matrix
                         </button>
                       ) : null}
                     </div>
-                    <p className="truncate text-xs text-gray-500">{variantLabel}</p>
+                    <p className="truncate text-xs text-text-secondary">{variantLabel}</p>
                   </div>
 
-                  <span className="truncate font-mono text-xs text-gray-600">
+                  <span className="hidden truncate font-mono text-xs text-text-secondary md:block">
                     {variant.sku ? highlight(variant.sku, search) : '—'}
                   </span>
 
-                  <div className="flex items-center justify-end gap-1.5 font-mono text-sm tabular-nums text-gray-900">
+                  <div
+                    data-testid="financial-cell"
+                    className={cn(
+                      'hidden items-center justify-end gap-1.5 font-mono text-sm tabular-nums md:flex',
+                      priceFlashing.has(variant.shopifyVariantId) ? 'text-accent' : 'text-text-primary',
+                    )}
+                    style={{ transition: 'color 300ms ease' }}
+                  >
                     {!variant.available ? (
                       <Tooltip content="This product is currently unavailable.">
-                        <span className="text-gray-400">—</span>
+                        <span className="text-text-tertiary">—</span>
                       </Tooltip>
                     ) : isVolume ? (
                       <>
-                        <span className="text-gray-500">from</span>
+                        <span className="text-text-secondary">from</span>
                         {formatMoney(lowestVolumePrice(variant.basePrice, variant.volumeBrackets))}
                         <VolumeBreakPopover
                           basePrice={variant.basePrice}
@@ -309,6 +383,7 @@ export function BulkOrderTable({
                       min={0}
                       max={9999}
                       value={qty === 0 ? '' : qty}
+                      placeholder="—"
                       disabled={!variant.available}
                       onChange={(event) => setQty(variant.shopifyVariantId, event.target.value)}
                       onKeyDown={(event) => onQtyKeyDown(event, variant.shopifyVariantId)}
@@ -317,7 +392,7 @@ export function BulkOrderTable({
                     />
                   </div>
 
-                  <span className="text-right font-mono text-sm tabular-nums text-gray-900">
+                  <span className="text-right font-mono text-sm tabular-nums text-text-primary">
                     {lineTotal > 0 ? formatMoney(lineTotal) : '$0.00'}
                   </span>
                 </div>
@@ -327,36 +402,82 @@ export function BulkOrderTable({
         )}
       </div>
 
-      {/* Sticky footer / submit */}
-      <div className="flex items-center justify-between gap-4 border-t border-gray-200 px-4 py-3">
-        <div className="text-sm text-gray-600">
-          <span className="font-medium text-gray-900 tabular-nums">{variantCount}</span> variant
-          {variantCount === 1 ? '' : 's'} —{' '}
-          <span className="font-medium text-gray-900 tabular-nums">{itemCount}</span> item
-          {itemCount === 1 ? '' : 's'}
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-baseline gap-2">
-            <span className="text-label uppercase tracking-wider text-gray-500">Subtotal</span>
-            <span className="text-lg font-semibold tabular-nums text-gray-900">{formatMoney(subtotal)}</span>
+      {/* Sticky cart footer / submit */}
+      <div
+        data-testid="cart-footer"
+        className="sticky bottom-14 z-10 flex flex-col border-t border-glass-border bg-glass-strong backdrop-blur-nav shadow-glass md:bottom-0"
+      >
+        {/* Credit utilization bar — desktop only (mobile shows it in Review). */}
+        {hasCredit ? (
+          <div className="hidden h-[3px] w-full bg-neutral-bg md:block" aria-hidden>
+            <div
+              className="h-full"
+              style={{ width: `${creditBarPct}%`, backgroundColor: creditColor, transition: 'width 200ms ease, background-color 200ms ease' }}
+            />
           </div>
-          <div className="flex flex-col items-end">
+        ) : null}
+
+        <div className="flex flex-col gap-2 px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-4">
+          <div className="flex flex-col gap-0.5 text-sm text-text-secondary">
+            <div>
+              <span className="hidden md:inline">
+                <span className="font-medium text-text-primary tabular-nums">{variantCount}</span> variant
+                {variantCount === 1 ? '' : 's'} —{' '}
+              </span>
+              <span
+                className={cn(
+                  'inline-block font-medium text-text-primary tabular-nums',
+                  cartCountPulsing ? 'scale-110' : 'scale-100',
+                )}
+                style={{ transition: 'transform 200ms ease' }}
+              >
+                {itemCount}
+              </span>{' '}
+              item{itemCount === 1 ? '' : 's'}
+              <span className="md:hidden">
+                {' '}
+                •{' '}
+                <span
+                  data-testid="financial-cell"
+                  className="font-mono font-semibold text-text-primary tabular-nums"
+                >
+                  {formatMoney(subtotal)}
+                </span>
+              </span>
+            </div>
+            {hasCredit ? (
+              <span className="hidden text-xs text-text-secondary md:inline">
+                Credit: <span className="font-mono tabular-nums text-text-secondary">{formatMoney(buyerMe?.creditUsed ?? 0)}</span> of{' '}
+                <span className="font-mono tabular-nums text-text-secondary">{formatMoney(creditLimitNum)}</span> used
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col items-stretch gap-1 md:flex-row md:items-center md:gap-4">
+            <div className="hidden items-baseline gap-2 md:flex">
+              <span className="text-label uppercase tracking-wider text-text-secondary">Subtotal</span>
+              <span data-testid="financial-cell" className="text-lg font-semibold tabular-nums text-text-primary">
+                {formatMoney(subtotal)}
+              </span>
+            </div>
             {belowMinimum ? (
-              <span className="mb-1 text-xs text-amber-700">
+              <span className="text-xs text-amber-700">
                 Minimum order: {formatMoney(minOrder)}. Add {formatMoney(shortage)} more.
               </span>
             ) : null}
-            {belowMinimum ? (
-              <Tooltip content={`Add ${formatMoney(shortage)} more to reach the ${formatMoney(minOrder)} minimum.`}>
-                <Button variant="primary" disabled onClick={() => setReviewOpen(true)}>
-                  Review order
-                </Button>
-              </Tooltip>
-            ) : (
-              <Button variant="primary" disabled={!canReview} onClick={() => setReviewOpen(true)}>
-                Review order
-              </Button>
-            )}
+            {exceedsCredit ? (
+              <span className="text-xs text-danger">
+                ⚠ This order would exceed your credit limit. Adjust your cart or contact the merchant.
+              </span>
+            ) : null}
+            <Button
+              variant="primary"
+              className="w-full md:w-auto"
+              disabled={!canReview}
+              onClick={() => setReviewOpen(true)}
+            >
+              Review order
+            </Button>
           </div>
         </div>
       </div>

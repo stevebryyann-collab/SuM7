@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { TableRowSkeleton } from '@/components/shared/LoadingSkeleton';
+import { FadeIn } from '@/components/shared/FadeIn';
 import { SyncStatusBadge } from '@/components/merchant/SyncStatusBadge';
 import { useOrders } from '@/hooks/useOrders';
 import { useBuyers } from '@/hooks/useBuyers';
@@ -79,6 +80,21 @@ function OrdersView(): JSX.Element {
     if (!term) return rows;
     return rows.filter((o) => (o.shopifyOrderNumber ?? '').toLowerCase().includes(term));
   }, [rows, search]);
+
+  const header = (
+    <DataTableHeader>
+      <tr>
+        <DataTableHeaderCell>Order #</DataTableHeaderCell>
+        <DataTableHeaderCell>Buyer</DataTableHeaderCell>
+        <DataTableHeaderCell>Date</DataTableHeaderCell>
+        <DataTableHeaderCell align="right">Items</DataTableHeaderCell>
+        <DataTableHeaderCell align="right">Total</DataTableHeaderCell>
+        <DataTableHeaderCell>Invoice</DataTableHeaderCell>
+        <DataTableHeaderCell>Sync</DataTableHeaderCell>
+        <DataTableHeaderCell align="right">Actions</DataTableHeaderCell>
+      </tr>
+    </DataTableHeader>
+  );
 
   return (
     <PageLayout title="Orders" subtitle="All wholesale orders across your buyers.">
@@ -137,65 +153,65 @@ function OrdersView(): JSX.Element {
         </div>
       </div>
 
-      <DataTable>
-        <DataTableHeader>
-          <tr>
-            <DataTableHeaderCell>Order #</DataTableHeaderCell>
-            <DataTableHeaderCell>Buyer</DataTableHeaderCell>
-            <DataTableHeaderCell>Date</DataTableHeaderCell>
-            <DataTableHeaderCell align="right">Items</DataTableHeaderCell>
-            <DataTableHeaderCell align="right">Total</DataTableHeaderCell>
-            <DataTableHeaderCell>Invoice</DataTableHeaderCell>
-            <DataTableHeaderCell>Sync</DataTableHeaderCell>
-            <DataTableHeaderCell align="right">Actions</DataTableHeaderCell>
-          </tr>
-        </DataTableHeader>
-        <DataTableBody>
-          {query.isLoading ? (
-            Array.from({ length: 8 }).map((_, i) => (
+      {query.isLoading ? (
+        <DataTable>
+          {header}
+          <DataTableBody>
+            {Array.from({ length: 8 }).map((_, i) => (
               <TableRowSkeleton key={i} columns={[90, 160, 90, 40, 90, 80, 80, 50]} />
-            ))
-          ) : filtered.length === 0 ? (
-            <DataTableEmpty
-              colSpan={COLUMN_COUNT}
-              icon={<ShoppingCart className="h-6 w-6" />}
-              title="No orders match these filters"
-              message="Approved buyers can place orders through your wholesale portal."
-            />
-          ) : (
-            filtered.map((order) => (
-              <DataTableRow
-                key={order.id}
-                clickable
-                onClick={() => router.push(`/orders/${order.id}`)}
-              >
-                <DataTableCell className="font-mono text-xs text-text-secondary">
-                  {order.shopifyOrderNumber ?? '—'}
-                </DataTableCell>
-                <DataTableCell>{order.buyerCompanyName ?? '—'}</DataTableCell>
-                <DataTableCell className="text-text-secondary">{formatDate(order.createdAt)}</DataTableCell>
-                <DataTableCell align="right">{order.itemCount}</DataTableCell>
-                <DataTableCell align="right" className="font-mono">{formatMoney(order.total)}</DataTableCell>
-                <DataTableCell>
-                  {order.invoiceStatus ? (
-                    <StatusBadge status={order.invoiceStatus} />
-                  ) : (
-                    <span className="text-xs text-text-tertiary">Pending</span>
-                  )}
-                </DataTableCell>
-                <DataTableCell>
-                  <SyncStatusBadge status={order.syncStatus} />
-                </DataTableCell>
-                <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="sm" onClick={() => router.push(`/orders/${order.id}`)}>
-                    View
-                  </Button>
-                </DataTableCell>
-              </DataTableRow>
-            ))
-          )}
-        </DataTableBody>
-      </DataTable>
+            ))}
+          </DataTableBody>
+        </DataTable>
+      ) : (
+        <FadeIn>
+          <DataTable>
+            {header}
+            <DataTableBody>
+              {filtered.length === 0 ? (
+                <DataTableEmpty
+                  colSpan={COLUMN_COUNT}
+                  icon={<ShoppingCart className="h-6 w-6" />}
+                  title="No orders match these filters"
+                  message="Approved buyers can place orders through your wholesale portal."
+                />
+              ) : (
+                filtered.map((order) => (
+                  <DataTableRow
+                    key={order.id}
+                    clickable
+                    onClick={() => router.push(`/orders/${order.id}`)}
+                  >
+                    <DataTableCell className="font-mono text-xs text-text-secondary">
+                      {order.shopifyOrderNumber ?? '—'}
+                    </DataTableCell>
+                    <DataTableCell>{order.buyerCompanyName ?? '—'}</DataTableCell>
+                    <DataTableCell className="text-text-secondary">{formatDate(order.createdAt)}</DataTableCell>
+                    <DataTableCell align="right">{order.itemCount}</DataTableCell>
+                    <DataTableCell align="right" className="font-mono" data-testid="financial-cell">
+                      {formatMoney(order.total)}
+                    </DataTableCell>
+                    <DataTableCell>
+                      {order.invoiceStatus ? (
+                        <StatusBadge status={order.invoiceStatus} />
+                      ) : (
+                        <span className="text-xs text-text-tertiary">Pending</span>
+                      )}
+                    </DataTableCell>
+                    <DataTableCell>
+                      <SyncStatusBadge status={order.syncStatus} />
+                    </DataTableCell>
+                    <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="sm" onClick={() => router.push(`/orders/${order.id}`)}>
+                        View
+                      </Button>
+                    </DataTableCell>
+                  </DataTableRow>
+                ))
+              )}
+            </DataTableBody>
+          </DataTable>
+        </FadeIn>
+      )}
 
       {query.hasNextPage ? (
         <div className="mt-4 flex justify-center">

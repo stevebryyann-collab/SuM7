@@ -5,11 +5,11 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 /**
- * A single dashboard KPI card. Minimal: white surface, 1px border, NO shadow on
- * the container (depth is reserved for interactive elements). Title is the 11px
- * uppercase label; value is the 28px `kpi` size in tabular figures. The optional
- * change indicator is success (up) / danger (down); `badgePulse` uses the CSS
- * `animate-ping` ring only — never JS animation.
+ * A single dashboard KPI card. Floating glass (CLAUDE.md → Cards): translucent
+ * Cloud White over blur, soft shadow, glides up on hover when it links out.
+ * Title is the 11px uppercase label; value is the large `kpi` size in tabular
+ * figures. The optional change indicator is success (up) / danger (down);
+ * `badgePulse` uses the CSS `animate-ping` ring only — never JS animation.
  */
 export interface DashboardKpiCardProps {
   title: string;
@@ -27,6 +27,8 @@ export interface DashboardKpiCardProps {
   subLabel?: string;
   /** Legacy alias: `tone="danger"` is equivalent to `danger`. */
   tone?: 'accent' | 'danger';
+  /** Briefly swaps the border to success green (e.g. a milestone just landed). Caller owns the timer. */
+  flashSuccess?: boolean;
 }
 
 function parseChange(value: number | string | null | undefined): number | null {
@@ -55,6 +57,7 @@ export function DashboardKpiCard({
   danger: dangerProp = false,
   subLabel,
   tone,
+  flashSuccess = false,
 }: DashboardKpiCardProps): JSX.Element {
   const change = parseChange(changePercent);
   const isUp = change !== null && change >= 0;
@@ -64,9 +67,11 @@ export function DashboardKpiCard({
 
   const body = (
     <div
+      data-testid="kpi-card"
       className={cn(
-        'flex flex-col rounded-lg border border-border bg-surface p-5',
-        link && 'cursor-pointer transition-colors duration-fast hover:border-border-strong',
+        'flex flex-col rounded-xl border border-glass-border bg-glass p-5 shadow-glass backdrop-blur-glass',
+        link && 'card-interactive cursor-pointer',
+        flashSuccess && 'border-mint shadow-[0_8px_30px_-8px_rgba(52,199,89,0.35)]',
       )}
     >
       <span className="mb-2 text-2xs font-medium uppercase tracking-wider text-text-secondary">{title}</span>
@@ -116,7 +121,7 @@ export function DashboardKpiCard({
     return (
       <Link
         href={link}
-        className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className="block rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ocean"
       >
         {body}
       </Link>

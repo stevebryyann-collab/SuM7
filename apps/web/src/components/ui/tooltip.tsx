@@ -6,8 +6,8 @@ import { cn } from '@/lib/cn';
 /**
  * Minimal hover/focus tooltip — no Radix dependency. The wrapper is focusable so
  * the tip is reachable by keyboard (`aria-describedby` links it to the trigger).
- * Solid white surface, one layer of depth, no blur (design rules). Used for the
- * percentage-off badge ("Original price … You save X%") and the unavailable hint.
+ * Glass surface over blur (CLAUDE.md → Glass System). Used for the percentage-off
+ * badge ("Original price … You save X%") and the unavailable hint.
  */
 export interface TooltipProps {
   /** Tooltip body. */
@@ -39,8 +39,9 @@ export function Tooltip({ content, children, side = 'top', className }: TooltipP
           role="tooltip"
           id={id}
           className={cn(
-            'pointer-events-none absolute left-1/2 z-50 w-max max-w-xs -translate-x-1/2 rounded-md',
-            'border border-gray-200 bg-white px-2.5 py-1.5 text-xs leading-snug text-gray-700 shadow-sm',
+            'pointer-events-none absolute left-1/2 z-50 w-max max-w-xs -translate-x-1/2 rounded-lg',
+            'border border-glass-border bg-glass-strong px-2.5 py-1.5 text-xs leading-snug text-text-primary shadow-glass backdrop-blur-glass',
+            'animate-in fade-in-0 zoom-in-95',
             side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
             className,
           )}

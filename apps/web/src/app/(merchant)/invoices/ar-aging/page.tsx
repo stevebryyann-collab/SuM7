@@ -75,12 +75,12 @@ export default function ArAgingPage(): JSX.Element {
         </Button>
       }
     >
-      <nav className="mb-4 text-xs text-gray-500">
-        <Link href="/invoices" className="hover:text-gray-700">
+      <nav className="mb-4 text-xs text-text-secondary">
+        <Link href="/invoices" className="hover:text-text-primary">
           Invoices
         </Link>
         <span className="px-1.5">/</span>
-        <span className="text-gray-700">AR Aging</span>
+        <span className="text-text-primary">AR Aging</span>
       </nav>
 
       {query.isLoading || !data ? (
@@ -95,7 +95,7 @@ export default function ArAgingPage(): JSX.Element {
           </div>
 
           <section className="panel p-4">
-            <h2 className="mb-2 text-label font-medium uppercase tracking-wider text-gray-500">
+            <h2 className="mb-2 text-label font-medium uppercase tracking-wider text-text-secondary">
               Outstanding by age
             </h2>
             <ArAgingChart data={data} />
@@ -123,15 +123,15 @@ export default function ArAgingPage(): JSX.Element {
                       className="cursor-pointer"
                       onClick={() => router.push(`/invoices?agingBucket=${row.filter}`)}
                     >
-                      <TableCell className="font-medium text-gray-900">{row.label}</TableCell>
+                      <TableCell className="font-medium text-text-primary">{row.label}</TableCell>
                       <TableCell className="text-right tabular-nums">{bucket.invoiceCount}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatMoney(amount)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-gray-600">{pct.toFixed(1)}%</TableCell>
+                      <TableCell className="text-right tabular-nums text-text-secondary">{pct.toFixed(1)}%</TableCell>
                     </TableRow>
                   );
                 })}
                 <TableRow>
-                  <TableCell className="font-semibold text-gray-900">Total</TableCell>
+                  <TableCell className="font-semibold text-text-primary">Total</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
                     {BUCKET_ROWS.reduce((acc, r) => acc + data[r.key].invoiceCount, 0)}
                   </TableCell>

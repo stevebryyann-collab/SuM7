@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Download } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -57,7 +58,7 @@ export default function BuyerInvoicesPage(): JSX.Element {
                 <TableRow>
                   <TableHead>Invoice #</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Due Date</TableHead>
+                  <TableHead className="hidden md:table-cell">Due Date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">PDF</TableHead>
                 </TableRow>
@@ -65,7 +66,7 @@ export default function BuyerInvoicesPage(): JSX.Element {
               <TableBody>
                 {invoices.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-sm text-gray-500">
+                    <TableCell colSpan={5} className="py-8 text-center text-sm text-text-secondary">
                       You have no invoices yet.
                     </TableCell>
                   </TableRow>
@@ -74,11 +75,20 @@ export default function BuyerInvoicesPage(): JSX.Element {
                     const downloadingThis = download.isPending && download.variables === invoice.id;
                     return (
                       <TableRow key={invoice.id}>
-                        <TableCell className="font-mono text-xs text-gray-700">{invoice.invoiceNumber}</TableCell>
+                        <TableCell className="font-mono text-xs text-text-secondary">
+                          <Link
+                            href={`/portal/invoices/${invoice.id}`}
+                            className="text-accent hover:underline"
+                          >
+                            {invoice.invoiceNumber}
+                          </Link>
+                        </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
                           {formatMoney(invoice.total)}
                         </TableCell>
-                        <TableCell className="text-gray-600">{formatDate(invoice.dueDate)}</TableCell>
+                        <TableCell className="hidden text-text-secondary md:table-cell">
+                          {formatDate(invoice.dueDate)}
+                        </TableCell>
                         <TableCell>
                           <StatusBadge status={invoice.status} />
                         </TableCell>
@@ -94,7 +104,7 @@ export default function BuyerInvoicesPage(): JSX.Element {
                             ) : (
                               <Download className="h-3.5 w-3.5" />
                             )}
-                            Download
+                            <span className="hidden sm:inline">Download</span>
                           </Button>
                         </TableCell>
                       </TableRow>

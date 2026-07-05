@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { ArrowLeft, Check, Copy, ExternalLink, PackageCheck, Truck } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft, Check, Copy, ExternalLink, PackageCheck, ShoppingCart, Truck } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import {
   DataTable,
@@ -19,7 +19,9 @@ import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { toast } from '@/components/shared/toasts';
 import { useOrder } from '@/hooks/useOrders';
 import { useCreateStandingOrder } from '@/hooks/useStandingOrders';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { ApiClientError } from '@/lib/api/error';
+import { stageCartSeed } from '@/lib/cart-seed';
 import { formatDate, formatMoney, formatPaymentTerms } from '@/lib/format';
 import type { OrderDetail } from '@/types/api';
 
@@ -33,7 +35,25 @@ const FREQUENCIES = [
 export default function BuyerOrderDetailPage(): JSX.Element {
   const params = useParams<{ id: string }>();
   const id = params?.id;
+  const router = useRouter();
   const { data: order, isLoading, isError } = useOrder('buyer', id);
+
+  // "Reorder" — seed the catalog cart from this order's lines and jump there.
+  const reorder = (): void => {
+    if (!order) return;
+    const seed: Record<string, number> = {};
+    for (const line of order.lineItems) {
+      if (line.shopifyVariantId && line.quantity > 0) {
+        seed[line.shopifyVariantId] = (seed[line.shopifyVariantId] ?? 0) + line.quantity;
+      }
+    }
+    if (!stageCartSeed(seed)) {
+      toast.error('These items can’t be reordered from the catalog.');
+      return;
+    }
+    toast.success('Loading these items into your cart…');
+    router.push('/portal/catalog');
+  };
 
   if (isLoading) {
     return (
@@ -68,7 +88,14 @@ export default function BuyerOrderDetailPage(): JSX.Element {
       <PageHeader
         title={`Order ${order.shopifyOrderNumber ?? ''}`.trim()}
         description={`Placed ${formatDate(order.createdAt)}`}
-        actions={<StatusBadge status={order.status} />}
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={reorder} disabled={order.lineItems.length === 0}>
+              <ShoppingCart className="h-4 w-4" /> Reorder
+            </Button>
+            <StatusBadge status={order.status} />
+          </>
+        }
       />
 
       {/* Back-order notice */}
@@ -145,15 +172,7 @@ export default function BuyerOrderDetailPage(): JSX.Element {
 
 /** Fulfillment / tracking card — shown when the order has shipped or is fulfilled. */
 function ShipmentCard({ order }: { order: OrderDetail }): JSX.Element | null {
-  const [copied, setCopied] = useState(false);
-
-  const copy = (): void => {
-    if (!order.trackingNumber) return;
-    void navigator.clipboard.writeText(order.trackingNumber).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const { copy, copied } = useCopyToClipboard();
 
   if (order.trackingNumber) {
     return (
@@ -169,7 +188,7 @@ function ShipmentCard({ order }: { order: OrderDetail }): JSX.Element | null {
               <span className="font-mono text-text-primary">{order.trackingNumber}</span>
               <button
                 type="button"
-                onClick={copy}
+                onClick={() => order.trackingNumber && void copy(order.trackingNumber)}
                 aria-label="Copy tracking number"
                 className="text-text-tertiary transition-colors duration-fast hover:text-text-primary"
               >

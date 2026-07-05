@@ -29,8 +29,8 @@ export function CursorPagination({
   caption,
 }: CursorPaginationProps): JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-gray-200 px-3 py-2">
-      <div className="flex items-center gap-2 text-xs text-gray-500">
+    <div className="flex items-center justify-between gap-4 border-t border-border px-4 py-2.5">
+      <div className="flex items-center gap-2 text-xs text-text-secondary">
         {isLoading && <Spinner className="h-3.5 w-3.5" />}
         {caption ? <span>{caption}</span> : null}
       </div>

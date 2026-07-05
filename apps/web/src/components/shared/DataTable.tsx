@@ -30,7 +30,7 @@ export function DataTable({
   ...props
 }: HTMLAttributes<HTMLTableElement>): JSX.Element {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+    <div className="overflow-hidden rounded-xl border border-glass-border bg-glass shadow-glass backdrop-blur-glass">
       <table className={cn('w-full border-collapse', className)} {...props}>
         {children}
       </table>
@@ -44,7 +44,7 @@ export function DataTableHeader({
   ...props
 }: HTMLAttributes<HTMLTableSectionElement>): JSX.Element {
   return (
-    <thead className={cn('bg-neutral-bg', className)} {...props}>
+    <thead className={cn('bg-white/40', className)} {...props}>
       {children}
     </thead>
   );
@@ -101,7 +101,7 @@ export function DataTableRow({
   return (
     <tr
       className={cn(
-        'border-b border-border transition-colors duration-fast last:border-b-0 hover:bg-neutral-bg',
+        'border-b border-border/70 transition-colors duration-fast last:border-b-0 hover:bg-ocean-soft',
         clickable ? 'cursor-pointer' : 'cursor-default',
         className,
       )}

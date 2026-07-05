@@ -4,6 +4,7 @@ import { Suspense, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Check, Clipboard, Search, Users } from 'lucide-react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { PageLayout, PageContainer } from '@/components/merchant/PageLayout';
 import {
   DataTable,
@@ -33,6 +34,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { BuyerTableSkeleton } from '@/components/shared/LoadingSkeleton';
+import { FadeIn } from '@/components/shared/FadeIn';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { toast } from '@/components/shared/toasts';
 import {
@@ -87,7 +89,7 @@ function BuyersView(): JSX.Element {
   const [suspendTarget, setSuspendTarget] = useState<BuyerSummary | null>(null);
   const [reinstateTarget, setReinstateTarget] = useState<BuyerSummary | null>(null);
   const [eraseTarget, setEraseTarget] = useState<BuyerSummary | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopyToClipboard();
 
   const { data: session } = useSession();
   const isOwner = session?.role === 'owner';
@@ -134,13 +136,7 @@ function BuyersView(): JSX.Element {
   const copyApplicationLink = async (): Promise<void> => {
     const url =
       typeof window !== 'undefined' ? `${window.location.origin}/portal/apply` : '/portal/apply';
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error('Could not copy link');
-    }
+    await copy(url);
   };
 
   const runGdprExport = (buyer: BuyerSummary): void => {
@@ -269,15 +265,17 @@ function BuyersView(): JSX.Element {
       ) : buyers.isLoading ? (
         <BuyerTableSkeleton rows={8} />
       ) : (
-        <BuyersTable
-          rows={rows}
-          isOwner={isOwner}
-          onView={openBuyer}
-          onSuspend={setSuspendTarget}
-          onReinstate={setReinstateTarget}
-          onGdprExport={runGdprExport}
-          onErase={setEraseTarget}
-        />
+        <FadeIn>
+          <BuyersTable
+            rows={rows}
+            isOwner={isOwner}
+            onView={openBuyer}
+            onSuspend={setSuspendTarget}
+            onReinstate={setReinstateTarget}
+            onGdprExport={runGdprExport}
+            onErase={setEraseTarget}
+          />
+        </FadeIn>
       )}
 
       {!isPending && buyers.hasNextPage ? (
@@ -384,39 +382,41 @@ function PendingTable({
 }): JSX.Element {
   if (isLoading) return <BuyerTableSkeleton rows={4} />;
   return (
-    <DataTable>
-      <DataTableHeader>
-        <tr>
-          <DataTableHeaderCell>Company</DataTableHeaderCell>
-          <DataTableHeaderCell>Email</DataTableHeaderCell>
-          <DataTableHeaderCell>Submitted</DataTableHeaderCell>
-          <DataTableHeaderCell align="right">Action</DataTableHeaderCell>
-        </tr>
-      </DataTableHeader>
-      <DataTableBody>
-        {rows.length === 0 ? (
-          <DataTableEmpty
-            colSpan={4}
-            icon={<Users className="h-6 w-6" />}
-            title="No applications awaiting review"
-            message="New wholesale applications will appear here for approval."
-          />
-        ) : (
-          rows.map((app) => (
-            <DataTableRow key={app.id} clickable onClick={() => onOpen(app)}>
-              <DataTableCell className="font-medium">{app.companyName}</DataTableCell>
-              <DataTableCell className="text-text-secondary">{app.email}</DataTableCell>
-              <DataTableCell className="text-text-secondary">{formatRelative(app.createdAt)}</DataTableCell>
-              <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
-                <Button variant="primary" size="sm" onClick={() => onOpen(app)}>
-                  Review
-                </Button>
-              </DataTableCell>
-            </DataTableRow>
-          ))
-        )}
-      </DataTableBody>
-    </DataTable>
+    <FadeIn>
+      <DataTable>
+        <DataTableHeader>
+          <tr>
+            <DataTableHeaderCell>Company</DataTableHeaderCell>
+            <DataTableHeaderCell>Email</DataTableHeaderCell>
+            <DataTableHeaderCell>Submitted</DataTableHeaderCell>
+            <DataTableHeaderCell align="right">Action</DataTableHeaderCell>
+          </tr>
+        </DataTableHeader>
+        <DataTableBody>
+          {rows.length === 0 ? (
+            <DataTableEmpty
+              colSpan={4}
+              icon={<Users className="h-6 w-6" />}
+              title="No applications awaiting review"
+              message="New wholesale applications will appear here for approval."
+            />
+          ) : (
+            rows.map((app) => (
+              <DataTableRow key={app.id} clickable onClick={() => onOpen(app)}>
+                <DataTableCell className="font-medium">{app.companyName}</DataTableCell>
+                <DataTableCell className="text-text-secondary">{app.email}</DataTableCell>
+                <DataTableCell className="text-text-secondary">{formatRelative(app.createdAt)}</DataTableCell>
+                <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
+                  <Button variant="primary" size="sm" onClick={() => onOpen(app)}>
+                    Review
+                  </Button>
+                </DataTableCell>
+              </DataTableRow>
+            ))
+          )}
+        </DataTableBody>
+      </DataTable>
+    </FadeIn>
   );
 }
 
@@ -471,7 +471,7 @@ function BuyersTable({
                 <StatusBadge status={buyer.approvalStatus} />
               </DataTableCell>
               <DataTableCell align="right">{buyer.orderCount}</DataTableCell>
-              <DataTableCell align="right" className="font-mono">
+              <DataTableCell align="right" className="font-mono" data-testid="financial-cell">
                 {formatMoney(buyer.outstandingInvoiceTotal)}
               </DataTableCell>
               <DataTableCell>
@@ -481,6 +481,7 @@ function BuyersTable({
               <DataTableCell align="right" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end">
                   <DropdownMenu label={`Actions for ${buyer.companyName}`}>
+                    <DropdownMenuItem href={`/buyers/${buyer.buyerId}`}>View profile</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => onView(buyer)}>Review</DropdownMenuItem>
                     <DropdownMenuItem href={`/orders?buyerId=${buyer.buyerId}`}>View orders</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => onView(buyer)}>Adjust tier</DropdownMenuItem>

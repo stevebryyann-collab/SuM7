@@ -264,7 +264,7 @@ export function PricingTierModal({
                 ))}
               </SelectContent>
             </Select>
-            {typeHint ? <p className="text-xs text-gray-500">{typeHint}</p> : null}
+            {typeHint ? <p className="text-xs text-text-secondary">{typeHint}</p> : null}
           </div>
 
           {form.type === 'percentage_off' ? (
@@ -286,7 +286,7 @@ export function PricingTierModal({
           {form.type === 'volume_breaks' ? (
             <div className="space-y-2">
               <Label>Volume Brackets</Label>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-text-secondary">
                 Quantity thresholds must strictly ascend. Each unlocks its discount % at that quantity.
               </p>
               <div className="space-y-2">
@@ -315,7 +315,7 @@ export function PricingTierModal({
                       onClick={() => removeBracket(index)}
                       aria-label="Remove bracket"
                     >
-                      <Trash2 className="h-4 w-4 text-gray-500" />
+                      <Trash2 className="h-4 w-4 text-text-secondary" />
                     </Button>
                   </div>
                 ))}
@@ -357,20 +357,20 @@ export function PricingTierModal({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent/40"
+              className="h-4 w-4 rounded border-border-strong text-accent focus:ring-accent/40"
               checked={form.isDefault}
               onChange={(e) => set('isDefault', e.target.checked)}
             />
             Set as default tier for new buyers
           </label>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700">
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
             <input
               type="checkbox"
-              className="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent/40"
+              className="h-4 w-4 rounded border-border-strong text-accent focus:ring-accent/40"
               checked={form.isActive}
               onChange={(e) => set('isActive', e.target.checked)}
             />

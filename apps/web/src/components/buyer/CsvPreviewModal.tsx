@@ -137,21 +137,21 @@ export function CsvPreviewModal({
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-sm text-gray-600 hover:bg-gray-100"
+              className="flex w-full flex-col items-center gap-2 rounded-md border border-dashed border-border-strong bg-white/40 px-6 py-10 text-sm text-text-secondary hover:bg-fog-soft"
             >
-              <Upload className="h-5 w-5 text-gray-400" />
+              <Upload className="h-5 w-5 text-text-tertiary" />
               Choose a CSV file
             </button>
           ) : (
             <>
               <div className="mb-3 flex items-center justify-between gap-3 text-sm">
-                <p className="text-gray-600">
-                  <span className="font-medium text-gray-900">{readyRows.length}</span> product
+                <p className="text-text-secondary">
+                  <span className="font-medium text-text-primary">{readyRows.length}</span> product
                   {readyRows.length === 1 ? '' : 's'} ready to import.
                   {skippedCount > 0 ? (
                     <>
                       {' '}
-                      <span className="font-medium text-gray-900">{skippedCount}</span> SKU
+                      <span className="font-medium text-text-primary">{skippedCount}</span> SKU
                       {skippedCount === 1 ? '' : 's'} not found and will be skipped.
                     </>
                   ) : null}
@@ -167,10 +167,10 @@ export function CsvPreviewModal({
                   Choose another
                 </Button>
               </div>
-              <div className="max-h-72 overflow-y-auto rounded-md border border-gray-200">
+              <div className="max-h-72 overflow-y-auto rounded-md border border-border">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-50">
-                    <tr className="text-left text-label uppercase tracking-wide text-gray-500">
+                  <thead className="sticky top-0 bg-fog-soft">
+                    <tr className="text-left text-label uppercase tracking-wide text-text-secondary">
                       <th className="px-3 py-2 font-medium">SKU</th>
                       <th className="px-3 py-2 font-medium">Product</th>
                       <th className="px-3 py-2 text-right font-medium">Qty</th>
@@ -179,21 +179,21 @@ export function CsvPreviewModal({
                   </thead>
                   <tbody>
                     {rows.map((row, index) => (
-                      <tr key={`${row.sku}-${index}`} className="border-t border-gray-100">
-                        <td className="px-3 py-1.5 font-mono text-xs text-gray-700">{row.sku}</td>
-                        <td className="px-3 py-1.5 text-gray-700">
+                      <tr key={`${row.sku}-${index}`} className="border-t border-border">
+                        <td className="px-3 py-1.5 font-mono text-xs text-text-secondary">{row.sku}</td>
+                        <td className="px-3 py-1.5 text-text-secondary">
                           {row.productTitle ? (
                             <span>
                               {row.productTitle}
                               {row.variantLabel && row.variantLabel !== '—' ? (
-                                <span className="text-gray-400"> · {row.variantLabel}</span>
+                                <span className="text-text-tertiary"> · {row.variantLabel}</span>
                               ) : null}
                             </span>
                           ) : (
-                            <span className="text-gray-400">Not found</span>
+                            <span className="text-text-tertiary">Not found</span>
                           )}
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{row.quantity}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">{row.quantity}</td>
                         <td className="px-3 py-1.5 text-right">
                           {row.ready ? (
                             <span className="inline-flex items-center gap-1 text-green-700">
@@ -209,7 +209,7 @@ export function CsvPreviewModal({
                     ))}
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-3 py-6 text-center text-gray-500">
+                        <td colSpan={4} className="px-3 py-6 text-center text-text-secondary">
                           No valid rows found in this file.
                         </td>
                       </tr>

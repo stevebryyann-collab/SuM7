@@ -1,14 +1,15 @@
 import { cn } from '@/lib/cn';
 
 /**
- * Status badge — solid-fill, bordered, 11px uppercase. NEVER outlined-only,
- * NEVER translucent (design rule). Color is chosen purely from the `status`
- * string; the optional `variant` is context for future per-domain extensions
- * and does not affect the mapping today.
+ * Status badge — a soft rounded-full chip (CLAUDE.md → small chips / Color
+ * palette): a gentle tinted fill with a matching-hue label and a hairline
+ * border, so it reads clearly against glass without shouting. Color is chosen
+ * purely from the `status` string; the optional `variant` is context for future
+ * per-domain extensions and does not affect the mapping today.
  *
  * Token colors only (success/warning/danger/neutral/accent), with two semantic
  * exceptions that have no token equivalent: `viewed` (purple) and `back_order`
- * (orange) — these mirror the explicit PART 1 status spec.
+ * (orange) — these mirror the explicit status spec.
  */
 export type StatusBadgeVariant = 'invoice' | 'order' | 'application' | 'buyer' | 'inventory';
 
@@ -68,8 +69,9 @@ export function StatusBadge({ status, variant: _variant, label, className }: Sta
 
   return (
     <span
+      data-testid="status-badge"
       className={cn(
-        'inline-flex items-center rounded border px-1.5 py-0.5 text-2xs font-medium uppercase',
+        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-2xs font-medium uppercase tracking-wide transition-colors duration-base',
         classes,
         className,
       )}

@@ -17,10 +17,10 @@ export const SelectTrigger = forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-9 w-full items-center justify-between rounded-md border border-border bg-surface',
-      'px-3 text-base text-text-primary transition-colors duration-fast',
-      'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-border focus:ring-offset-0',
-      'data-[placeholder]:text-text-tertiary disabled:cursor-not-allowed disabled:bg-neutral-bg disabled:text-text-tertiary',
+      'flex h-10 w-full items-center justify-between rounded-md border border-border bg-white/60 backdrop-blur-sm',
+      'px-3.5 text-base text-text-primary transition-all duration-fast',
+      'focus:border-ocean focus:bg-white/90 focus:outline-none focus:ring-4 focus:ring-ocean/15',
+      'data-[placeholder]:text-text-tertiary disabled:cursor-not-allowed disabled:bg-neutral-bg/60 disabled:text-text-tertiary',
       className,
     )}
     {...props}
@@ -42,8 +42,9 @@ export const SelectContent = forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        'relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-md border border-border',
-        'bg-surface text-text-primary shadow-md',
+        'relative z-50 max-h-72 min-w-[8rem] overflow-hidden rounded-lg border border-glass-border',
+        'bg-glass-strong text-text-primary shadow-glass backdrop-blur-glass',
+        'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
         position === 'popper' && 'data-[side=bottom]:translate-y-1',
         className,
       )}
@@ -66,8 +67,8 @@ export const SelectItem = forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2',
-      'text-base text-text-primary outline-none data-[highlighted]:bg-neutral-bg',
+      'relative flex w-full cursor-default select-none items-center rounded-md py-1.5 pl-8 pr-2',
+      'text-base text-text-primary outline-none transition-colors data-[highlighted]:bg-ocean-soft data-[highlighted]:text-ocean-deep',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       className,
     )}

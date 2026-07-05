@@ -13,7 +13,7 @@ export default async function BuyerLoginPage(): Promise<JSX.Element> {
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <h1 className="text-center text-lg font-semibold text-gray-900">{heading}</h1>
+      <h1 className="text-center text-lg font-semibold text-text-primary">{heading}</h1>
       <SignInCard />
     </div>
   );

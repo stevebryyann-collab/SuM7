@@ -145,7 +145,7 @@ export function OverrideImportModal({
 
           {rows.length > 0 ? (
             <div className="space-y-2">
-              <div className="flex items-center gap-3 text-xs text-gray-500">
+              <div className="flex items-center gap-3 text-xs text-text-secondary">
                 <span>
                   {validRows.length} valid · {invalidCount} invalid · {rows.length} total
                 </span>
@@ -153,7 +153,7 @@ export function OverrideImportModal({
                   <span className="text-red-700">Over {MAX_ROWS}-row limit — trim before importing.</span>
                 ) : null}
               </div>
-              <div className="max-h-64 overflow-y-auto rounded-md border border-gray-200">
+              <div className="max-h-64 overflow-y-auto rounded-md border border-border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -167,17 +167,17 @@ export function OverrideImportModal({
                   <TableBody>
                     {rows.map((row) => (
                       <TableRow key={row.line}>
-                        <TableCell className="text-gray-400 tabular-nums">{row.line}</TableCell>
+                        <TableCell className="text-text-tertiary tabular-nums">{row.line}</TableCell>
                         <TableCell className="max-w-[220px] truncate font-mono text-xs">
                           {row.raw.shopifyProductId || '—'}
                           {row.raw.shopifyVariantId ? (
-                            <span className="block text-gray-400">{row.raw.shopifyVariantId}</span>
+                            <span className="block text-text-tertiary">{row.raw.shopifyVariantId}</span>
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums">
                           {row.raw.price || '—'}
                         </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums text-gray-500">
+                        <TableCell className="text-right font-mono tabular-nums text-text-secondary">
                           {row.raw.compareAtPrice || '—'}
                         </TableCell>
                         <TableCell>

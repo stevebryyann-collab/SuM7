@@ -47,7 +47,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps): JSX.Element {
   return (
     <AlertDialog open={open} onOpenChange={(next) => !isLoading && onOpenChange(next)}>
-      <AlertDialogContent className="rounded-xl border-border bg-surface shadow-lg">
+      <AlertDialogContent className="rounded-2xl">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-xl font-semibold text-text-primary">{title}</AlertDialogTitle>
           {description ? (

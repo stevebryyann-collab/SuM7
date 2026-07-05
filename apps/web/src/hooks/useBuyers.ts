@@ -14,6 +14,7 @@ import type { PaginatedResponse } from '@b2b/shared/types';
 import { merchantFetch } from '@/lib/api/merchant';
 import type { ApplicationPii, BuyerApplication, BuyerDetail, BuyerSummary } from '@/types/api';
 import { merchantDashboardKeys } from './useMerchantDashboard';
+import { dashboardKeys } from './useDashboard';
 
 export const buyerKeys = {
   all: ['buyers'] as const,
@@ -106,6 +107,7 @@ export function useApproveBuyer() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: buyerKeys.all });
       void qc.invalidateQueries({ queryKey: merchantDashboardKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.all });
     },
   });
 }
@@ -122,6 +124,7 @@ export function useRejectBuyer() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: buyerKeys.all });
       void qc.invalidateQueries({ queryKey: merchantDashboardKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.all });
     },
   });
 }

@@ -109,3 +109,15 @@ export function useDownloadInvoice() {
     },
   });
 }
+
+/**
+ * Fetch a presigned PDF URL for one of the buyer's own invoices WITHOUT opening
+ * it. The download-detail page drives an explicit `<a download>` off the returned
+ * URL so the file saves named for the invoice. Short-lived (1h), ownership-checked.
+ */
+export function useBuyerInvoicePdfUrl() {
+  return useMutation({
+    mutationFn: (invoiceId: string) =>
+      buyerFetch<{ url: string }>(`/buyer/invoices/${invoiceId}/download`, { method: 'GET' }),
+  });
+}

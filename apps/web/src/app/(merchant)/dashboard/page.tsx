@@ -1,14 +1,17 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, BookCheck, Check, CircleDashed } from 'lucide-react';
 import { PageLayout } from '@/components/merchant/PageLayout';
 import { DashboardKpiCard } from '@/components/merchant/DashboardKpiCard';
+import { GmvMilestoneToast } from '@/components/merchant/GmvMilestoneToast';
 import { ArAgingChart } from '@/components/merchant/ArAgingChart';
 import { GmvTrendChart } from '@/components/merchant/GmvTrendChart';
 import { InvoiceTable } from '@/components/merchant/InvoiceTable';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { FadeIn } from '@/components/shared/FadeIn';
 import {
   KpiCardSkeleton,
   ChartSkeleton,
@@ -47,6 +50,25 @@ export default function DashboardPage(): JSX.Element {
   const { data, isLoading, isError } = useDashboard();
 
   const kpis = data?.kpis;
+
+  // First-buyer-approval celebration: briefly flash the Pending Applications
+  // KPI card's border when newBuyersThisMonth crosses 0 → positive — the same
+  // "compare previous to current" approach the Sidebar uses for its pending-
+  // buyers pulse. Ref (not state) for the previous value so the comparison
+  // doesn't itself trigger a re-render.
+  const [pulseNewBuyers, setPulseNewBuyers] = useState(false);
+  const prevNewBuyers = useRef<number | null>(null);
+  useEffect(() => {
+    const current = kpis?.newBuyersThisMonth;
+    if (current === undefined) return;
+    const previous = prevNewBuyers.current;
+    prevNewBuyers.current = current;
+    if (previous === 0 && current > 0) {
+      setPulseNewBuyers(true);
+      const timer = window.setTimeout(() => setPulseNewBuyers(false), 3000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [kpis?.newBuyersThisMonth]);
   const setup = data?.setup;
   const hasTier = setup?.hasTier ?? false;
   const hasApprovedBuyer = setup?.hasApprovedBuyer ?? false;
@@ -71,6 +93,9 @@ export default function DashboardPage(): JSX.Element {
 
   return (
     <PageLayout title="Dashboard" subtitle="Receivables and order activity at a glance.">
+      {/* Fires strategic GMV milestone toasts (once per milestone). Renders nothing. */}
+      <GmvMilestoneToast />
+
       {/* Trial banner — until the merchant subscribes. */}
       {!isLoading && !hasSubscription ? (
         <div className="mb-6 flex flex-col gap-3 rounded-lg border border-accent-border bg-accent-subtle p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -106,47 +131,62 @@ export default function DashboardPage(): JSX.Element {
       {isLoading || !kpis ? (
         <KpiCardSkeleton />
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <DashboardKpiCard
-            title="GMV This Month"
-            value={formatMoney(kpis.gmvCurrentMonth)}
-            changePercent={kpis.gmvChangePercent}
-            changePeriod="vs last month"
-            link="/analytics"
-          />
-          <DashboardKpiCard
-            title="Outstanding AR"
-            value={formatMoney(kpis.outstandingArBalance)}
-            subLabel={`${overdueCount} invoice${overdueCount === 1 ? '' : 's'} overdue`}
-            danger={overdueCount > 0}
-            link="/invoices"
-          />
-          <DashboardKpiCard
-            title="Overdue Invoices"
-            value={String(overdueCount)}
-            subLabel={`${formatMoney(kpis.overdueInvoiceAmount)} overdue`}
-            danger={overdueCount > 0}
-            badgeCount={overdueCount}
-            badgePulse={overdueCount > 0}
-            link="/invoices?status=overdue"
-          />
-          <DashboardKpiCard
-            title="Pending Applications"
-            value={String(kpis.pendingApplicationCount)}
-            subLabel={`${kpis.newBuyersThisMonth} approved this month`}
-            badgeCount={kpis.pendingApplicationCount}
-            link="/buyers?status=pending"
-          />
-        </div>
+        <FadeIn delay={0}>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <DashboardKpiCard
+              title="GMV This Month"
+              value={formatMoney(kpis.gmvCurrentMonth)}
+              changePercent={kpis.gmvChangePercent}
+              changePeriod="vs last month"
+              link="/analytics"
+            />
+            <DashboardKpiCard
+              title="Outstanding AR"
+              value={formatMoney(kpis.outstandingArBalance)}
+              subLabel={`${overdueCount} invoice${overdueCount === 1 ? '' : 's'} overdue`}
+              danger={overdueCount > 0}
+              link="/invoices"
+            />
+            <DashboardKpiCard
+              title="Overdue Invoices"
+              value={String(overdueCount)}
+              subLabel={`${formatMoney(kpis.overdueInvoiceAmount)} overdue`}
+              danger={overdueCount > 0}
+              badgeCount={overdueCount}
+              badgePulse={overdueCount > 0}
+              link="/invoices?status=overdue"
+            />
+            <DashboardKpiCard
+              title="Pending Applications"
+              value={String(kpis.pendingApplicationCount)}
+              subLabel={`${kpis.newBuyersThisMonth} approved this month`}
+              badgeCount={kpis.pendingApplicationCount}
+              link="/buyers?status=pending"
+              flashSuccess={pulseNewBuyers}
+            />
+          </div>
+        </FadeIn>
       )}
 
       {/* ROW 2 — charts */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
         <ChartCard title="GMV Trend" period="Last 30 days" className="lg:col-span-3">
-          {isLoading ? <ChartSkeleton height={220} /> : <GmvTrendChart data={trend} />}
+          {isLoading ? (
+            <ChartSkeleton height={220} />
+          ) : (
+            <FadeIn delay={50}>
+              <GmvTrendChart data={trend} />
+            </FadeIn>
+          )}
         </ChartCard>
         <ChartCard title="AR Aging" period="Current AR" className="lg:col-span-2">
-          {isLoading || !aging ? <ChartSkeleton height={220} /> : <ArAgingChart data={aging} />}
+          {isLoading || !aging ? (
+            <ChartSkeleton height={220} />
+          ) : (
+            <FadeIn delay={50}>
+              <ArAgingChart data={aging} />
+            </FadeIn>
+          )}
         </ChartCard>
       </div>
 
@@ -162,17 +202,21 @@ export default function DashboardPage(): JSX.Element {
           {isLoading ? (
             <InvoiceTableSkeleton rows={6} />
           ) : attention.length === 0 ? (
-            <div className="rounded-lg border border-border bg-surface shadow-sm">
-              <EmptyState
-                compact
-                icon={Check}
-                iconClassName="text-success"
-                title="Nothing needs attention"
-                description="No overdue or unpaid invoices right now."
-              />
-            </div>
+            <FadeIn delay={100}>
+              <div className="rounded-lg border border-border bg-surface shadow-sm">
+                <EmptyState
+                  compact
+                  icon={Check}
+                  iconClassName="text-success"
+                  title="Nothing needs attention"
+                  description="No overdue or unpaid invoices right now."
+                />
+              </div>
+            </FadeIn>
           ) : (
-            <InvoiceTable invoices={attention} />
+            <FadeIn delay={100}>
+              <InvoiceTable invoices={attention} />
+            </FadeIn>
           )}
         </section>
 
@@ -196,28 +240,32 @@ export default function DashboardPage(): JSX.Element {
                 ))}
               </div>
             ) : pending.length === 0 ? (
-              <EmptyState
-                compact
-                icon={BookCheck}
-                iconClassName="text-success"
-                title="No pending applications"
-                description="All caught up!"
-              />
+              <FadeIn delay={100}>
+                <EmptyState
+                  compact
+                  icon={BookCheck}
+                  iconClassName="text-success"
+                  title="No pending applications"
+                  description="All caught up!"
+                />
+              </FadeIn>
             ) : (
-              <ul className="divide-y divide-border">
-                {pending.slice(0, 5).map((app) => (
-                  <li key={app.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-text-primary">{app.companyName}</p>
-                      <p className="truncate text-xs text-text-secondary">{app.businessType ?? 'Business'}</p>
-                      <p className="truncate text-2xs text-text-tertiary">Applied {formatRelative(app.createdAt)}</p>
-                    </div>
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href="/buyers?status=pending">Review</Link>
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+              <FadeIn delay={100}>
+                <ul className="divide-y divide-border">
+                  {pending.slice(0, 5).map((app) => (
+                    <li key={app.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-text-primary">{app.companyName}</p>
+                        <p className="truncate text-xs text-text-secondary">{app.businessType ?? 'Business'}</p>
+                        <p className="truncate text-2xs text-text-tertiary">Applied {formatRelative(app.createdAt)}</p>
+                      </div>
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link href="/buyers?status=pending">Review</Link>
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </FadeIn>
             )}
           </div>
         </section>

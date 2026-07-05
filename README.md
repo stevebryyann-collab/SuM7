@@ -51,6 +51,48 @@ Frontend → **Vercel** · Backend → **Railway** · DB → **Supabase** (Postg
 · Payments → **Stripe** · BNPL → **Resolve** · Tracing → **OpenTelemetry → Grafana Cloud**
 · Errors → **Sentry** · Logs → **Pino / Better Stack**.
 
+## Platform Capabilities (v2)
+
+Parts 1–4 of the build are complete: design-system foundation, buyer-facing features,
+merchant admin upgrades, and a final polish pass. See `PART_2_IMPLEMENTATION.md`,
+`PART_3_IMPLEMENTATION.md`, and `PART_4_IMPLEMENTATION.md` for the per-part detail;
+`CLAUDE.md` → *PARTS 1–4 OF 4 COMPLETED* has the consolidated file list.
+
+**Merchant admin**
+- Unlimited pricing tiers (percentage-off, fixed price list, volume breaks) with
+  priority ordering and per-buyer overrides — dense `DataTable`, not cards.
+- Buyer approval workflow with audited PII reveal, GDPR export/erase, and credit-
+  utilization visibility.
+- Automated PDF invoicing (redesigned, printed-ledger styling) with AR aging, reminders
+  (3-send cooldown), void, and SHA-256 integrity verification.
+- Sales-rep portal — place orders on a buyer's behalf via an impersonation session.
+- Order fulfillment tracking (Shopify `fulfillments/*` webhooks → tracking number/URL,
+  shipped-at, shipping-confirmation email).
+- Dashboard GMV-milestone toasts ($1K–$500K) messaging the platform's zero-commission
+  story against Faire's ~15% marketplace take rate, plus a first-buyer-approval
+  celebration.
+- Merchant-facing System Health dashboard (DB/Redis/circuit-breaker/queue status,
+  24h webhook processing stats) for owner/admin roles.
+- Analytics: GMV trend, top buyers, monthly GMV, GTM/GA4 integration settings.
+
+**Buyer portal**
+- Self-serve application → approval → unified cross-merchant account (Clerk-owned).
+- Spreadsheet-style bulk ordering: virtualized table, CSV import, volume-break tooltips,
+  inventory/back-order awareness, mobile-responsive cart.
+- BNPL checkout via Resolve (`BnplAdapter` interface).
+- Order tracking (shipment status, back-order notices) and reorder via standing-order
+  reminders (server-side daily sweep).
+- Shopping lists, discount codes (backend only — no admin UI yet), first-use welcome.
+
+**Cross-cutting**
+- Apple-Weather premium-glass design system: atmospheric morning-sky background,
+  translucent glass surfaces over blur, soft blue-gray floating shadows, spring
+  lift/press motion — shared tokens, `DataTable`, `StatusBadge`,
+  `DashboardKpiCard`, `FadeIn` page-load choreography.
+- Playwright E2E: functional flows (`auth`, `merchant`, `buyer`) plus a
+  `visual-consistency` suite asserting the design system's hard rules (glass
+  surfaces present, solid-fill status chips, `tabular-nums` financial cells).
+
 ## Local development
 
 ```bash

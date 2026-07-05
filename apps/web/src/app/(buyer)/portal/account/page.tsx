@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { BellOff, BellRing, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { toast } from '@/components/shared/toasts';
@@ -33,11 +34,14 @@ export default function BuyerAccountPage(): JSX.Element {
 
   return (
     <>
-      <PageHeader title="Your Account" description="Your wholesale relationship and reorder reminders." />
+      <PageHeader title="Trade Account" description="Your trade account and reorder reminders." />
 
       {/* Account snapshot */}
       <section className="panel mb-6 p-5">
-        <h2 className="mb-3 text-sm font-medium text-text-primary">Account</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-medium text-text-primary">Account Status</h2>
+          <StatusBadge status="approved" label="Active Trade Account" />
+        </div>
         {me.isLoading || !me.data ? (
           <LoadingSkeleton rows={3} columns={[2, 3]} />
         ) : (

@@ -21,8 +21,8 @@ import { cn } from '@/lib/cn';
  * portal with fixed positioning so it is never clipped by an `overflow-hidden`
  * ancestor (the {@link DataTable} wrapper clips its rounded corners). Right-
  * aligned to the trigger; flips above when near the viewport bottom. Dismissed on
- * outside-pointerdown, Escape, scroll, or resize. Solid surface, one layer of
- * depth, no blur (design rules).
+ * outside-pointerdown, Escape, scroll, or resize. Glass surface over blur
+ * (CLAUDE.md → Glass System).
  */
 
 const MENU_WIDTH = 200;
@@ -116,9 +116,9 @@ export function DropdownMenu({
           setOpen((value) => !value);
         }}
         className={cn(
-          'inline-flex h-8 w-8 items-center justify-center rounded-md text-text-secondary',
-          'transition-colors duration-fast hover:bg-neutral-bg hover:text-text-primary',
-          'focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent',
+          'inline-flex h-8 w-8 items-center justify-center rounded-full text-text-secondary',
+          'transition-colors duration-fast hover:bg-ocean-soft hover:text-ocean-deep',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40',
           triggerClassName,
         )}
       >
@@ -139,8 +139,8 @@ export function DropdownMenu({
                   width: MENU_WIDTH,
                 }}
                 className={cn(
-                  'fixed z-50 overflow-hidden rounded-md border border-border bg-surface py-1 shadow-md',
-                  'animate-fade-in',
+                  'fixed z-50 overflow-hidden rounded-lg border border-glass-border bg-glass-strong py-1 shadow-glass backdrop-blur-glass',
+                  'animate-in fade-in-0 zoom-in-95',
                   className,
                 )}
               >
@@ -183,7 +183,7 @@ export function DropdownMenuItem({
       ? 'cursor-not-allowed text-text-tertiary'
       : destructive
         ? 'text-danger hover:bg-danger-bg'
-        : 'text-text-primary hover:bg-neutral-bg',
+        : 'text-text-primary hover:bg-ocean-soft',
   );
 
   const content = (

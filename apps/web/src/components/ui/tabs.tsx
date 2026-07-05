@@ -12,7 +12,7 @@ export const TabsList = forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn('inline-flex items-center gap-1 border-b border-gray-200', className)}
+    className={cn('inline-flex items-center gap-1 border-b border-border', className)}
     {...props}
   />
 ));
@@ -25,11 +25,11 @@ export const TabsTrigger = forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      'inline-flex items-center whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm',
-      'font-medium text-gray-500 transition-colors duration-75 hover:text-gray-700',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+      'relative inline-flex items-center whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm',
+      'font-medium text-text-secondary transition-colors duration-fast hover:text-text-primary',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40 rounded-t-md',
       'disabled:pointer-events-none disabled:opacity-50',
-      'data-[state=active]:border-accent data-[state=active]:text-gray-900',
+      'data-[state=active]:border-ocean data-[state=active]:text-text-primary',
       className,
     )}
     {...props}
@@ -44,7 +44,7 @@ export const TabsContent = forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      'mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+      'mt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40',
       className,
     )}
     {...props}

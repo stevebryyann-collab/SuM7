@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { CopyButton } from '@/components/shared/CopyButton';
 import { InvoiceTimeline } from '@/components/merchant/InvoiceTimeline';
 import {
   MarkPaidDialog,
@@ -89,18 +90,19 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
     <>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <nav className="mb-1 text-xs text-gray-500">
-            <Link href="/invoices" className="hover:text-gray-700">
+          <nav className="mb-1 text-xs text-text-secondary">
+            <Link href="/invoices" className="hover:text-text-secondary">
               Invoices
             </Link>
             <span className="px-1.5">/</span>
-            <span className="font-mono text-gray-700">{invoice.invoiceNumber}</span>
+            <span className="font-mono text-text-secondary">{invoice.invoiceNumber}</span>
           </nav>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">{invoice.invoiceNumber}</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-text-primary">{invoice.invoiceNumber}</h1>
+            <CopyButton value={invoice.invoiceNumber} size="sm" />
             <StatusBadge status={invoice.status} />
           </div>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-text-secondary">
             Issued {formatDate(invoice.invoiceDate)} · Due {formatDate(invoice.dueDate)}
           </p>
         </div>
@@ -109,43 +111,43 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Invoice preview (mirrors the PDF document) */}
         <section className="panel lg:col-span-2">
-          <div className="m-4 rounded-md border border-gray-200 bg-[#fafaf8] p-6">
+          <div className="m-4 rounded-md border border-border bg-[#fafaf8] p-6">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-base font-semibold text-gray-900">{invoice.merchantName}</div>
-                <div className="mt-1 text-xs uppercase tracking-wide text-gray-500">Tax Invoice</div>
+                <div className="text-base font-semibold text-text-primary">{invoice.merchantName}</div>
+                <div className="mt-1 text-xs uppercase tracking-wide text-text-secondary">Tax Invoice</div>
               </div>
-              <div className="text-right text-xs text-gray-600">
+              <div className="text-right text-xs text-text-secondary">
                 <div>
-                  <span className="text-gray-400">Invoice </span>
-                  <span className="font-mono text-gray-800">{invoice.invoiceNumber}</span>
+                  <span className="text-text-tertiary">Invoice </span>
+                  <span className="font-mono text-text-primary">{invoice.invoiceNumber}</span>
                 </div>
                 <div>
-                  <span className="text-gray-400">Date </span>
+                  <span className="text-text-tertiary">Date </span>
                   {formatDate(invoice.invoiceDate)}
                 </div>
                 <div>
-                  <span className="text-gray-400">Due </span>
+                  <span className="text-text-tertiary">Due </span>
                   {formatDate(invoice.dueDate)}
                 </div>
               </div>
             </div>
 
-            <div className="mt-5 border-t border-gray-200 pt-4">
-              <div className="text-label uppercase tracking-wider text-gray-400">Bill To</div>
-              <div className="mt-1 text-sm text-gray-800">{invoice.buyerCompanyName ?? '—'}</div>
+            <div className="mt-5 border-t border-border pt-4">
+              <div className="text-label uppercase tracking-wider text-text-tertiary">Bill To</div>
+              <div className="mt-1 text-sm text-text-primary">{invoice.buyerCompanyName ?? '—'}</div>
               {invoice.buyerAddressLines.map((line, i) => (
-                <div key={i} className="text-sm text-gray-600">
+                <div key={i} className="text-sm text-text-secondary">
                   {line}
                 </div>
               ))}
-              {invoice.buyerEmail ? <div className="text-sm text-gray-600">{invoice.buyerEmail}</div> : null}
+              {invoice.buyerEmail ? <div className="text-sm text-text-secondary">{invoice.buyerEmail}</div> : null}
             </div>
 
             <div className="mt-5 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-300 text-left text-xs uppercase text-gray-500">
+                  <tr className="border-b border-border-strong text-left text-xs uppercase text-text-secondary">
                     <th className="py-1.5 pr-2 font-medium">Description</th>
                     <th className="py-1.5 pr-2 font-medium">SKU</th>
                     <th className="py-1.5 pr-2 text-right font-medium">Qty</th>
@@ -155,12 +157,12 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
                 </thead>
                 <tbody>
                   {invoice.lineItems.map((line, i) => (
-                    <tr key={i} className="border-b border-gray-100">
-                      <td className="py-1.5 pr-2 text-gray-800">
+                    <tr key={i} className="border-b border-border">
+                      <td className="py-1.5 pr-2 text-text-primary">
                         {line.productTitle}
-                        {line.variantTitle ? <span className="text-gray-500"> — {line.variantTitle}</span> : null}
+                        {line.variantTitle ? <span className="text-text-secondary"> — {line.variantTitle}</span> : null}
                       </td>
-                      <td className="py-1.5 pr-2 font-mono text-xs text-gray-500">{line.sku ?? '—'}</td>
+                      <td className="py-1.5 pr-2 font-mono text-xs text-text-secondary">{line.sku ?? '—'}</td>
                       <td className="py-1.5 pr-2 text-right tabular-nums">{line.quantity}</td>
                       <td className="py-1.5 pr-2 text-right font-mono tabular-nums">{formatMoney(line.unitPrice)}</td>
                       <td className="py-1.5 text-right font-mono tabular-nums">{formatMoney(line.lineTotal)}</td>
@@ -172,26 +174,26 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
 
             <div className="mt-4 flex justify-end">
               <div className="w-full max-w-[14rem] space-y-1 text-sm">
-                <div className="flex justify-between text-gray-600">
+                <div className="flex justify-between text-text-secondary">
                   <span>Subtotal</span>
                   <span className="font-mono tabular-nums">{formatMoney(invoice.subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-gray-600">
+                <div className="flex justify-between text-text-secondary">
                   <span>Tax</span>
                   <span className="font-mono tabular-nums">{formatMoney(invoice.taxAmount)}</span>
                 </div>
-                <div className="flex justify-between border-t border-gray-900 pt-1 font-semibold text-gray-900">
+                <div className="flex justify-between border-t border-gray-900 pt-1 font-semibold text-text-primary">
                   <span>Total</span>
                   <span className="font-mono tabular-nums">{formatMoney(invoice.total)}</span>
                 </div>
                 {Number(invoice.amountPaid) > 0 ? (
-                  <div className="flex justify-between text-gray-600">
+                  <div className="flex justify-between text-text-secondary">
                     <span>Paid</span>
                     <span className="font-mono tabular-nums">−{formatMoney(invoice.amountPaid)}</span>
                   </div>
                 ) : null}
                 {Number(invoice.outstanding) > 0 ? (
-                  <div className="flex justify-between font-medium text-gray-900">
+                  <div className="flex justify-between font-medium text-text-primary">
                     <span>Outstanding</span>
                     <span className="font-mono tabular-nums">{formatMoney(invoice.outstanding)}</span>
                   </div>
@@ -199,8 +201,8 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
               </div>
             </div>
 
-            <div className="mt-6 border border-gray-200 bg-white p-3 text-xs text-gray-600">
-              <div className="text-label uppercase tracking-wider text-gray-400">Payment Instructions</div>
+            <div className="mt-6 border border-border bg-white/60 p-3 text-xs text-text-secondary">
+              <div className="text-label uppercase tracking-wider text-text-tertiary">Payment Instructions</div>
               <p className="mt-1">
                 Please remit {formatMoney(invoice.outstanding)} by {formatDate(invoice.dueDate)}, referencing
                 invoice {invoice.invoiceNumber}.
@@ -212,7 +214,7 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
         {/* Actions + timeline */}
         <div className="space-y-4">
           <section className="panel p-4">
-            <h2 className="mb-3 text-label font-medium uppercase tracking-wider text-gray-500">Status</h2>
+            <h2 className="mb-3 text-label font-medium uppercase tracking-wider text-text-secondary">Status</h2>
             <InvoiceTimeline invoice={invoice} />
           </section>
 
@@ -253,18 +255,18 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
 
           {invoice.payments.length > 0 ? (
             <section className="panel p-4">
-              <h2 className="mb-2 text-label font-medium uppercase tracking-wider text-gray-500">Payment History</h2>
+              <h2 className="mb-2 text-label font-medium uppercase tracking-wider text-text-secondary">Payment History</h2>
               <div className="space-y-2">
                 {invoice.payments.map((p, i) => (
-                  <div key={i} className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2 text-sm last:border-0 last:pb-0">
+                  <div key={i} className="flex items-start justify-between gap-2 border-b border-border pb-2 text-sm last:border-0 last:pb-0">
                     <div>
-                      <div className="font-mono tabular-nums text-gray-900">{formatMoney(p.amount)}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="font-mono tabular-nums text-text-primary">{formatMoney(p.amount)}</div>
+                      <div className="text-xs text-text-secondary">
                         {formatDate(p.paidAt)}
                         {p.reference ? ` · ${p.reference}` : ''}
                       </div>
                     </div>
-                    {p.recordedBy ? <div className="text-xs text-gray-500">{p.recordedBy}</div> : null}
+                    {p.recordedBy ? <div className="text-xs text-text-secondary">{p.recordedBy}</div> : null}
                   </div>
                 ))}
               </div>
@@ -274,7 +276,7 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
           <section className="panel p-4">
             <button
               type="button"
-              className="flex w-full items-center justify-between text-label font-medium uppercase tracking-wider text-gray-500"
+              className="flex w-full items-center justify-between text-label font-medium uppercase tracking-wider text-text-secondary"
               onClick={() => setAuditOpen((v) => !v)}
             >
               Audit Trail
@@ -285,14 +287,14 @@ export function InvoiceDetail({ invoice }: { invoice: InvoiceDetailType }): JSX.
                 {invoice.auditTrail.slice(0, 5).map((entry) => (
                   <li key={entry.id} className="flex items-start justify-between gap-2 text-sm">
                     <div>
-                      <div className="text-gray-900">{AUDIT_LABELS[entry.action] ?? humanize(entry.action)}</div>
-                      <div className="text-xs text-gray-500">{actorLabel(entry)}</div>
+                      <div className="text-text-primary">{AUDIT_LABELS[entry.action] ?? humanize(entry.action)}</div>
+                      <div className="text-xs text-text-secondary">{actorLabel(entry)}</div>
                     </div>
-                    <div className="shrink-0 text-xs text-gray-500">{formatDateTime(entry.createdAt)}</div>
+                    <div className="shrink-0 text-xs text-text-secondary">{formatDateTime(entry.createdAt)}</div>
                   </li>
                 ))}
                 {invoice.auditTrail.length === 0 ? (
-                  <li className="text-sm text-gray-500">No audit entries yet.</li>
+                  <li className="text-sm text-text-secondary">No audit entries yet.</li>
                 ) : null}
               </ol>
             ) : null}

@@ -148,11 +148,17 @@ export function InvoiceTable({ invoices }: InvoiceTableProps): JSX.Element {
                   <DataTableCell align="right">
                     <DueCell invoice={invoice} />
                   </DataTableCell>
-                  <DataTableCell align="right" className="font-mono">{formatMoney(invoice.total)}</DataTableCell>
-                  <DataTableCell align="right" className="font-mono text-text-secondary">
+                  <DataTableCell align="right" className="font-mono" data-testid="financial-cell">
+                    {formatMoney(invoice.total)}
+                  </DataTableCell>
+                  <DataTableCell
+                    align="right"
+                    className="font-mono text-text-secondary"
+                    data-testid="financial-cell"
+                  >
                     {formatMoney(invoice.amountPaid)}
                   </DataTableCell>
-                  <DataTableCell align="right" className="font-mono">
+                  <DataTableCell align="right" className="font-mono" data-testid="financial-cell">
                     {formatMoney(outstanding(invoice))}
                   </DataTableCell>
                   <DataTableCell>

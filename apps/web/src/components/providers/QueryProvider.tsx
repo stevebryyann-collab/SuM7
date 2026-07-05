@@ -19,17 +19,20 @@ export function QueryProvider({ children }: { children: ReactNode }): JSX.Elemen
     <QueryClientProvider client={queryClient}>
       {children}
       <Toaster
-        position="bottom-right"
+        position="top-right"
         toastOptions={{
-          // Solid, non-translucent toasts on the token system (CSS vars defined
-          // in globals.css :root). One layer of depth (shadow-md), 8px radius.
+          // Floating glass toast (CLAUDE.md → Notifications): translucent Cloud
+          // White over blur, soft glass shadow, generous radius. CSS vars are
+          // defined in globals.css :root.
           style: {
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
+            background: 'var(--color-glass-strong)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid var(--color-glass-border)',
             color: 'var(--color-text-primary)',
-            borderRadius: '8px',
+            borderRadius: '18px',
             fontSize: '14px',
-            boxShadow: 'var(--shadow-md)',
+            boxShadow: 'var(--shadow-glass)',
           },
           duration: 4000,
         }}

@@ -46,15 +46,15 @@ export default function BuyerOrdersPage(): JSX.Element {
                   <TableHead>Order #</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Terms</TableHead>
+                  <TableHead className="hidden md:table-cell">Terms</TableHead>
                   <TableHead>Placed</TableHead>
-                  <TableHead>Invoice</TableHead>
+                  <TableHead className="hidden md:table-cell">Invoice</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-sm text-gray-500">
+                    <TableCell colSpan={6} className="py-8 text-center text-sm text-text-secondary">
                       You have no orders yet.
                     </TableCell>
                   </TableRow>
@@ -65,7 +65,7 @@ export default function BuyerOrdersPage(): JSX.Element {
                       className="cursor-pointer hover:bg-neutral-bg"
                       onClick={() => router.push(`/portal/orders/${order.id}`)}
                     >
-                      <TableCell className="font-mono text-xs text-gray-700">
+                      <TableCell className="font-mono text-xs text-text-secondary">
                         {order.shopifyOrderNumber ?? '—'}
                       </TableCell>
                       <TableCell>
@@ -74,9 +74,11 @@ export default function BuyerOrdersPage(): JSX.Element {
                       <TableCell className="text-right font-mono tabular-nums">
                         {formatMoney(order.total)}
                       </TableCell>
-                      <TableCell className="uppercase text-gray-600">{order.paymentTerms ?? '—'}</TableCell>
-                      <TableCell className="text-gray-600">{formatDate(order.createdAt)}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden uppercase text-text-secondary md:table-cell">
+                        {order.paymentTerms ?? '—'}
+                      </TableCell>
+                      <TableCell className="text-text-secondary">{formatDate(order.createdAt)}</TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {order.invoiceStatus ? <StatusBadge status={order.invoiceStatus} /> : '—'}
                       </TableCell>
                     </TableRow>

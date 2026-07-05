@@ -59,6 +59,10 @@ interface PricingTierSummary {
   priority: number;
   isActive: boolean;
   buyerCount: number;
+  /** Only meaningful for `volume_breaks` tiers — the list view surfaces bracket count/discount without a second request. */
+  conditionsJson: Prisma.JsonValue | null;
+  /** Only meaningful for `fixed_price_list` tiers. */
+  overrideCount: number;
   createdAt: string;
 }
 
@@ -73,9 +77,8 @@ interface OverrideSummary {
   createdAt: string;
 }
 
-/** Tier detail (header + first page of overrides). */
+/** Tier detail (header + first page of overrides). `conditionsJson` is inherited from the summary. */
 interface PricingTierDetail extends PricingTierSummary {
-  conditionsJson: Prisma.JsonValue | null;
   overrides: PaginatedResponse<OverrideSummary>;
 }
 
@@ -91,6 +94,7 @@ interface TierWithCountRow {
   conditionsJson: Prisma.JsonValue | null;
   createdAt: Date;
   buyerCount: bigint;
+  overrideCount: bigint;
 }
 
 /**
@@ -131,7 +135,9 @@ export class PricingTiersController {
           t.conditions_json  AS "conditionsJson",
           t.created_at       AS "createdAt",
           (SELECT COUNT(*) FROM merchant_buyer_relationships r
-             WHERE r.pricing_tier_id = t.id) AS "buyerCount"
+             WHERE r.pricing_tier_id = t.id) AS "buyerCount",
+          (SELECT COUNT(*) FROM pricing_tier_overrides o
+             WHERE o.pricing_tier_id = t.id) AS "overrideCount"
         FROM pricing_tiers t
         WHERE t.merchant_id = ${merchantId}::uuid
         ORDER BY t.priority DESC, t.created_at DESC`,
@@ -211,7 +217,9 @@ export class PricingTiersController {
           t.conditions_json  AS "conditionsJson",
           t.created_at       AS "createdAt",
           (SELECT COUNT(*) FROM merchant_buyer_relationships r
-             WHERE r.pricing_tier_id = t.id) AS "buyerCount"
+             WHERE r.pricing_tier_id = t.id) AS "buyerCount",
+          (SELECT COUNT(*) FROM pricing_tier_overrides o
+             WHERE o.pricing_tier_id = t.id) AS "overrideCount"
         FROM pricing_tiers t
         WHERE t.id = ${id}::uuid AND t.merchant_id = ${merchantId}::uuid`,
     );
@@ -221,7 +229,7 @@ export class PricingTiersController {
     }
 
     const overrides = await this.listOverrides(merchantId, id, page);
-    return { ...this.toSummary(header), conditionsJson: header.conditionsJson, overrides };
+    return { ...this.toSummary(header), overrides };
   }
 
   // ── Update ─────────────────────────────────────────────────────────────────
@@ -497,6 +505,8 @@ export class PricingTiersController {
       priority: row.priority,
       isActive: row.isActive,
       buyerCount: Number(row.buyerCount),
+      conditionsJson: row.conditionsJson,
+      overrideCount: Number(row.overrideCount),
       createdAt: row.createdAt.toISOString(),
     };
   }

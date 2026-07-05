@@ -52,6 +52,7 @@ function iso(dayOffset: number): string {
 export const DEMO_DASHBOARD: MerchantDashboard = {
   gmvCurrentMonth: '84250.00',
   gmvPreviousMonth: '71980.00',
+  allTimeGmv: '512400.00',
   gmvChangePercent: '17.05',
   outstandingArBalance: '48230.50',
   overdueInvoiceCount: 3,
@@ -83,6 +84,10 @@ export const DEMO_TIER_ID_VOLUME = '1a2b3c4d-0002-4002-8002-000000000002';
 export const DEMO_TIER_ID_KEY = '1a2b3c4d-0003-4003-8003-000000000003';
 export const DEMO_TIER_ID_SEASONAL = '1a2b3c4d-0004-4004-8004-000000000004';
 
+// `conditionsJson`/`overrideCount` below are placeholders — the mock API's
+// list handler recomputes both fresh from DEMO_TIER_CONDITIONS/DEMO_TIER_OVERRIDES
+// on every read (mirroring the real backend's query-time subqueries), so these
+// two fields never actually reach the frontend as declared here.
 export const DEMO_PRICING_TIERS: PricingTierSummary[] = [
   {
     id: DEMO_TIER_ID_DEFAULT,
@@ -94,6 +99,8 @@ export const DEMO_PRICING_TIERS: PricingTierSummary[] = [
     priority: 0,
     isActive: true,
     buyerCount: 4,
+    conditionsJson: null,
+    overrideCount: 0,
     createdAt: iso(-210),
   },
   {
@@ -106,6 +113,8 @@ export const DEMO_PRICING_TIERS: PricingTierSummary[] = [
     priority: 10,
     isActive: true,
     buyerCount: 2,
+    conditionsJson: null,
+    overrideCount: 0,
     createdAt: iso(-180),
   },
   {
@@ -118,6 +127,8 @@ export const DEMO_PRICING_TIERS: PricingTierSummary[] = [
     priority: 20,
     isActive: true,
     buyerCount: 1,
+    conditionsJson: null,
+    overrideCount: 0,
     createdAt: iso(-150),
   },
   {
@@ -130,6 +141,8 @@ export const DEMO_PRICING_TIERS: PricingTierSummary[] = [
     priority: 5,
     isActive: false,
     buyerCount: 0,
+    conditionsJson: null,
+    overrideCount: 0,
     createdAt: iso(-90),
   },
 ];
@@ -139,7 +152,7 @@ export const DEMO_PRICING_TIERS: PricingTierSummary[] = [
 // The list endpoint returns only summaries; GET /api/v1/pricing-tiers/:id adds
 // the volume-break conditions and a cursor page of overrides. Keyed by tier id;
 // the mock backend mutates these on create / update / bulk-override / delete so
-// the tier-detail page stays in lockstep with the cards list.
+// the tier list and detail page stay in lockstep.
 
 export const DEMO_TIER_CONDITIONS: Record<string, PricingTierConditions | null> = {
   [DEMO_TIER_ID_VOLUME]: {

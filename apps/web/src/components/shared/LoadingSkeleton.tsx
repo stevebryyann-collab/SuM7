@@ -2,15 +2,16 @@ import { cn } from '@/lib/cn';
 import { DataTable, DataTableBody } from '@/components/shared/DataTable';
 
 /**
- * Content-aware skeletons. The base atom is a solid `bg-neutral-bg animate-pulse`
- * block — no shimmer gradient (gradients are forbidden by the design system).
- * Each exported skeleton matches the shape of the content it stands in for, so
- * layout does not shift when real data arrives.
+ * Content-aware skeletons. The base atom is a glass block with a travelling
+ * shimmer band (`.skeleton-shimmer` in globals.css) — the Apple-Weather loading
+ * treatment (CLAUDE.md → Loading States). Each exported skeleton matches the
+ * shape of the content it stands in for, so layout does not shift when real
+ * data arrives.
  */
 
 /** Single skeleton block. */
 export function SkeletonBar({ className, style }: { className?: string; style?: React.CSSProperties }): JSX.Element {
-  return <div className={cn('animate-pulse rounded-md bg-neutral-bg', className)} style={style} aria-hidden />;
+  return <div className={cn('skeleton-shimmer rounded-md', className)} style={style} aria-hidden />;
 }
 
 export interface LoadingSkeletonProps {
@@ -55,10 +56,10 @@ export function KpiCardSkeleton(): JSX.Element {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-hidden role="presentation">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="rounded-lg border border-border bg-surface p-5">
+        <div key={i} className="rounded-xl border border-glass-border bg-glass p-5 shadow-glass backdrop-blur-glass">
           <SkeletonBar className="h-2.5 w-20" />
-          <SkeletonBar className="mt-2 h-8 w-28" />
-          <SkeletonBar className="mt-2 h-2.5 w-24" />
+          <SkeletonBar className="mt-3 h-8 w-28" />
+          <SkeletonBar className="mt-3 h-2.5 w-24" />
         </div>
       ))}
     </div>

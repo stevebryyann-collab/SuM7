@@ -4,9 +4,9 @@ import { forwardRef, type HTMLAttributes, type TdHTMLAttributes, type ThHTMLAttr
 import { cn } from '@/lib/cn';
 
 /**
- * Compact data-table primitives. Rows are dense (20+ visible without scroll),
- * separated by 1px borders, with alternating white / gray-50 striping. A
- * `clickable` row gets the blue-50 hover affordance — only when it navigates.
+ * Data-table primitives. Rows breathe over the glass container, separated by
+ * soft 1px dividers; a `clickable` row gets a soft ocean tint on hover — only
+ * when it navigates (CLAUDE.md → Tables).
  */
 export const Table = forwardRef<HTMLTableElement, HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
@@ -19,7 +19,7 @@ Table.displayName = 'Table';
 
 export const TableHeader = forwardRef<HTMLTableSectionElement, HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, ...props }, ref) => (
-    <thead ref={ref} className={cn('border-b border-gray-200 bg-gray-50', className)} {...props} />
+    <thead ref={ref} className={cn('border-b border-border bg-white/40', className)} {...props} />
   ),
 );
 TableHeader.displayName = 'TableHeader';
@@ -38,8 +38,8 @@ export const TableRow = forwardRef<HTMLTableRowElement, TableRowProps>(
     <tr
       ref={ref}
       className={cn(
-        'border-b border-gray-200 odd:bg-white even:bg-gray-50',
-        clickable && 'cursor-pointer hover:bg-blue-50',
+        'border-b border-border/70 transition-colors duration-fast',
+        clickable && 'cursor-pointer hover:bg-ocean-soft',
         className,
       )}
       {...props}
@@ -53,7 +53,7 @@ export const TableHead = forwardRef<HTMLTableCellElement, ThHTMLAttributes<HTMLT
     <th
       ref={ref}
       className={cn(
-        'h-9 px-3 text-left align-middle text-label font-medium uppercase tracking-wider text-gray-500',
+        'h-10 px-4 text-left align-middle text-label font-medium uppercase tracking-wider text-text-secondary',
         className,
       )}
       {...props}
@@ -64,7 +64,7 @@ TableHead.displayName = 'TableHead';
 
 export const TableCell = forwardRef<HTMLTableCellElement, TdHTMLAttributes<HTMLTableCellElement>>(
   ({ className, ...props }, ref) => (
-    <td ref={ref} className={cn('px-3 py-2 align-middle text-gray-900', className)} {...props} />
+    <td ref={ref} className={cn('px-4 py-3 align-middle text-text-primary', className)} {...props} />
   ),
 );
 TableCell.displayName = 'TableCell';

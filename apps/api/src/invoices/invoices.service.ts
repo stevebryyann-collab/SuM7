@@ -261,7 +261,7 @@ export class InvoicesService {
           shippingAmount: true,
           total: true,
           currency: true,
-          merchant: { select: { shopifyDomain: true } },
+          merchant: { select: { shopifyDomain: true, paymentInstructions: true } },
           buyer: { select: { companyName: true, email: true, addressJson: true } },
           lineItems: {
             select: {
@@ -293,6 +293,7 @@ export class InvoicesService {
         buyerAddressLines: this.formatAddress(order.buyer.addressJson),
         currency: order.currency,
         paymentTerms: this.humanTerms(params.paymentTerms),
+        paymentInstructions: order.merchant.paymentInstructions,
         lines: order.lineItems.map((li) => ({
           description: li.productTitle + (li.variantTitle ? ` — ${li.variantTitle}` : ''),
           sku: li.sku,
@@ -404,6 +405,34 @@ export class InvoicesService {
     );
 
     return this.storage.getPresignedUrl(invoice.pdfS3Key, 3600);
+  }
+
+  /**
+   * Lightweight integrity presence check for the buyer portal. Returns whether a
+   * stored PDF SHA-256 exists (the "verified" indicator) plus the invoice number.
+   * Ownership is enforced — a buyer can only probe their own invoices. Full hash
+   * verification runs elsewhere (merchant `verifyIntegrity` + compliance cron);
+   * this is a fast presence check safe to poll.
+   */
+  async getBuyerInvoiceIntegrity(
+    invoiceId: string,
+    requestingBuyerId: string,
+  ): Promise<{ hasIntegrityHash: boolean; invoiceNumber: string }> {
+    this.assertUuid(invoiceId);
+    this.assertUuid(requestingBuyerId);
+    const invoice = await this.merchantContext.runAsSystem(() =>
+      this.prisma.invoice.findUnique({
+        where: { id: invoiceId },
+        select: { buyerId: true, pdfSha256: true, invoiceNumber: true },
+      }),
+    );
+    if (!invoice) {
+      throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+    }
+    if (invoice.buyerId !== requestingBuyerId) {
+      throw new ForbiddenException({ code: 'INVOICE_ACCESS_DENIED', message: 'Not your invoice' });
+    }
+    return { hasIntegrityHash: invoice.pdfSha256 !== null, invoiceNumber: invoice.invoiceNumber };
   }
 
   // ── Void ────────────────────────────────────────────────────────────────

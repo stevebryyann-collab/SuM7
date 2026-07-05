@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import {
   AlertCircle,
@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 
 export interface EmptyStateAction {
   label: string;
@@ -91,20 +92,12 @@ export function EmptyDashboard(): JSX.Element {
 
 /** Read-only application URL with an inline copy button. */
 function CopyableUrl({ url }: { url: string }): JSX.Element {
-  const [copied, setCopied] = useState(false);
-
-  const copy = (): void => {
-    if (!url) return;
-    void navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    });
-  };
+  const { copy, copied } = useCopyToClipboard();
 
   return (
     <div className="mt-6 flex w-full max-w-sm items-center gap-2">
       <Input readOnly value={url} aria-label="Application link" className="text-sm" />
-      <Button variant="secondary" size="default" onClick={copy} className="shrink-0">
+      <Button variant="secondary" size="default" onClick={() => void copy(url)} className="shrink-0" disabled={!url}>
         {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
         <span className="ml-1">{copied ? 'Copied' : 'Copy'}</span>
       </Button>

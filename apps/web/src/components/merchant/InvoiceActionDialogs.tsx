@@ -102,7 +102,7 @@ export function MarkPaidDialog({
             {invoice ? (
               <>
                 Outstanding on <span className="font-mono">{invoice.invoiceNumber}</span>:{' '}
-                <span className="font-medium text-gray-900">{formatMoney(outstandingOf(invoice))}</span>
+                <span className="font-medium text-text-primary">{formatMoney(outstandingOf(invoice))}</span>
               </>
             ) : null}
           </DialogDescription>
@@ -244,7 +244,14 @@ export function SendReminderDialog({
   onDone?: () => void;
 }): JSX.Element {
   const sendReminder = useSendReminder();
+  const [justSent, setJustSent] = useState(false);
   const nextCount = (invoice?.reminderCount ?? 0) + 1;
+
+  // Reset the transient "Sent" state whenever the dialog is reused for a
+  // different invoice or reopened.
+  useEffect(() => {
+    if (!open) setJustSent(false);
+  }, [open]);
 
   const confirm = (): void => {
     if (!invoice) return;
@@ -255,8 +262,18 @@ export function SendReminderDialog({
             ? `Reminder ${result.reminderCount} of 3 sent for ${invoice.invoiceNumber}`
             : 'Reminder could not be delivered — please try again',
         );
-        onOpenChange(false);
-        onDone?.();
+        if (result.sent) {
+          // Hold the dialog open briefly on a "Sent ✓" confirm state before
+          // closing, rather than snapping straight to close on success.
+          setJustSent(true);
+          window.setTimeout(() => {
+            onOpenChange(false);
+            onDone?.();
+          }, 1500);
+        } else {
+          onOpenChange(false);
+          onDone?.();
+        }
       },
       onError: (err) => {
         onOpenChange(false);
@@ -278,7 +295,7 @@ export function SendReminderDialog({
           </span>
         ) : null
       }
-      confirmLabel="Send reminder"
+      confirmLabel={justSent ? 'Sent ✓' : 'Send reminder'}
       isLoading={sendReminder.isPending}
       onConfirm={confirm}
     />

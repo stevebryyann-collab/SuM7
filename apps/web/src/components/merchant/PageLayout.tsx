@@ -58,8 +58,8 @@ export function PageLayout({
             <PageHeaderSkeleton />
           ) : (
             <>
-              <h1 className="text-2xl font-semibold text-text-primary">{title}</h1>
-              {subtitle ? <p className="mt-1 text-sm text-text-secondary">{subtitle}</p> : null}
+              <h1 className="text-3xl font-bold tracking-tight text-text-primary">{title}</h1>
+              {subtitle ? <p className="mt-1.5 text-base text-text-secondary">{subtitle}</p> : null}
             </>
           )}
         </div>
