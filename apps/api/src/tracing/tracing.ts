@@ -6,7 +6,7 @@
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
   ATTR_SERVICE_NAME,
   ATTR_SERVICE_VERSION,
@@ -40,7 +40,7 @@ const traceExporter = new OTLPTraceExporter({
 });
 
 const sdk = new NodeSDK({
-  resource: new Resource({
+  resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: 'b2b-wholesale-api',
     [ATTR_SERVICE_VERSION]: SERVICE_VERSION,
     'deployment.environment': DEPLOYMENT_ENVIRONMENT,
