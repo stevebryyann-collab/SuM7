@@ -115,12 +115,22 @@ jobs:
           retention-days: 3
 
   # 6 ─ Playwright end-to-end suite.
+  #
+  # The auth-gated specs (merchant/buyer portals) need minted Shopify + Clerk
+  # sessions and a seeded database — supplied as CI secrets (see
+  # tests/e2e/global-setup.ts). When those secrets are absent (forks, or before
+  # they are configured) the suite cannot meaningfully run, so the browser
+  # install + run steps are skipped and the job passes as a no-op rather than
+  # failing the whole pipeline. Set the E2E_MERCHANT_SESSION_TOKEN /
+  # E2E_BUYER_CLERK_TOKEN repo secrets to activate it.
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
     needs: build
     env:
       PLAYWRIGHT_BASE_URL: http://localhost:3000
+      E2E_MERCHANT_SESSION_TOKEN: ${{ secrets.E2E_MERCHANT_SESSION_TOKEN }}
+      E2E_BUYER_CLERK_TOKEN: ${{ secrets.E2E_BUYER_CLERK_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -130,14 +140,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @b2b/database generate
+      - name: Skip notice
+        if: ${{ env.E2E_MERCHANT_SESSION_TOKEN == '' }}
+        run: echo "E2E auth secrets not configured; skipping Playwright run (see ci.yml job 6 comment)."
       # Playwright is intentionally NOT a workspace dependency (keeps the local
-      # offline install lean); CI fetches the pinned version on demand.
+      # offline install lean); CI fetches the pinned runner on demand. Use the
+      # @playwright/test package — playwright.config.ts imports from it, so the
+      # bare `playwright` dlx package cannot resolve the config.
       - name: Install Playwright browsers
-        run: pnpm dlx playwright@1.47.2 install --with-deps chromium
+        if: ${{ env.E2E_MERCHANT_SESSION_TOKEN != '' }}
+        run: pnpm dlx @playwright/test@1.47.2 install --with-deps chromium
       - name: Run E2E
-        run: pnpm dlx playwright@1.47.2 test
+        if: ${{ env.E2E_MERCHANT_SESSION_TOKEN != '' }}
+        run: pnpm dlx @playwright/test@1.47.2 test
       - uses: actions/upload-artifact@v7
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.E2E_MERCHANT_SESSION_TOKEN != '' }}
         with:
           name: playwright-report
           path: playwright-report
