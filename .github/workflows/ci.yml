@@ -75,7 +75,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @b2b/database generate
-      - run: pnpm --filter @b2b/api test
+      # Run through turbo so workspace deps (@b2b/shared, @b2b/database) are
+      # built first via the test task's `^build` dependency. Invoking jest
+      # directly would leave @b2b/shared/dist absent and every ts-jest spec that
+      # imports it fails to resolve the module.
+      - run: pnpm exec turbo run test --filter @b2b/api
 
   # 5 ─ Build both apps (API nest build + web next build).
   build:
