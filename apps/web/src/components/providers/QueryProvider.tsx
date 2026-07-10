@@ -21,10 +21,21 @@ export function QueryProvider({ children }: { children: ReactNode }): JSX.Elemen
       <Toaster
         position="top-right"
         toastOptions={{
-          // Solid, non-translucent toasts to match the design system.
-          style: { border: '1px solid #e5e7eb', background: '#ffffff', color: '#111827' },
+          // Floating glass toast (CLAUDE.md → Notifications): translucent Cloud
+          // White over blur, soft glass shadow, generous radius. CSS vars are
+          // defined in globals.css :root.
+          style: {
+            background: 'var(--color-glass-strong)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid var(--color-glass-border)',
+            color: 'var(--color-text-primary)',
+            borderRadius: '18px',
+            fontSize: '14px',
+            boxShadow: 'var(--shadow-glass)',
+          },
+          duration: 4000,
         }}
-        duration={4000}
       />
     </QueryClientProvider>
   );

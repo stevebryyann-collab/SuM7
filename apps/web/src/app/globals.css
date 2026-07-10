@@ -1,83 +1,344 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /*
- * Global base styles. Minimalism governs: a single gray-50 page background,
- * white content panels, one accent color. No gradients, no frosted/translucent
- * surfaces, no decorative shadows on layout containers (see CLAUDE.md).
+ * Global base styles — the Apple-Weather premium glass language (see CLAUDE.md).
+ * Every page floats over a large, slow, atmospheric morning-sky gradient with
+ * softly drifting cloud shapes. Surfaces are translucent glass; nothing is a
+ * flat white card. CSS custom properties mirror the Tailwind tokens so
+ * non-Tailwind consumers (e.g. the sonner Toaster's inline style) share values.
+ * Tokens are the only source of color/shadow — never hardcode a hex in a
+ * component.
  */
+:root {
+  --color-bg: #eaf3ff;
+  --color-surface: #ffffff;
+  --color-glass: rgba(255, 255, 255, 0.72);
+  --color-glass-strong: rgba(255, 255, 255, 0.85);
+  --color-glass-border: rgba(255, 255, 255, 0.85);
+  --color-border: #dce7f3;
+  --color-border-strong: #c6d6e7;
+
+  --color-text-primary: #172536;
+  --color-text-secondary: #5a6b7e;
+  --color-text-tertiary: #8a9aac;
+  --color-text-inverse: #ffffff;
+
+  --color-ocean: #0a84ff;
+  --color-ocean-deep: #0060df;
+  --color-accent: #0a84ff;
+  --color-accent-hover: #0060df;
+  --color-accent-subtle: #e8f2ff;
+  --color-accent-border: #b9dbff;
+
+  --color-sky: #5ac8fa;
+  --color-mint: #34c759;
+  --color-amber: #ff9f0a;
+  --color-coral: #ff453a;
+  --color-fog: #8a9aac;
+
+  --color-success: #248a3d;
+  --color-warning: #b26a00;
+  --color-danger: #c42b22;
+  --color-neutral: #5a6b7e;
+
+  /* Soft, wide, diffuse, blue-gray shadows (base #1E3A5F). Never black. */
+  --shadow-sm: 0 1px 3px 0 rgba(30, 58, 95, 0.06), 0 1px 2px 0 rgba(30, 58, 95, 0.04);
+  --shadow-glass: 0 8px 30px -8px rgba(30, 58, 95, 0.16), 0 2px 10px -3px rgba(30, 58, 95, 0.08);
+  --shadow-glass-lg: 0 24px 64px -16px rgba(30, 58, 95, 0.24), 0 8px 24px -8px rgba(30, 58, 95, 0.12);
+  --shadow-glow: 0 6px 20px -4px rgba(10, 132, 255, 0.4), 0 2px 8px -2px rgba(10, 132, 255, 0.3);
+
+  --gradient-ocean: linear-gradient(135deg, #3d9bff 0%, #0a84ff 48%, #0060df 100%);
+}
 
 @layer base {
   html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: var(--color-text-primary);
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
   }
 
+  /*
+   * The atmosphere. A fixed morning-sky gradient on <body>, plus two fixed
+   * pseudo-layers of large blurred cloud blobs drifting on 34s / 42s loops.
+   * Sits behind all content (negative z-index). Barely perceptible movement.
+   */
   body {
-    @apply bg-background text-gray-900 antialiased;
+    @apply text-text-primary antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    min-height: 100vh;
+    background:
+      linear-gradient(165deg, #e6f2ff 0%, #eef6ff 40%, #edf7ff 60%, #e9fbf1 100%)
+      fixed;
   }
 
-  /* 1px borders are the primary structural device. */
+  body::before,
+  body::after {
+    content: '';
+    position: fixed;
+    inset: -20% -10%;
+    z-index: -2;
+    pointer-events: none;
+    will-change: transform;
+  }
+
+  /* Warm/cool cloud masses — sky blue, ocean tint, mint. */
+  body::before {
+    background:
+      radial-gradient(46rem 34rem at 12% 16%, rgba(90, 200, 250, 0.34), transparent 60%),
+      radial-gradient(42rem 30rem at 86% 10%, rgba(10, 132, 255, 0.2), transparent 62%),
+      radial-gradient(48rem 38rem at 80% 88%, rgba(52, 199, 89, 0.16), transparent 60%);
+    animation: atmosphere-float 34s ease-in-out infinite alternate;
+  }
+
+  /* Soft white highlights that keep the sky feeling luminous. */
+  body::after {
+    z-index: -1;
+    background:
+      radial-gradient(38rem 30rem at 30% 84%, rgba(120, 205, 255, 0.2), transparent 60%),
+      radial-gradient(34rem 26rem at 64% 38%, rgba(255, 255, 255, 0.55), transparent 66%);
+    animation: atmosphere-float-alt 42s ease-in-out infinite alternate;
+  }
+
+  /* 1px borders soften to the glass border color. */
   * {
-    border-color: theme('colors.border');
+    border-color: var(--color-border);
   }
 
   /* Tabular numerals everywhere money or counts are shown. */
   .tabular-nums {
+    font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  ::selection {
+    background: rgba(10, 132, 255, 0.18);
   }
 }
 
 @layer components {
   /*
-   * Skeuomorphic interactive depth cues — shadow-only, no transforms (Safari
-   * repaint safety). These mirror the exact rules in CLAUDE.md so feature code
-   * can opt into them by class name.
+   * Glass recipes. Every surface is translucent Cloud White over blur. These
+   * mirror the CLAUDE.md glass spec so feature code can opt in by class name and
+   * previously-shipped markup (.panel / .btn-* / .input-base) shifts language
+   * the moment this file loads.
    */
 
-  /* Default button: appears slightly raised; shadow collapses on press. */
-  .btn-base {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-gray-300
-      bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm
-      transition-shadow duration-75
-      hover:bg-gray-50
-      active:border-gray-400 active:shadow-none
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
-      disabled:pointer-events-none disabled:opacity-50;
+  /* Base glass surface — cards, panels, popovers, dropdowns. */
+  .glass {
+    background: var(--color-glass);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid var(--color-glass-border);
+    box-shadow: var(--shadow-glass);
   }
 
-  /* Primary CTA: the single accent color. */
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-accent-dark
-      bg-accent px-3 py-2 text-sm font-medium text-accent-fg shadow-sm
-      transition-shadow duration-75
-      active:shadow-none active:brightness-95
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40
-      disabled:pointer-events-none disabled:opacity-50;
+  /* Stronger, more opaque glass — navigation, sticky bars, toasts. */
+  .glass-strong {
+    background: var(--color-glass-strong);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--color-glass-border);
+    box-shadow: var(--shadow-glass);
   }
 
-  /* Destructive variant (reuses red, not a second accent — destructive is semantic). */
-  .btn-destructive {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-red-700
-      bg-red-600 px-3 py-2 text-sm font-medium text-white shadow-sm
-      transition-shadow duration-75
-      active:shadow-none active:brightness-95
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40
-      disabled:pointer-events-none disabled:opacity-50;
-  }
-
-  /* Recessed form input. shadow-inner is the only depth cue; no focus glow ring. */
-  .input-base {
-    @apply w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-900
-      shadow-inner transition-colors duration-75 placeholder:text-gray-400
-      focus:border-gray-400 focus:bg-white focus:outline-none focus:ring-0
-      disabled:cursor-not-allowed disabled:opacity-50;
-  }
-
-  /* One layer of depth only — never stacked, never hover:shadow-md. */
+  /* Primary card — floats, glides up on hover (250ms spring). */
   .panel {
-    @apply rounded-lg border border-gray-200 bg-white shadow-sm;
+    @apply rounded-xl;
+    background: var(--color-glass);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid var(--color-glass-border);
+    box-shadow: var(--shadow-glass);
+  }
+
+  /* Opt-in hover lift for interactive cards. */
+  .card-interactive {
+    transition:
+      transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 250ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .card-interactive:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-glass-lg);
+  }
+
+  /*
+   * Primary CTA — Ocean Blue gradient, soft glow, lifts on hover, presses on
+   * click, all spring-eased (CLAUDE.md button spec).
+   */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-base
+      font-medium text-white;
+    background-image: var(--gradient-ocean);
+    box-shadow: var(--shadow-glow);
+    transition:
+      transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 150ms ease;
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-glow), 0 10px 30px -6px rgba(10, 132, 255, 0.52);
+  }
+  .btn-primary:active {
+    transform: scale(0.97);
+  }
+  .btn-primary:disabled {
+    @apply pointer-events-none opacity-50;
+  }
+
+  /* Secondary — glass, transparent, soft border, hover tint. */
+  .btn-base {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-base
+      font-medium text-text-primary;
+    background: var(--color-glass-strong);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid var(--color-glass-border);
+    box-shadow: var(--shadow-sm);
+    transition:
+      transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 150ms ease;
+  }
+  .btn-base:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: var(--shadow-glass);
+  }
+  .btn-base:active {
+    transform: scale(0.98);
+  }
+  .btn-base:disabled {
+    @apply pointer-events-none opacity-50;
+  }
+
+  /* Destructive (Coral) — same motion as primary. */
+  .btn-destructive {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-base
+      font-medium text-white;
+    background-image: linear-gradient(135deg, #ff6a60 0%, #ff453a 50%, #c42b22 100%);
+    box-shadow: 0 6px 20px -4px rgba(255, 69, 58, 0.4);
+    transition:
+      transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .btn-destructive:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px -6px rgba(255, 69, 58, 0.52);
+  }
+  .btn-destructive:active {
+    transform: scale(0.97);
+  }
+
+  /* Glass input — soft border, soft outer glow on focus (no browser outline). */
+  .input-base {
+    @apply w-full rounded-md px-3 py-2 text-base text-text-primary placeholder:text-text-tertiary;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border);
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease,
+      background-color 150ms ease;
+  }
+  .input-base:focus {
+    @apply outline-none;
+    background: rgba(255, 255, 255, 0.9);
+    border-color: var(--color-ocean);
+    box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.16);
+  }
+  .input-base:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
+  /* Pill chip. */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  /* Skeleton — glass with a travelling shimmer band. */
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.5);
+  }
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.75),
+      transparent
+    );
+    animation: shimmer 1.8s infinite;
+  }
+}
+
+/* Cloud drift (atmosphere). Kept out of the Tailwind keyframe set so it always
+ * runs on <body> regardless of purge. */
+@keyframes atmosphere-float {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(3%, -2.5%, 0) scale(1.08);
+  }
+}
+@keyframes atmosphere-float-alt {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(-4%, 3%, 0) scale(1);
+  }
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/*
+ * Content fade-up (skeleton → data). Consumed by <FadeIn>. Opacity + 12px rise,
+ * calm spring. Staggered by feature code for a light cascade.
+ */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Respect reduced-motion: freeze the atmosphere and all entrance choreography. */
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none !important;
+  }
+  .fade-in,
+  .card-interactive {
+    animation: none !important;
+    transition: none !important;
+  }
+  .btn-primary,
+  .btn-base,
+  .btn-destructive {
+    transition: none !important;
   }
 }

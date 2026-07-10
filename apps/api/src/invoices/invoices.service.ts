@@ -6,35 +6,47 @@ import {
   Logger,
   NotFoundException,
   UnprocessableEntityException,
-} from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
-import { Prisma } from '@prisma/client';
-import { Decimal } from 'decimal.js';
-import { addDays, format, subDays } from 'date-fns';
-import * as Sentry from '@sentry/node';
+} from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
+import { Prisma } from "@prisma/client";
+import { Decimal } from "decimal.js";
+import { addDays, format, subDays } from "date-fns";
+import * as Sentry from "@sentry/node";
 import type {
   CursorPaginationInput,
   DecodedCursor,
   InvoiceStatus,
   PaginatedResponse,
-} from '@b2b/shared';
-import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
-import { InvoicePdfService } from './invoice-pdf.service';
-import { StorageService } from '../storage/storage.service';
-import { EmailService } from '../email/email.service';
-import { PAYMENT_TERMS_DAYS } from '../workers/worker-helpers';
-import type { PaymentTerms } from '@b2b/shared';
+} from "@b2b/shared";
+import {
+  PrismaService,
+  type PrismaTransaction,
+} from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
+import { InvoicePdfService } from "./invoice-pdf.service";
+import { StorageService } from "../storage/storage.service";
+import { EmailService } from "../email/email.service";
+import { PAYMENT_TERMS_DAYS } from "../workers/worker-helpers";
+import type { PaymentTerms } from "@b2b/shared";
 
-const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
-const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const Money = Decimal.clone({
+  rounding: Decimal.ROUND_HALF_EVEN,
+  precision: 40,
+});
+const UUID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const CREDIT_CAS_RETRIES = 3;
 const REMINDER_BATCH = 100;
 /** Max payment reminders per invoice and the minimum gap between them. */
 const REMINDER_MAX = 3;
 const REMINDER_COOLDOWN_DAYS = 7;
 /** Invoice statuses a payment reminder may be sent for. */
-const REMINDABLE_STATUSES: InvoiceStatus[] = ['sent', 'viewed', 'partially_paid', 'overdue'];
+const REMINDABLE_STATUSES: InvoiceStatus[] = [
+  "sent",
+  "viewed",
+  "partially_paid",
+  "overdue",
+];
 
 export interface GenerateInvoiceParams {
   orderId: string;
@@ -171,26 +183,34 @@ export interface MerchantInvoiceFilters {
  * matching the getArAging CTE exactly: `gteDays`/`ltDays` are the inclusive
  * lower / exclusive upper bounds as `subDays(now, n)` (null = open-ended).
  */
-const AGING_BUCKET_WINDOWS: Record<string, { gteDays: number | null; ltDays: number | null }> = {
+const AGING_BUCKET_WINDOWS: Record<
+  string,
+  { gteDays: number | null; ltDays: number | null }
+> = {
   current: { gteDays: 0, ltDays: null }, // due_date >= now
-  '1-30': { gteDays: 30, ltDays: 0 }, // now-30 <= due_date < now
-  '31-60': { gteDays: 60, ltDays: 30 },
-  '61-90': { gteDays: 90, ltDays: 60 },
-  '90-plus': { gteDays: null, ltDays: 90 }, // due_date < now-90
+  "1-30": { gteDays: 30, ltDays: 0 }, // now-30 <= due_date < now
+  "31-60": { gteDays: 60, ltDays: 30 },
+  "61-90": { gteDays: 90, ltDays: 60 },
+  "90-plus": { gteDays: null, ltDays: 90 }, // due_date < now-90
 };
 
 /** Statuses considered outstanding for AR-aging (mirror of the getArAging CTE). */
-const OUTSTANDING_STATUSES: InvoiceStatus[] = ['sent', 'viewed', 'partially_paid', 'overdue'];
+const OUTSTANDING_STATUSES: InvoiceStatus[] = [
+  "sent",
+  "viewed",
+  "partially_paid",
+  "overdue",
+];
 
 // Single source of truth for the aging-bucket keys; `AgingBucketKey` is derived
 // from it, so the value is referenced only at the type level (hence the disable).
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const AGING_BUCKETS = [
-  'current',
-  'overdue_1_30',
-  'overdue_31_60',
-  'overdue_61_90',
-  'overdue_90_plus',
+  "current",
+  "overdue_1_30",
+  "overdue_31_60",
+  "overdue_61_90",
+  "overdue_90_plus",
 ] as const;
 type AgingBucketKey = (typeof AGING_BUCKETS)[number];
 
@@ -246,7 +266,9 @@ export class InvoicesService {
    * Generate, render, store and persist an invoice for an order. The PDF render
    * + S3 upload happen before the DB write so the transaction stays short.
    */
-  async generateAndStoreInvoice(params: GenerateInvoiceParams): Promise<{ id: string; invoiceNumber: string }> {
+  async generateAndStoreInvoice(
+    params: GenerateInvoiceParams,
+  ): Promise<{ id: string; invoiceNumber: string }> {
     this.assertUuid(params.merchantId);
     this.assertUuid(params.orderId);
 
@@ -261,8 +283,12 @@ export class InvoicesService {
           shippingAmount: true,
           total: true,
           currency: true,
-          merchant: { select: { shopifyDomain: true } },
-          buyer: { select: { companyName: true, email: true, addressJson: true } },
+          merchant: {
+            select: { shopifyDomain: true, paymentInstructions: true },
+          },
+          buyer: {
+            select: { companyName: true, email: true, addressJson: true },
+          },
           lineItems: {
             select: {
               productTitle: true,
@@ -276,25 +302,33 @@ export class InvoicesService {
         },
       });
       if (!order) {
-        throw new NotFoundException({ code: 'ORDER_NOT_FOUND', message: 'Order not found' });
+        throw new NotFoundException({
+          code: "ORDER_NOT_FOUND",
+          message: "Order not found",
+        });
       }
 
       const invoiceDate = params.invoiceDate ?? new Date();
-      const dueDate = addDays(invoiceDate, PAYMENT_TERMS_DAYS[params.paymentTerms]);
+      const dueDate = addDays(
+        invoiceDate,
+        PAYMENT_TERMS_DAYS[params.paymentTerms],
+      );
       const invoiceNumber = await this.nextInvoiceNumber(invoiceDate);
 
       const pdf = await this.invoicePdf.generate({
         invoiceNumber,
-        invoiceDate: format(invoiceDate, 'dd MMM yyyy'),
-        dueDate: format(dueDate, 'dd MMM yyyy'),
+        invoiceDate: format(invoiceDate, "dd MMM yyyy"),
+        dueDate: format(dueDate, "dd MMM yyyy"),
         merchantName: order.merchant.shopifyDomain,
         buyerCompany: order.buyer.companyName,
         buyerEmail: order.buyer.email,
         buyerAddressLines: this.formatAddress(order.buyer.addressJson),
         currency: order.currency,
         paymentTerms: this.humanTerms(params.paymentTerms),
+        paymentInstructions: order.merchant.paymentInstructions,
         lines: order.lineItems.map((li) => ({
-          description: li.productTitle + (li.variantTitle ? ` — ${li.variantTitle}` : ''),
+          description:
+            li.productTitle + (li.variantTitle ? ` — ${li.variantTitle}` : ""),
           sku: li.sku,
           quantity: li.quantity,
           unitPrice: li.unitPrice.toFixed(2),
@@ -325,7 +359,7 @@ export class InvoicesService {
             taxAmount: order.taxAmount.toFixed(2),
             total: order.total.toFixed(2),
             currency: order.currency,
-            status: 'sent',
+            status: "sent",
             pdfS3Key: upload.key,
             pdfSha256: pdf.sha256,
             sentAt: new Date(),
@@ -334,35 +368,55 @@ export class InvoicesService {
         }),
       );
 
-      await this.writeAudit(params.merchantId, invoice.id, 'created', null, { invoiceNumber }, 'system');
+      await this.writeAudit(
+        params.merchantId,
+        invoice.id,
+        "created",
+        null,
+        { invoiceNumber },
+        "system",
+      );
       return invoice;
     });
   }
 
   // ── Integrity ───────────────────────────────────────────────────────────
 
-  async verifyPdfIntegrity(invoiceId: string): Promise<IntegrityResult> {
+  async verifyPdfIntegrity(
+    invoiceId: string,
+    merchantId: string,
+  ): Promise<IntegrityResult> {
     this.assertUuid(invoiceId);
+    this.assertUuid(merchantId);
     const checkedAt = new Date().toISOString();
     const invoice = await this.merchantContext.runAsSystem(() =>
-      this.prisma.invoice.findUnique({
-        where: { id: invoiceId },
-        select: { pdfS3Key: true, pdfSha256: true, merchantId: true, invoiceNumber: true },
+      this.prisma.invoice.findFirst({
+        where: { id: invoiceId, merchantId },
+        select: {
+          pdfS3Key: true,
+          pdfSha256: true,
+          merchantId: true,
+          invoiceNumber: true,
+        },
       }),
     );
     if (!invoice || !invoice.pdfS3Key) {
-      throw new NotFoundException({ code: 'INVOICE_PDF_NOT_FOUND', message: 'Invoice PDF not found' });
+      throw new NotFoundException({
+        code: "INVOICE_PDF_NOT_FOUND",
+        message: "Invoice PDF not found",
+      });
     }
 
     const bytes = await this.storage.downloadObject(invoice.pdfS3Key);
-    const { createHash } = await import('node:crypto');
-    const computedHash = createHash('sha256').update(bytes).digest('hex');
-    const valid = invoice.pdfSha256 !== null && computedHash === invoice.pdfSha256;
+    const { createHash } = await import("node:crypto");
+    const computedHash = createHash("sha256").update(bytes).digest("hex");
+    const valid =
+      invoice.pdfSha256 !== null && computedHash === invoice.pdfSha256;
 
     if (!valid) {
-      Sentry.captureMessage('Invoice PDF integrity mismatch', {
-        level: 'fatal',
-        tags: { component: 'invoices', check: 'integrity' },
+      Sentry.captureMessage("Invoice PDF integrity mismatch", {
+        level: "fatal",
+        tags: { component: "invoices", check: "integrity" },
         extra: {
           invoiceId,
           merchantId: invoice.merchantId,
@@ -371,7 +425,9 @@ export class InvoicesService {
           computedHash,
         },
       });
-      this.logger.error(`PDF integrity mismatch for invoice ${invoice.invoiceNumber}`);
+      this.logger.error(
+        `PDF integrity mismatch for invoice ${invoice.invoiceNumber}`,
+      );
     }
 
     return { valid, storedHash: invoice.pdfSha256, computedHash, checkedAt };
@@ -379,7 +435,10 @@ export class InvoicesService {
 
   // ── Buyer PDF access ──────────────────────────────────────────────────
 
-  async getPresignedUrl(invoiceId: string, requestingBuyerId: string): Promise<string> {
+  async getPresignedUrl(
+    invoiceId: string,
+    requestingBuyerId: string,
+  ): Promise<string> {
     this.assertUuid(invoiceId);
     this.assertUuid(requestingBuyerId);
     const invoice = await this.merchantContext.runAsSystem(() =>
@@ -389,10 +448,16 @@ export class InvoicesService {
       }),
     );
     if (!invoice || !invoice.pdfS3Key) {
-      throw new NotFoundException({ code: 'INVOICE_PDF_NOT_FOUND', message: 'Invoice PDF not found' });
+      throw new NotFoundException({
+        code: "INVOICE_PDF_NOT_FOUND",
+        message: "Invoice PDF not found",
+      });
     }
     if (invoice.buyerId !== requestingBuyerId) {
-      throw new ForbiddenException({ code: 'INVOICE_ACCESS_DENIED', message: 'Not your invoice' });
+      throw new ForbiddenException({
+        code: "INVOICE_ACCESS_DENIED",
+        message: "Not your invoice",
+      });
     }
 
     // Atomic first-view stamp (only sets when currently null).
@@ -404,6 +469,43 @@ export class InvoicesService {
     );
 
     return this.storage.getPresignedUrl(invoice.pdfS3Key, 3600);
+  }
+
+  /**
+   * Lightweight integrity presence check for the buyer portal. Returns whether a
+   * stored PDF SHA-256 exists (the "verified" indicator) plus the invoice number.
+   * Ownership is enforced — a buyer can only probe their own invoices. Full hash
+   * verification runs elsewhere (merchant `verifyIntegrity` + compliance cron);
+   * this is a fast presence check safe to poll.
+   */
+  async getBuyerInvoiceIntegrity(
+    invoiceId: string,
+    requestingBuyerId: string,
+  ): Promise<{ hasIntegrityHash: boolean; invoiceNumber: string }> {
+    this.assertUuid(invoiceId);
+    this.assertUuid(requestingBuyerId);
+    const invoice = await this.merchantContext.runAsSystem(() =>
+      this.prisma.invoice.findUnique({
+        where: { id: invoiceId },
+        select: { buyerId: true, pdfSha256: true, invoiceNumber: true },
+      }),
+    );
+    if (!invoice) {
+      throw new NotFoundException({
+        code: "INVOICE_NOT_FOUND",
+        message: "Invoice not found",
+      });
+    }
+    if (invoice.buyerId !== requestingBuyerId) {
+      throw new ForbiddenException({
+        code: "INVOICE_ACCESS_DENIED",
+        message: "Not your invoice",
+      });
+    }
+    return {
+      hasIntegrityHash: invoice.pdfSha256 !== null,
+      invoiceNumber: invoice.invoiceNumber,
+    };
   }
 
   // ── Void ────────────────────────────────────────────────────────────────
@@ -420,31 +522,55 @@ export class InvoicesService {
 
     const result = await this.merchantContext.run(merchantId, () =>
       this.prisma.withTenantTransaction(async (tx) => {
-        const invoice = await tx.invoice.findFirst({
-          where: { id: invoiceId, merchantId },
-          select: { id: true, status: true, buyerId: true, invoiceNumber: true },
-        });
+        // Lock the invoice row so two concurrent voids serialize: the second
+        // waits on the lock, then sees status='void' below and is rejected.
+        // Mirrors the markAsPaid FOR UPDATE pattern — READ COMMITTED alone let
+        // both voids pass the status check and write two audit rows (§6 HIGH).
+        const rows = await tx.$queryRaw<
+          Array<{
+            id: string;
+            status: string;
+            buyerId: string;
+            invoiceNumber: string;
+          }>
+        >`
+          SELECT i.id,
+                 i.status,
+                 i.buyer_id       AS "buyerId",
+                 i.invoice_number AS "invoiceNumber"
+          FROM invoices i
+          WHERE i.id = ${invoiceId}::uuid AND i.merchant_id = ${merchantId}::uuid
+          FOR UPDATE`;
+        const invoice = rows[0];
         if (!invoice) {
-          throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+          throw new NotFoundException({
+            code: "INVOICE_NOT_FOUND",
+            message: "Invoice not found",
+          });
         }
-        if (invoice.status === 'void' || invoice.status === 'paid') {
+        if (invoice.status === "void" || invoice.status === "paid") {
           throw new ConflictException({
-            code: 'INVOICE_NOT_VOIDABLE',
+            code: "INVOICE_NOT_VOIDABLE",
             message: `Invoice is ${invoice.status} and cannot be voided`,
           });
         }
         const updated = await tx.invoice.update({
           where: { id: invoiceId },
-          data: { status: 'void', voidedAt: new Date(), voidReason: reason },
-          select: { id: true, status: true, buyerId: true, invoiceNumber: true },
+          data: { status: "void", voidedAt: new Date(), voidReason: reason },
+          select: {
+            id: true,
+            status: true,
+            buyerId: true,
+            invoiceNumber: true,
+          },
         });
         await this.writeAudit(
           merchantId,
           invoiceId,
-          'voided',
+          "voided",
           { status: invoice.status },
-          { status: 'void', reason },
-          'merchant_user',
+          { status: "void", reason },
+          "merchant_user",
           actorId,
           tx,
         );
@@ -454,16 +580,22 @@ export class InvoicesService {
 
     // Notify the buyer (non-throwing).
     const buyer = await this.merchantContext.runAsSystem(() =>
-      this.prisma.buyer.findUnique({ where: { id: result.buyerId }, select: { email: true, companyName: true } }),
+      this.prisma.buyer.findUnique({
+        where: { id: result.buyerId },
+        select: { email: true, companyName: true },
+      }),
     );
     const merchant = await this.merchantContext.runAsSystem(() =>
-      this.prisma.merchant.findUnique({ where: { id: merchantId }, select: { shopifyDomain: true } }),
+      this.prisma.merchant.findUnique({
+        where: { id: merchantId },
+        select: { shopifyDomain: true },
+      }),
     );
     if (buyer) {
       await this.email.sendInvoiceVoidNotification({
         to: buyer.email,
         buyerCompany: buyer.companyName,
-        merchantName: merchant?.shopifyDomain ?? 'your supplier',
+        merchantName: merchant?.shopifyDomain ?? "your supplier",
         invoiceNumber: result.invoiceNumber,
         reason,
       });
@@ -486,7 +618,10 @@ export class InvoicesService {
 
     const payment = new Money(dto.amountPaid);
     if (payment.lessThanOrEqualTo(0)) {
-      throw new BadRequestException({ code: 'INVALID_AMOUNT', message: 'Payment amount must be positive' });
+      throw new BadRequestException({
+        code: "INVALID_AMOUNT",
+        message: "Payment amount must be positive",
+      });
     }
 
     const outcome = await this.merchantContext.run(merchantId, () =>
@@ -512,11 +647,14 @@ export class InvoicesService {
           FOR UPDATE`;
         const invoice = rows[0];
         if (!invoice) {
-          throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+          throw new NotFoundException({
+            code: "INVOICE_NOT_FOUND",
+            message: "Invoice not found",
+          });
         }
-        if (invoice.status === 'paid' || invoice.status === 'void') {
+        if (invoice.status === "paid" || invoice.status === "void") {
           throw new ConflictException({
-            code: 'INVOICE_NOT_PAYABLE',
+            code: "INVOICE_NOT_PAYABLE",
             message: `Invoice is ${invoice.status}`,
           });
         }
@@ -525,7 +663,7 @@ export class InvoicesService {
         const prevPaid = new Money(invoice.amountPaid.toString());
         const newPaid = Money.min(prevPaid.plus(payment), total);
         const fullyPaid = newPaid.greaterThanOrEqualTo(total);
-        const newStatus: InvoiceStatus = fullyPaid ? 'paid' : 'partially_paid';
+        const newStatus: InvoiceStatus = fullyPaid ? "paid" : "partially_paid";
         const paidDelta = newPaid.minus(prevPaid);
 
         await tx.invoice.update({
@@ -546,10 +684,14 @@ export class InvoicesService {
         await this.writeAudit(
           merchantId,
           invoiceId,
-          'paid',
+          "paid",
           { status: invoice.status, amountPaid: prevPaid.toFixed(2) },
-          { status: newStatus, amountPaid: newPaid.toFixed(2), reference: dto.reference ?? null },
-          'merchant_user',
+          {
+            status: newStatus,
+            amountPaid: newPaid.toFixed(2),
+            reference: dto.reference ?? null,
+          },
+          "merchant_user",
           actorId,
           tx,
         );
@@ -558,15 +700,21 @@ export class InvoicesService {
       }),
     );
 
-    return { id: invoiceId, status: outcome.status, amountPaid: outcome.amountPaid };
+    return {
+      id: invoiceId,
+      status: outcome.status,
+      amountPaid: outcome.amountPaid,
+    };
   }
 
   // ── AR aging ─────────────────────────────────────────────────────────
 
   async getArAging(merchantId: string): Promise<ArAgingResult> {
     this.assertUuid(merchantId);
-    const rows = await this.merchantContext.run(merchantId, () =>
-      this.prisma.$queryRaw<AgingRow[]>`
+    const rows = await this.merchantContext.run(
+      merchantId,
+      () =>
+        this.prisma.$queryRaw<AgingRow[]>`
         WITH aging AS (
           SELECT
             CASE
@@ -595,16 +743,18 @@ export class InvoicesService {
       return {
         bucket: key,
         invoiceCount: row ? Number(row.invoice_count) : 0,
-        outstandingAmount: row ? new Money(row.outstanding_amount.toString()).toFixed(2) : '0.00',
+        outstandingAmount: row
+          ? new Money(row.outstanding_amount.toString()).toFixed(2)
+          : "0.00",
       };
     };
 
     return {
-      current: build('current'),
-      overdue_1_30: build('overdue_1_30'),
-      overdue_31_60: build('overdue_31_60'),
-      overdue_61_90: build('overdue_61_90'),
-      overdue_90_plus: build('overdue_90_plus'),
+      current: build("current"),
+      overdue_1_30: build("overdue_1_30"),
+      overdue_31_60: build("overdue_31_60"),
+      overdue_61_90: build("overdue_61_90"),
+      overdue_90_plus: build("overdue_90_plus"),
     };
   }
 
@@ -617,7 +767,10 @@ export class InvoicesService {
    * audit entries (with merchant-user actor labels resolved). Throws
    * `INVOICE_NOT_FOUND` when nothing matches the scope.
    */
-  async getInvoiceDetail(merchantId: string, invoiceId: string): Promise<InvoiceDetail> {
+  async getInvoiceDetail(
+    merchantId: string,
+    invoiceId: string,
+  ): Promise<InvoiceDetail> {
     this.assertUuid(merchantId);
     this.assertUuid(invoiceId);
 
@@ -646,7 +799,9 @@ export class InvoicesService {
           lastReminderAt: true,
           createdAt: true,
           merchant: { select: { shopifyDomain: true } },
-          buyer: { select: { companyName: true, email: true, addressJson: true } },
+          buyer: {
+            select: { companyName: true, email: true, addressJson: true },
+          },
           order: {
             select: {
               shopifyOrderNumber: true,
@@ -666,12 +821,15 @@ export class InvoicesService {
         },
       });
       if (!invoice) {
-        throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+        throw new NotFoundException({
+          code: "INVOICE_NOT_FOUND",
+          message: "Invoice not found",
+        });
       }
 
       const auditRows = await this.prisma.auditLog.findMany({
-        where: { entityType: 'invoice', entityId: invoiceId, merchantId },
-        orderBy: { createdAt: 'desc' },
+        where: { entityType: "invoice", entityId: invoiceId, merchantId },
+        orderBy: { createdAt: "desc" },
         take: 25,
         select: {
           id: true,
@@ -688,7 +846,7 @@ export class InvoicesService {
       const actorIds = Array.from(
         new Set(
           auditRows
-            .filter((row) => row.actorType === 'merchant_user' && row.actorId)
+            .filter((row) => row.actorType === "merchant_user" && row.actorId)
             .map((row) => row.actorId as string),
         ),
       );
@@ -699,27 +857,37 @@ export class InvoicesService {
           select: { id: true, firstName: true, lastName: true, email: true },
         });
         for (const user of users) {
-          const name = [user.firstName, user.lastName].filter((p) => p && p.length > 0).join(' ');
+          const name = [user.firstName, user.lastName]
+            .filter((p) => p && p.length > 0)
+            .join(" ");
           actorLabels.set(user.id, name.length > 0 ? name : user.email);
         }
       }
-      const labelFor = (actorType: string, actorId: string | null): string | null => {
-        if (actorType === 'merchant_user' && actorId) return actorLabels.get(actorId) ?? null;
+      const labelFor = (
+        actorType: string,
+        actorId: string | null,
+      ): string | null => {
+        if (actorType === "merchant_user" && actorId)
+          return actorLabels.get(actorId) ?? null;
         return null;
       };
 
       // Payment history = audit rows of action 'paid', oldest first; the recorded
       // amount is the cumulative-paid delta between the old and new audit values.
       const payments: InvoicePayment[] = auditRows
-        .filter((row) => row.action === 'paid')
+        .filter((row) => row.action === "paid")
         .map((row) => {
-          const prev = new Money(this.jsonField(row.oldValueJson, 'amountPaid') ?? '0');
-          const next = new Money(this.jsonField(row.newValueJson, 'amountPaid') ?? '0');
+          const prev = new Money(
+            this.jsonField(row.oldValueJson, "amountPaid") ?? "0",
+          );
+          const next = new Money(
+            this.jsonField(row.newValueJson, "amountPaid") ?? "0",
+          );
           const delta = next.minus(prev);
           return {
             amount: (delta.greaterThan(0) ? delta : next).toFixed(2),
             paidAt: row.createdAt.toISOString(),
-            reference: this.jsonField(row.newValueJson, 'reference'),
+            reference: this.jsonField(row.newValueJson, "reference"),
             recordedBy: labelFor(row.actorType, row.actorId),
           };
         })
@@ -746,7 +914,9 @@ export class InvoicesService {
         buyerId: invoice.buyerId,
         buyerCompanyName: invoice.buyer?.companyName ?? null,
         buyerEmail: invoice.buyer?.email ?? null,
-        buyerAddressLines: this.formatAddress(invoice.buyer?.addressJson ?? null),
+        buyerAddressLines: this.formatAddress(
+          invoice.buyer?.addressJson ?? null,
+        ),
         merchantName: invoice.merchant.shopifyDomain,
         invoiceDate: invoice.invoiceDate.toISOString(),
         dueDate: invoice.dueDate.toISOString(),
@@ -758,12 +928,16 @@ export class InvoicesService {
         outstanding: outstanding.toFixed(2),
         currency: invoice.currency,
         sentAt: invoice.sentAt ? invoice.sentAt.toISOString() : null,
-        firstViewedAt: invoice.firstViewedAt ? invoice.firstViewedAt.toISOString() : null,
+        firstViewedAt: invoice.firstViewedAt
+          ? invoice.firstViewedAt.toISOString()
+          : null,
         paidAt: invoice.paidAt ? invoice.paidAt.toISOString() : null,
         voidedAt: invoice.voidedAt ? invoice.voidedAt.toISOString() : null,
         voidReason: invoice.voidReason,
         reminderCount: invoice.reminderCount,
-        lastReminderAt: invoice.lastReminderAt ? invoice.lastReminderAt.toISOString() : null,
+        lastReminderAt: invoice.lastReminderAt
+          ? invoice.lastReminderAt.toISOString()
+          : null,
         createdAt: invoice.createdAt.toISOString(),
         lineItems: invoice.order
           ? invoice.order.lineItems.map((li) => ({
@@ -805,7 +979,7 @@ export class InvoicesService {
       const window = AGING_BUCKET_WINDOWS[params.agingBucket];
       if (!window) {
         throw new BadRequestException({
-          code: 'INVALID_AGING_BUCKET',
+          code: "INVALID_AGING_BUCKET",
           message: `Unknown aging bucket: ${params.agingBucket}`,
         });
       }
@@ -828,7 +1002,7 @@ export class InvoicesService {
     const rows = await this.merchantContext.run(merchantId, () =>
       this.prisma.invoice.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: params.limit + 1,
         select: this.invoiceListSelect,
       }),
@@ -863,7 +1037,7 @@ export class InvoicesService {
     const rows = await this.merchantContext.run(merchantId, () =>
       this.prisma.invoice.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: params.limit + 1,
         select: this.invoiceListSelect,
       }),
@@ -888,13 +1062,19 @@ export class InvoicesService {
   } satisfies Prisma.InvoiceSelect;
 
   /** Map raw invoice rows into a cursor-paginated InvoiceSummary page. */
-  private toInvoicePage(rows: InvoiceListRow[], limit: number): PaginatedResponse<InvoiceSummary> {
+  private toInvoicePage(
+    rows: InvoiceListRow[],
+    limit: number,
+  ): PaginatedResponse<InvoiceSummary> {
     const hasNextPage = rows.length > limit;
     const page = hasNextPage ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const endCursor =
       hasNextPage && last
-        ? this.encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+        ? this.encodeCursor({
+            createdAt: last.createdAt.toISOString(),
+            id: last.id,
+          })
         : null;
 
     return {
@@ -907,7 +1087,9 @@ export class InvoicesService {
         amountPaid: new Money(row.amountPaid.toString()).toFixed(2),
         dueDate: row.dueDate.toISOString(),
         issuedAt: row.sentAt ? row.sentAt.toISOString() : null,
-        lastReminderAt: row.lastReminderAt ? row.lastReminderAt.toISOString() : null,
+        lastReminderAt: row.lastReminderAt
+          ? row.lastReminderAt.toISOString()
+          : null,
         reminderCount: row.reminderCount,
         createdAt: row.createdAt.toISOString(),
       })),
@@ -916,25 +1098,33 @@ export class InvoicesService {
   }
 
   private encodeCursor(cursor: DecodedCursor): string {
-    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
+    return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64");
   }
 
   private decodeCursor(raw: string | undefined): DecodedCursor | null {
     if (!raw) return null;
     try {
-      const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Partial<DecodedCursor>;
-      if (typeof parsed.createdAt === 'string' && typeof parsed.id === 'string') {
+      const parsed = JSON.parse(
+        Buffer.from(raw, "base64").toString("utf8"),
+      ) as Partial<DecodedCursor>;
+      if (
+        typeof parsed.createdAt === "string" &&
+        typeof parsed.id === "string"
+      ) {
         return { createdAt: parsed.createdAt, id: parsed.id };
       }
     } catch {
       // fall through to the invalid-cursor error
     }
-    throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Malformed pagination cursor' });
+    throw new BadRequestException({
+      code: "INVALID_CURSOR",
+      message: "Malformed pagination cursor",
+    });
   }
 
   // ── Scheduled jobs ────────────────────────────────────────────────────
 
-  @Cron('0 * * * *')
+  @Cron("0 * * * *")
   async runOverdueDetection(): Promise<{ updatedCount: number }> {
     return this.merchantContext.runAsSystem(async () => {
       const updated = await this.prisma.$executeRaw`
@@ -942,18 +1132,20 @@ export class InvoicesService {
         SET status = 'overdue', updated_at = NOW()
         WHERE status IN ('sent','viewed','partially_paid') AND due_date < NOW()`;
       if (updated > 0) {
-        this.logger.log(`Overdue detection marked ${updated} invoice(s) overdue`);
+        this.logger.log(
+          `Overdue detection marked ${updated} invoice(s) overdue`,
+        );
       }
       return { updatedCount: updated };
     });
   }
 
-  @Cron('0 7 * * *')
+  @Cron("0 7 * * *")
   async sendPaymentReminders(): Promise<{ sentCount: number }> {
     return this.merchantContext.runAsSystem(async () => {
       const invoices = await this.prisma.invoice.findMany({
         where: {
-          status: 'overdue',
+          status: "overdue",
           reminderCount: { lt: 3 },
           OR: [
             { lastReminderAt: null },
@@ -982,7 +1174,9 @@ export class InvoicesService {
           .toFixed(2);
         const daysOverdue = Math.max(
           0,
-          Math.floor((Date.now() - invoice.dueDate.getTime()) / (24 * 60 * 60 * 1000)),
+          Math.floor(
+            (Date.now() - invoice.dueDate.getTime()) / (24 * 60 * 60 * 1000),
+          ),
         );
         try {
           const result = await this.email.sendPaymentReminderEmail({
@@ -992,7 +1186,7 @@ export class InvoicesService {
             merchantEmail: invoice.merchant.shopifyDomain,
             outstandingAmount: outstanding,
             currency: invoice.currency,
-            dueDate: format(invoice.dueDate, 'dd MMM yyyy'),
+            dueDate: format(invoice.dueDate, "dd MMM yyyy"),
             daysOverdue,
             reminderCount: nextCount,
             portalUrl: null,
@@ -1017,11 +1211,16 @@ export class InvoicesService {
     });
   }
 
-  @Cron('0 2 * * *')
+  @Cron("0 2 * * *")
   async checkSequenceGaps(): Promise<void> {
     await this.merchantContext.runAsSystem(async () => {
       const gaps = await this.prisma.$queryRaw<
-        Array<{ merchantId: string; expected: number; found: number; invoiceNumber: string }>
+        Array<{
+          merchantId: string;
+          expected: number;
+          found: number;
+          invoiceNumber: string;
+        }>
       >`
         WITH numbered AS (
           SELECT
@@ -1041,9 +1240,9 @@ export class InvoicesService {
         WHERE prev_seq IS NOT NULL AND seq <> prev_seq + 1`;
 
       for (const gap of gaps) {
-        Sentry.captureMessage('Invoice sequence gap detected', {
-          level: 'fatal',
-          tags: { component: 'invoices', check: 'sequence_gap' },
+        Sentry.captureMessage("Invoice sequence gap detected", {
+          level: "fatal",
+          tags: { component: "invoices", check: "sequence_gap" },
           extra: gap,
         });
         this.logger.error(
@@ -1084,7 +1283,12 @@ export class InvoicesService {
             select: {
               paymentTerms: true,
               lineItems: {
-                select: { productTitle: true, variantTitle: true, quantity: true, lineTotal: true },
+                select: {
+                  productTitle: true,
+                  variantTitle: true,
+                  quantity: true,
+                  lineTotal: true,
+                },
               },
             },
           },
@@ -1092,21 +1296,29 @@ export class InvoicesService {
       }),
     );
     if (!invoice) {
-      throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+      throw new NotFoundException({
+        code: "INVOICE_NOT_FOUND",
+        message: "Invoice not found",
+      });
     }
-    if (invoice.status === 'void') {
+    if (invoice.status === "void") {
       throw new ConflictException({
-        code: 'INVOICE_VOID',
-        message: 'A voided invoice cannot be re-sent',
+        code: "INVOICE_VOID",
+        message: "A voided invoice cannot be re-sent",
       });
     }
 
     let presignedUrl: string | null = null;
     if (invoice.pdfS3Key) {
       try {
-        presignedUrl = await this.storage.getPresignedUrl(invoice.pdfS3Key, 3600);
+        presignedUrl = await this.storage.getPresignedUrl(
+          invoice.pdfS3Key,
+          3600,
+        );
       } catch (error) {
-        this.logger.error(`Failed to presign invoice ${invoice.invoiceNumber} for resend: ${(error as Error).message}`);
+        this.logger.error(
+          `Failed to presign invoice ${invoice.invoiceNumber} for resend: ${(error as Error).message}`,
+        );
       }
     }
 
@@ -1118,11 +1330,14 @@ export class InvoicesService {
       invoiceNumber: invoice.invoiceNumber,
       total: invoice.total.toFixed(2),
       currency: invoice.currency,
-      dueDate: format(invoice.dueDate, 'dd MMM yyyy'),
-      paymentTerms: paymentTerms ? this.humanTerms(paymentTerms) : 'Due on receipt',
+      dueDate: format(invoice.dueDate, "dd MMM yyyy"),
+      paymentTerms: paymentTerms
+        ? this.humanTerms(paymentTerms)
+        : "Due on receipt",
       presignedUrl,
       lineItems: (invoice.order?.lineItems ?? []).map((li) => ({
-        description: li.productTitle + (li.variantTitle ? ` — ${li.variantTitle}` : ''),
+        description:
+          li.productTitle + (li.variantTitle ? ` — ${li.variantTitle}` : ""),
         quantity: li.quantity,
         lineTotal: li.lineTotal.toFixed(2),
       })),
@@ -1140,7 +1355,11 @@ export class InvoicesService {
    * The counter + timestamp are only advanced when the email is actually sent, so
    * a Resend outage doesn't burn a reminder slot. Audited on success.
    */
-  async sendReminder(invoiceId: string, merchantId: string, actorId: string): Promise<SendReminderResult> {
+  async sendReminder(
+    invoiceId: string,
+    merchantId: string,
+    actorId: string,
+  ): Promise<SendReminderResult> {
     this.assertUuid(invoiceId);
     this.assertUuid(merchantId);
     this.assertUuid(actorId);
@@ -1164,26 +1383,30 @@ export class InvoicesService {
       }),
     );
     if (!invoice) {
-      throw new NotFoundException({ code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+      throw new NotFoundException({
+        code: "INVOICE_NOT_FOUND",
+        message: "Invoice not found",
+      });
     }
     if (!REMINDABLE_STATUSES.includes(invoice.status)) {
       throw new ConflictException({
-        code: 'REMINDER_NOT_APPLICABLE',
+        code: "REMINDER_NOT_APPLICABLE",
         message: `A reminder cannot be sent for a ${invoice.status} invoice`,
       });
     }
     if (invoice.reminderCount >= REMINDER_MAX) {
       throw new ConflictException({
-        code: 'REMINDER_LIMIT_REACHED',
+        code: "REMINDER_LIMIT_REACHED",
         message: `The maximum of ${REMINDER_MAX} reminders has already been sent`,
       });
     }
     if (
       invoice.lastReminderAt &&
-      invoice.lastReminderAt.getTime() > subDays(new Date(), REMINDER_COOLDOWN_DAYS).getTime()
+      invoice.lastReminderAt.getTime() >
+        subDays(new Date(), REMINDER_COOLDOWN_DAYS).getTime()
     ) {
       throw new ConflictException({
-        code: 'REMINDER_TOO_SOON',
+        code: "REMINDER_TOO_SOON",
         message: `A reminder was sent within the last ${REMINDER_COOLDOWN_DAYS} days`,
       });
     }
@@ -1194,7 +1417,9 @@ export class InvoicesService {
       .toFixed(2);
     const daysOverdue = Math.max(
       0,
-      Math.floor((Date.now() - invoice.dueDate.getTime()) / (24 * 60 * 60 * 1000)),
+      Math.floor(
+        (Date.now() - invoice.dueDate.getTime()) / (24 * 60 * 60 * 1000),
+      ),
     );
 
     const result = await this.email.sendPaymentReminderEmail({
@@ -1204,7 +1429,7 @@ export class InvoicesService {
       merchantEmail: invoice.merchant.shopifyDomain,
       outstandingAmount: outstanding,
       currency: invoice.currency,
-      dueDate: format(invoice.dueDate, 'dd MMM yyyy'),
+      dueDate: format(invoice.dueDate, "dd MMM yyyy"),
       daysOverdue,
       reminderCount: nextCount,
       portalUrl: null,
@@ -1224,10 +1449,10 @@ export class InvoicesService {
     await this.writeAudit(
       merchantId,
       invoiceId,
-      'reminder_sent',
+      "reminder_sent",
       { reminderCount: invoice.reminderCount },
       { reminderCount: nextCount },
-      'merchant_user',
+      "merchant_user",
       actorId,
     );
 
@@ -1242,7 +1467,10 @@ export class InvoicesService {
    * `INVOICE_INTEGRITY_FAILED` (422) and a P1 is raised — the merchant UI shows a
    * non-dismissing warning rather than serving a possibly-tampered document.
    */
-  async getInvoicePdfUrl(invoiceId: string, merchantId: string): Promise<{ url: string }> {
+  async getInvoicePdfUrl(
+    invoiceId: string,
+    merchantId: string,
+  ): Promise<{ url: string }> {
     this.assertUuid(invoiceId);
     this.assertUuid(merchantId);
 
@@ -1253,22 +1481,38 @@ export class InvoicesService {
       }),
     );
     if (!invoice || !invoice.pdfS3Key) {
-      throw new NotFoundException({ code: 'INVOICE_PDF_NOT_FOUND', message: 'Invoice PDF not found' });
+      throw new NotFoundException({
+        code: "INVOICE_PDF_NOT_FOUND",
+        message: "Invoice PDF not found",
+      });
     }
 
     const bytes = await this.storage.downloadObject(invoice.pdfS3Key);
-    const { createHash } = await import('node:crypto');
-    const computedHash = createHash('sha256').update(bytes).digest('hex');
+    const { createHash } = await import("node:crypto");
+    const computedHash = createHash("sha256").update(bytes).digest("hex");
     if (invoice.pdfSha256 === null || computedHash !== invoice.pdfSha256) {
-      Sentry.captureMessage('Invoice PDF integrity mismatch on merchant download', {
-        level: 'fatal',
-        tags: { component: 'invoices', check: 'integrity', surface: 'merchant_download' },
-        extra: { invoiceId, merchantId, invoiceNumber: invoice.invoiceNumber },
-      });
-      this.logger.error(`PDF integrity mismatch on download for invoice ${invoice.invoiceNumber}`);
+      Sentry.captureMessage(
+        "Invoice PDF integrity mismatch on merchant download",
+        {
+          level: "fatal",
+          tags: {
+            component: "invoices",
+            check: "integrity",
+            surface: "merchant_download",
+          },
+          extra: {
+            invoiceId,
+            merchantId,
+            invoiceNumber: invoice.invoiceNumber,
+          },
+        },
+      );
+      this.logger.error(
+        `PDF integrity mismatch on download for invoice ${invoice.invoiceNumber}`,
+      );
       throw new UnprocessableEntityException({
-        code: 'INVOICE_INTEGRITY_FAILED',
-        message: 'Invoice PDF integrity check failed. Contact support.',
+        code: "INVOICE_INTEGRITY_FAILED",
+        message: "Invoice PDF integrity check failed. Contact support.",
       });
     }
 
@@ -1281,22 +1525,26 @@ export class InvoicesService {
   async exportArAgingCsv(merchantId: string): Promise<string> {
     const aging = await this.getArAging(merchantId);
     const rows: Array<{ label: string; bucket: ArAgingBucket }> = [
-      { label: 'Current (not yet due)', bucket: aging.current },
-      { label: '1–30 days overdue', bucket: aging.overdue_1_30 },
-      { label: '31–60 days overdue', bucket: aging.overdue_31_60 },
-      { label: '61–90 days overdue', bucket: aging.overdue_61_90 },
-      { label: '90+ days overdue', bucket: aging.overdue_90_plus },
+      { label: "Current (not yet due)", bucket: aging.current },
+      { label: "1–30 days overdue", bucket: aging.overdue_1_30 },
+      { label: "31–60 days overdue", bucket: aging.overdue_31_60 },
+      { label: "61–90 days overdue", bucket: aging.overdue_61_90 },
+      { label: "90+ days overdue", bucket: aging.overdue_90_plus },
     ];
     let totalCount = 0;
     let totalAmount = new Money(0);
-    const lines = ['Bucket,Invoices,Outstanding'];
+    const lines = ["Bucket,Invoices,Outstanding"];
     for (const { label, bucket } of rows) {
       totalCount += bucket.invoiceCount;
       totalAmount = totalAmount.plus(new Money(bucket.outstandingAmount));
-      lines.push(`${this.csvCell(label)},${bucket.invoiceCount},${bucket.outstandingAmount}`);
+      lines.push(
+        `${this.csvCell(label)},${bucket.invoiceCount},${bucket.outstandingAmount}`,
+      );
     }
-    lines.push(`${this.csvCell('Total')},${totalCount},${totalAmount.toFixed(2)}`);
-    return `${lines.join('\r\n')}\r\n`;
+    lines.push(
+      `${this.csvCell("Total")},${totalCount},${totalAmount.toFixed(2)}`,
+    );
+    return `${lines.join("\r\n")}\r\n`;
   }
 
   /** Quote a CSV cell when it contains a comma, quote or newline. */
@@ -1309,17 +1557,21 @@ export class InvoicesService {
 
   /** Read a string-coercible field from an audit JSON value (null when absent). */
   private jsonField(json: Prisma.JsonValue | null, key: string): string | null {
-    if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+    if (!json || typeof json !== "object" || Array.isArray(json)) return null;
     const value = (json as Record<string, unknown>)[key];
     if (value === null || value === undefined) return null;
-    return typeof value === 'string' ? value : String(value);
+    return typeof value === "string" ? value : String(value);
   }
 
   // ── Internals ─────────────────────────────────────────────────────────
 
-  private async applyGmv(tx: PrismaTransaction, merchantId: string, delta: Decimal): Promise<void> {
+  private async applyGmv(
+    tx: PrismaTransaction,
+    merchantId: string,
+    delta: Decimal,
+  ): Promise<void> {
     if (delta.lessThanOrEqualTo(0)) return;
-    const monthKey = format(new Date(), 'yyyy-MM');
+    const monthKey = format(new Date(), "yyyy-MM");
     // Roll the bucket over if the stored month differs, then add the delta.
     await tx.$executeRaw`
       UPDATE merchants
@@ -1329,6 +1581,13 @@ export class InvoicesService {
           gmv_month_key = ${monthKey},
           updated_at = NOW()
       WHERE id = ${merchantId}::uuid`;
+    // Additive per-month ledger (immutable billing source; see migration 014).
+    // The running bucket above is destroyed at rollover — this row is not.
+    await tx.$executeRaw`
+      INSERT INTO merchant_monthly_gmv (merchant_id, month_key, gmv)
+      VALUES (${merchantId}::uuid, ${monthKey}, ${delta.toFixed(2)}::numeric)
+      ON CONFLICT (merchant_id, month_key)
+      DO UPDATE SET gmv = merchant_monthly_gmv.gmv + EXCLUDED.gmv, updated_at = NOW()`;
   }
 
   private async decrementCredit(
@@ -1353,7 +1612,9 @@ export class InvoicesService {
         WHERE id = ${rel.id}::uuid AND credit_version = ${rel.creditVersion}`;
       if (updated > 0) return;
     }
-    this.logger.warn(`Credit decrement CAS exhausted for buyer ${buyerId} / merchant ${merchantId}`);
+    this.logger.warn(
+      `Credit decrement CAS exhausted for buyer ${buyerId} / merchant ${merchantId}`,
+    );
   }
 
   private async nextInvoiceNumber(invoiceDate: Date): Promise<string> {
@@ -1361,33 +1622,42 @@ export class InvoicesService {
       "SELECT nextval('invoice_number_seq') AS nextval",
     );
     const seq = rows[0]?.nextval ?? 0n;
-    return `INV-${invoiceDate.getUTCFullYear()}-${String(seq).padStart(6, '0')}`;
+    return `INV-${invoiceDate.getUTCFullYear()}-${String(seq).padStart(6, "0")}`;
   }
 
   private formatAddress(addressJson: Prisma.JsonValue | null): string[] {
-    if (!addressJson || typeof addressJson !== 'object' || Array.isArray(addressJson)) {
+    if (
+      !addressJson ||
+      typeof addressJson !== "object" ||
+      Array.isArray(addressJson)
+    ) {
       return [];
     }
     const a = addressJson as Record<string, unknown>;
-    const str = (key: string): string => (typeof a[key] === 'string' ? (a[key] as string) : '');
+    const str = (key: string): string =>
+      typeof a[key] === "string" ? (a[key] as string) : "";
     const lines = [
-      str('line1') || str('address1') || str('street'),
-      str('line2') || str('address2'),
-      [str('city'), str('region') || str('province') || str('state'), str('postalCode') || str('zip')]
+      str("line1") || str("address1") || str("street"),
+      str("line2") || str("address2"),
+      [
+        str("city"),
+        str("region") || str("province") || str("state"),
+        str("postalCode") || str("zip"),
+      ]
         .filter((v) => v.length > 0)
-        .join(', '),
-      str('country'),
+        .join(", "),
+      str("country"),
     ];
     return lines.filter((line) => line.trim().length > 0);
   }
 
   private humanTerms(terms: PaymentTerms): string {
     const labels: Record<PaymentTerms, string> = {
-      immediate: 'Due on receipt',
-      net15: 'Net 15',
-      net30: 'Net 30',
-      net60: 'Net 60',
-      net90: 'Net 90',
+      immediate: "Due on receipt",
+      net15: "Net 15",
+      net30: "Net 30",
+      net60: "Net 60",
+      net90: "Net 90",
     };
     return labels[terms];
   }
@@ -1398,14 +1668,13 @@ export class InvoicesService {
     action: string,
     oldValue: Prisma.InputJsonValue | null,
     newValue: Prisma.InputJsonValue | null,
-    actorType: 'system' | 'merchant_user',
+    actorType: "system" | "merchant_user",
     actorId?: string,
     tx?: PrismaTransaction,
   ): Promise<void> {
-    const client = tx ?? this.prisma;
     const data: Prisma.AuditLogCreateInput = {
       merchantId,
-      entityType: 'invoice',
+      entityType: "invoice",
       entityId: invoiceId,
       action,
       actorType,
@@ -1413,16 +1682,33 @@ export class InvoicesService {
       ...(oldValue !== null ? { oldValueJson: oldValue } : {}),
       ...(newValue !== null ? { newValueJson: newValue } : {}),
     };
+    if (tx) {
+      // Inside a financial transaction the audit row is part of the invariant: a
+      // paid / voided / gmv-charged change must NOT commit without its audit
+      // trail. Let a failure propagate so the whole transaction rolls back —
+      // swallowing it here (the old behavior) allowed a silent, unaudited
+      // financial mutation (§6 MED). Audit inserts are permitted by the
+      // append-only trigger, so this only throws on a genuine DB error.
+      await tx.auditLog.create({ data });
+      return;
+    }
+    // Out-of-band (no transaction): a best-effort audit whose failure must not
+    // break the calling flow.
     try {
-      await client.auditLog.create({ data });
+      await this.prisma.auditLog.create({ data });
     } catch (error) {
-      this.logger.error(`Failed to write invoice audit log: ${(error as Error).message}`);
+      this.logger.error(
+        `Failed to write invoice audit log: ${(error as Error).message}`,
+      );
     }
   }
 
   private assertUuid(value: string): void {
     if (!UUID_RE.test(value)) {
-      throw new BadRequestException({ code: 'INVALID_ID', message: `Malformed id: ${value}` });
+      throw new BadRequestException({
+        code: "INVALID_ID",
+        message: `Malformed id: ${value}`,
+      });
     }
   }
 }

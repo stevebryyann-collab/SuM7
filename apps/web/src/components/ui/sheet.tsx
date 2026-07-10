@@ -12,8 +12,8 @@ import { cn } from '@/lib/cn';
 
 /**
  * Right-side slide-over panel built on Radix Dialog. Used by the buyer approval
- * panel (480px on desktop). The overlay is a solid scrim — NO backdrop blur and
- * NO translucency beyond a plain dim, per the design rules.
+ * panel (480px on desktop). Blurred scrim + glass panel that slides in from the
+ * right (CLAUDE.md → Modals / Animations).
  */
 export const Sheet = DialogPrimitive.Root;
 export const SheetTrigger = DialogPrimitive.Trigger;
@@ -26,7 +26,9 @@ const SheetOverlay = forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-gray-900/40 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
+      'fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-sm',
+      'data-[state=open]:animate-in data-[state=open]:fade-in-0',
+      'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
       className,
     )}
     {...props}
@@ -43,8 +45,8 @@ export const SheetContent = forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-gray-200 bg-white',
-        'shadow-sm sm:max-w-[480px] data-[state=open]:animate-slide-in-right',
+        'fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col border-l border-glass-border bg-glass-strong',
+        'shadow-glass-lg backdrop-blur-glass sm:max-w-[480px] data-[state=open]:animate-slide-in-right',
         'data-[state=closed]:animate-slide-out-right',
         className,
       )}
@@ -53,8 +55,8 @@ export const SheetContent = forwardRef<
       {children}
       <DialogPrimitive.Close
         className={cn(
-          'absolute right-4 top-4 rounded-sm text-gray-500 transition-colors hover:text-gray-900',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+          'absolute right-4 top-4 rounded-full p-1 text-text-tertiary transition-colors hover:bg-white/60 hover:text-text-primary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40',
         )}
       >
         <X className="h-4 w-4" />
@@ -66,13 +68,13 @@ export const SheetContent = forwardRef<
 SheetContent.displayName = DialogPrimitive.Content.displayName;
 
 export function SheetHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>): JSX.Element {
-  return <div className={cn('border-b border-gray-200 px-6 py-4', className)} {...props} />;
+  return <div className={cn('border-b border-glass-border px-6 py-4', className)} {...props} />;
 }
 
 export function SheetFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>): JSX.Element {
   return (
     <div
-      className={cn('mt-auto flex items-center justify-end gap-2 border-t border-gray-200 px-6 py-4', className)}
+      className={cn('mt-auto flex items-center justify-end gap-2 border-t border-glass-border px-6 py-4', className)}
       {...props}
     />
   );
@@ -84,7 +86,7 @@ export const SheetTitle = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-base font-semibold text-gray-900', className)}
+    className={cn('text-lg font-semibold text-text-primary', className)}
     {...props}
   />
 ));
@@ -94,6 +96,6 @@ export const SheetDescription = forwardRef<
   ElementRef<typeof DialogPrimitive.Description>,
   ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn('text-sm text-gray-500', className)} {...props} />
+  <DialogPrimitive.Description ref={ref} className={cn('text-sm text-text-secondary', className)} {...props} />
 ));
 SheetDescription.displayName = DialogPrimitive.Description.displayName;

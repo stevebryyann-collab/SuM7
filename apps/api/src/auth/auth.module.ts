@@ -5,6 +5,8 @@ import { ClerkBuyerGuard } from './guards/clerk-buyer.guard';
 import { ClerkAuthenticatedGuard } from './guards/clerk-authenticated.guard';
 import { ClerkWebhooksController } from './clerk-webhooks.controller';
 import { MerchantResolverService } from './merchant-resolver.service';
+import { SalesRepService } from './services/sales-rep.service';
+import { SalesRepSessionGuard } from './guards/sales-rep-session.guard';
 
 /**
  * Authentication building blocks shared across feature modules. The two user
@@ -30,6 +32,8 @@ import { MerchantResolverService } from './merchant-resolver.service';
     ClerkBuyerGuard,
     ClerkAuthenticatedGuard,
     MerchantResolverService,
+    SalesRepService,
+    SalesRepSessionGuard,
   ],
   exports: [
     MerchantSessionGuard,
@@ -37,6 +41,8 @@ import { MerchantResolverService } from './merchant-resolver.service';
     ClerkBuyerGuard,
     ClerkAuthenticatedGuard,
     MerchantResolverService,
+    SalesRepService,
+    SalesRepSessionGuard,
   ],
 })
 export class AuthModule {}

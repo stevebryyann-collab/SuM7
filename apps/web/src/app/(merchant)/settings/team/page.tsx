@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { UserPlus } from 'lucide-react';
 import type { TeamMemberRole } from '@b2b/shared/schemas';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { SettingsTabs } from '@/components/merchant/SettingsTabs';
 import {
   Table,
@@ -82,22 +82,16 @@ export default function TeamSettingsPage(): JSX.Element {
   };
 
   return (
-    <>
-      <PageHeader
-        title="Team"
-        description="Manage who can access this store's admin."
-        actions={
-          <Button variant="primary" size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus className="h-4 w-4" />
-            Invite team member
-          </Button>
-        }
-      />
+    <PageLayout
+      title="Team"
+      subtitle="Manage who can access this store's admin."
+      action={{ label: 'Invite team member', onClick: () => setInviteOpen(true), icon: UserPlus }}
+    >
       <SettingsTabs />
 
       <section className="panel">
         {isError ? (
-          <p className="px-4 py-8 text-center text-sm text-gray-500">
+          <p className="px-4 py-8 text-center text-sm text-text-secondary">
             You don&apos;t have access to team management.
           </p>
         ) : isLoading || !team ? (
@@ -118,11 +112,11 @@ export default function TeamSettingsPage(): JSX.Element {
                 const isOwner = member.role === 'owner';
                 return (
                   <TableRow key={member.id}>
-                    <TableCell className="font-medium text-gray-900">{displayName(member)}</TableCell>
-                    <TableCell className="text-gray-600">{member.email}</TableCell>
+                    <TableCell className="font-medium text-text-primary">{displayName(member)}</TableCell>
+                    <TableCell className="text-text-secondary">{member.email}</TableCell>
                     <TableCell>
                       {isOwner ? (
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-700">
+                        <span className="inline-flex items-center rounded-full bg-fog-soft px-2 py-0.5 text-xs font-medium capitalize text-text-secondary">
                           Owner
                         </span>
                       ) : (
@@ -141,12 +135,12 @@ export default function TeamSettingsPage(): JSX.Element {
                         </Select>
                       )}
                     </TableCell>
-                    <TableCell className="text-gray-600">
+                    <TableCell className="text-text-secondary">
                       {member.lastLoginAt ? formatRelative(member.lastLoginAt) : 'Never'}
                     </TableCell>
                     <TableCell className="text-right">
                       {isOwner ? (
-                        <span className="text-xs text-gray-400">—</span>
+                        <span className="text-xs text-text-tertiary">—</span>
                       ) : (
                         <Button
                           variant="default"
@@ -181,7 +175,7 @@ export default function TeamSettingsPage(): JSX.Element {
         isLoading={removeMember.isPending}
         onConfirm={confirmRemove}
       />
-    </>
+    </PageLayout>
   );
 }
 

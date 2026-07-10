@@ -37,15 +37,15 @@ export default function ApplySuccessPage(): JSX.Element {
   return (
     <div className="panel mx-auto max-w-lg p-8 text-center">
       <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
-        <CheckCircle2 className="h-12 w-12 text-green-600" />
+        <CheckCircle2 className="h-12 w-12 text-success" />
       </div>
-      <h2 className="text-lg font-semibold text-gray-900">Application Submitted</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-gray-600">
-        Your application for {companyName} has been submitted to {merchantName}&apos;s wholesale program.
-        We&apos;ll review your application and send a decision to {email} — typically within 1 business day.
+      <h2 className="text-lg font-semibold text-text-primary">Application submitted</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm text-text-secondary">
+        Your trade account application for {companyName} has been received by {merchantName}. You&apos;ll hear
+        back at {email} within 1 business day.
       </p>
       {contactEmail ? (
-        <p className="mt-4 text-sm text-gray-500">
+        <p className="mt-4 text-sm text-text-secondary">
           Questions?{' '}
           <a href={`mailto:${contactEmail}`} className="text-accent">
             Contact {merchantName}

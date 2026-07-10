@@ -32,6 +32,7 @@ malformed var **fails fast at startup**. Confirm every var below is set in the t
 (Railway for API, Vercel for web).
 
 ### API (Railway)
+
 - [ ] `DATABASE_URL` — Supabase **pooler**, port 6543, `?pgbouncer=true&connection_limit=5`.
 - [ ] `DATABASE_DIRECT_URL` — Supabase **direct**, port 5432 (migrations only).
 - [ ] `REDIS_CACHE_URL` (6379, LRU) and `REDIS_QUEUE_URL` (6380, AOF) — distinct instances.
@@ -41,9 +42,9 @@ malformed var **fails fast at startup**. Confirm every var below is set in the t
 - [ ] `CLERK_SECRET_KEY` (`sk_live_`/`sk_test_`), `CLERK_PUBLISHABLE_KEY` (`pk_…`),
       `CLERK_WEBHOOK_SECRET` (`whsec_…`).
 - [ ] `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`, `S3_REGION`, `S3_KMS_KEY_ARN`.
-- [ ] `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and all four price IDs
-      (`STRIPE_STARTER_PRICE_ID`, `STRIPE_GROWTH_PRICE_ID`, `STRIPE_PRO_PRICE_ID`,
-      `STRIPE_GMV_METERED_PRICE_ID`).
+- [ ] `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, `PADDLE_ENV` (`sandbox`/`production`),
+      `PADDLE_CHECKOUT_URL`, and all four price IDs (`PADDLE_STARTER_PRICE_ID`,
+      `PADDLE_GROWTH_PRICE_ID`, `PADDLE_PRO_PRICE_ID`, `PADDLE_GMV_PRICE_ID`).
 - [ ] `RESEND_API_KEY`, `RESEND_FROM_ADDRESS` (verified sending domain).
 - [ ] `ENCRYPTION_KEY_V1`, `CURRENT_ENCRYPTION_KEY_VERSION` (default `1`).
 - [ ] `RESOLVE_API_KEY`, `RESOLVE_WEBHOOK_SECRET`.
@@ -52,6 +53,7 @@ malformed var **fails fast at startup**. Confirm every var below is set in the t
 - [ ] `NODE_ENV=production`, `PLATFORM_DOMAIN`, `INTERNAL_API_SECRET` (≥ 32 chars).
 
 ### Web (Vercel)
+
 - [ ] `NEXT_PUBLIC_API_BASE_URL`, `API_BASE_URL` (server-side).
 - [ ] `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
 - [ ] `NEXTAUTH_SECRET` (matches API), `NEXTAUTH_URL` (canonical https origin).
@@ -59,7 +61,7 @@ malformed var **fails fast at startup**. Confirm every var below is set in the t
 - [ ] `PLATFORM_DOMAIN`.
 
 > Secret hygiene: rotate per `docs/runbooks/secrets-rotation.md`. Never reuse `sk_test_`/`pk_test_`
-> Clerk or Stripe test keys in production.
+> Clerk keys or Paddle sandbox keys in production.
 
 ---
 
@@ -93,8 +95,10 @@ processing. Confirm endpoints and secrets line up.
 - [ ] **Clerk:** webhook endpoint → `POST /webhooks/clerk`, Svix signing secret = `CLERK_WEBHOOK_SECRET`;
       `user.created` / `user.updated` / `user.deleted` subscribed. Endpoint excluded from
       ValidationPipe + rate limiting.
-- [ ] **Stripe:** webhook endpoint registered; `STRIPE_WEBHOOK_SECRET` matches; subscription +
-      metered-GMV products/prices exist and IDs match env. Signature verified in-controller.
+- [ ] **Paddle:** notification destination (webhook) registered; `PADDLE_WEBHOOK_SECRET` matches;
+      `PADDLE_ENV` set correctly; subscription products/recurring prices + the catalog GMV-overage
+      price exist and IDs match env; default payment link set for `PADDLE_CHECKOUT_URL`. Signature
+      verified in-controller.
 - [ ] **Resolve (BNPL):** webhook HMAC secret = `RESOLVE_WEBHOOK_SECRET`; all Resolve traffic goes
       through `BnplAdapter` (never the SDK directly).
 - [ ] **Resend:** sending domain verified (SPF/DKIM); `RESEND_FROM_ADDRESS` matches.
@@ -149,7 +153,7 @@ Run against the deployed environment, not localhost:
 - [ ] Structured logs (Pino → Better Stack) emitting with PII masked.
 - [ ] Alerts wired: queue depth, breaker-open events, 5xx rate, webhook failure rate.
 - [ ] Rollback rehearsed: Vercel instant rollback + Railway redeploy-previous documented and
-      known-good (see `disaster-recovery.md` → *Bad deploy*).
+      known-good (see `disaster-recovery.md` → _Bad deploy_).
 - [ ] Dead-letter queue monitored; BullMQ workers (all 7) running and draining.
 
 ---
@@ -159,7 +163,7 @@ Run against the deployed environment, not localhost:
 **GO only if:** every box above is checked, CI is green on the release tag, staging smoke test
 passed, and an Incident Commander + rollback plan are in place.
 
-**NO-GO if:** any financial-path item (tenancy/RLS, idempotency, invoice integrity, Stripe/Resolve
+**NO-GO if:** any financial-path item (tenancy/RLS, idempotency, invoice integrity, Paddle/Resolve
 signature verification, `NEXTAUTH_SECRET` parity) is unverified — these are non-negotiable.
 
 After go-live, watch Sentry, queue depth, and the first real financial writes for the first hour.

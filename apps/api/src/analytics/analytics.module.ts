@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { BuyersModule } from '../buyers/buyers.module';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { Ga4Service } from './ga4.service';
 
 /**
  * Merchant analytics (summary, AR aging, top buyers, order/GMV trends, the
@@ -15,6 +16,7 @@ import { AnalyticsService } from './analytics.service';
 @Module({
   imports: [AuthModule, BuyersModule],
   controllers: [AnalyticsController],
-  providers: [AnalyticsService],
+  providers: [AnalyticsService, Ga4Service],
+  exports: [Ga4Service],
 })
 export class AnalyticsModule {}

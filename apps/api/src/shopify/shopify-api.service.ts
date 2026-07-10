@@ -5,21 +5,24 @@ import {
   Logger,
   ServiceUnavailableException,
   type OnModuleInit,
-} from '@nestjs/common';
-import { Redis } from 'ioredis';
-import type CircuitBreaker from 'opossum';
-import { CircuitBreakerFactory } from '../common/circuit-breaker/circuit-breaker.factory';
-import { EncryptionService } from '../crypto/encryption.service';
-import { REDIS_CACHE } from '../redis/redis.module';
+} from "@nestjs/common";
+import { Redis } from "ioredis";
+import type CircuitBreaker from "opossum";
+import { CircuitBreakerFactory } from "../common/circuit-breaker/circuit-breaker.factory";
+import { EncryptionService } from "../crypto/encryption.service";
+import { REDIS_CACHE } from "../redis/redis.module";
 import type {
   ListProductsParams,
   ShopifyDraftOrder,
   ShopifyDraftOrderInput,
   ShopifyOrder,
   ShopifyProduct,
-} from './shopify.types';
+} from "./shopify.types";
 
-const API_VERSION = '2024-07';
+// Keep in lockstep with shopify.app.toml `api_version`. Bumped off the stale
+// 2024-07 (past Shopify's ~12-month support window). Retest all webhook topics
+// against this version before release.
+const API_VERSION = "2025-10";
 const MAX_RETRIES = 3;
 const RATE_LIMIT_THRESHOLD = 0.8;
 const THROTTLE_FLAG_TTL_MS = 2_000;
@@ -27,7 +30,7 @@ const THROTTLE_WAIT_MS = 1_000;
 const BULK_POLL_INTERVAL_MS = 2_000;
 const BULK_POLL_MAX_ATTEMPTS = 150; // ~5 minutes at 2s
 
-type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 interface ShopifyRequest {
   domain: string;
@@ -88,7 +91,7 @@ export class ShopifyApiService implements OnModuleInit {
 
   onModuleInit(): void {
     this.breaker = this.breakerFactory.create<[ShopifyRequest], RawResult>(
-      'shopify',
+      "shopify",
       (req: ShopifyRequest) => this.doRequest(req),
       { timeout: 10_000 },
     );
@@ -96,23 +99,31 @@ export class ShopifyApiService implements OnModuleInit {
 
   // ── Public API ────────────────────────────────────────────────────────
 
-  async getOrder(domain: string, encryptedToken: string, orderId: string): Promise<ShopifyOrder> {
+  async getOrder(
+    domain: string,
+    encryptedToken: string,
+    orderId: string,
+  ): Promise<ShopifyOrder> {
     const token = this.encryption.decrypt(encryptedToken);
     const { order } = await this.request<{ order: ShopifyOrder }>({
       domain,
       token,
-      method: 'GET',
+      method: "GET",
       path: `/orders/${encodeURIComponent(orderId)}.json`,
     });
     return order;
   }
 
-  async getProduct(domain: string, encryptedToken: string, productId: string): Promise<ShopifyProduct> {
+  async getProduct(
+    domain: string,
+    encryptedToken: string,
+    productId: string,
+  ): Promise<ShopifyProduct> {
     const token = this.encryption.decrypt(encryptedToken);
     const { product } = await this.request<{ product: ShopifyProduct }>({
       domain,
       token,
-      method: 'GET',
+      method: "GET",
       path: `/products/${encodeURIComponent(productId)}.json`,
     });
     return product;
@@ -139,8 +150,16 @@ export class ShopifyApiService implements OnModuleInit {
     };
 
     for (;;) {
-      const result = await this.requestRaw({ domain, token, method: 'GET', path: '/products.json', query });
-      const { products } = this.parseJson<{ products: ShopifyProduct[] }>(result.text);
+      const result = await this.requestRaw({
+        domain,
+        token,
+        method: "GET",
+        path: "/products.json",
+        query,
+      });
+      const { products } = this.parseJson<{ products: ShopifyProduct[] }>(
+        result.text,
+      );
       if (products.length > 0) {
         yield products;
       }
@@ -159,11 +178,13 @@ export class ShopifyApiService implements OnModuleInit {
     input: ShopifyDraftOrderInput,
   ): Promise<ShopifyDraftOrder> {
     const token = this.encryption.decrypt(encryptedToken);
-    const { draft_order } = await this.request<{ draft_order: ShopifyDraftOrder }>({
+    const { draft_order } = await this.request<{
+      draft_order: ShopifyDraftOrder;
+    }>({
       domain,
       token,
-      method: 'POST',
-      path: '/draft_orders.json',
+      method: "POST",
+      path: "/draft_orders.json",
       body: { draft_order: input },
     });
     return draft_order;
@@ -175,33 +196,39 @@ export class ShopifyApiService implements OnModuleInit {
     draftOrderId: string,
   ): Promise<ShopifyOrder> {
     const token = this.encryption.decrypt(encryptedToken);
-    const { draft_order } = await this.request<{ draft_order: ShopifyDraftOrder }>({
+    const { draft_order } = await this.request<{
+      draft_order: ShopifyDraftOrder;
+    }>({
       domain,
       token,
-      method: 'PUT',
+      method: "PUT",
       path: `/draft_orders/${encodeURIComponent(draftOrderId)}/complete.json`,
     });
     if (draft_order.order_id === null) {
       throw new BadGatewayException({
-        code: 'SHOPIFY_DRAFT_NOT_COMPLETED',
-        message: 'Draft order completed without producing an order id',
+        code: "SHOPIFY_DRAFT_NOT_COMPLETED",
+        message: "Draft order completed without producing an order id",
       });
     }
     const { order } = await this.request<{ order: ShopifyOrder }>({
       domain,
       token,
-      method: 'GET',
+      method: "GET",
       path: `/orders/${draft_order.order_id}.json`,
     });
     return order;
   }
 
-  async deleteDraftOrder(domain: string, encryptedToken: string, draftOrderId: string): Promise<void> {
+  async deleteDraftOrder(
+    domain: string,
+    encryptedToken: string,
+    draftOrderId: string,
+  ): Promise<void> {
     const token = this.encryption.decrypt(encryptedToken);
     await this.request<unknown>({
       domain,
       token,
-      method: 'DELETE',
+      method: "DELETE",
       path: `/draft_orders/${encodeURIComponent(draftOrderId)}.json`,
     });
   }
@@ -211,7 +238,11 @@ export class ShopifyApiService implements OnModuleInit {
    * operation completes, and returns the JSONL result URL (S3-backed). Throws
    * if the operation fails or is cancelled.
    */
-  async bulkOperationQuery(domain: string, encryptedToken: string, graphqlQuery: string): Promise<string> {
+  async bulkOperationQuery(
+    domain: string,
+    encryptedToken: string,
+    graphqlQuery: string,
+  ): Promise<string> {
     const token = this.encryption.decrypt(encryptedToken);
     const mutation = `mutation {
       bulkOperationRunQuery(query: """${graphqlQuery}""") {
@@ -230,42 +261,49 @@ export class ShopifyApiService implements OnModuleInit {
     const userErrors = start.bulkOperationRunQuery.userErrors;
     if (userErrors.length > 0) {
       throw new BadGatewayException({
-        code: 'SHOPIFY_BULK_REJECTED',
-        message: userErrors.map((e) => e.message).join('; '),
+        code: "SHOPIFY_BULK_REJECTED",
+        message: userErrors.map((e) => e.message).join("; "),
       });
     }
 
     for (let attempt = 0; attempt < BULK_POLL_MAX_ATTEMPTS; attempt += 1) {
       await this.sleep(BULK_POLL_INTERVAL_MS);
-      const poll = await this.requestGraphql<{ currentBulkOperation: BulkOperationStatus | null }>(
+      const poll = await this.requestGraphql<{
+        currentBulkOperation: BulkOperationStatus | null;
+      }>(
         domain,
         token,
-        'query { currentBulkOperation { id status errorCode objectCount url } }',
+        "query { currentBulkOperation { id status errorCode objectCount url } }",
       );
       const op = poll.currentBulkOperation;
       if (!op) {
         continue;
       }
-      if (op.status === 'COMPLETED') {
+      if (op.status === "COMPLETED") {
         if (!op.url) {
           throw new BadGatewayException({
-            code: 'SHOPIFY_BULK_NO_URL',
-            message: 'Bulk operation completed with no result URL (empty result set)',
+            code: "SHOPIFY_BULK_NO_URL",
+            message:
+              "Bulk operation completed with no result URL (empty result set)",
           });
         }
         return op.url;
       }
-      if (op.status === 'FAILED' || op.status === 'CANCELED' || op.status === 'EXPIRED') {
+      if (
+        op.status === "FAILED" ||
+        op.status === "CANCELED" ||
+        op.status === "EXPIRED"
+      ) {
         throw new BadGatewayException({
-          code: 'SHOPIFY_BULK_FAILED',
-          message: `Bulk operation ${op.status}: ${op.errorCode ?? 'unknown error'}`,
+          code: "SHOPIFY_BULK_FAILED",
+          message: `Bulk operation ${op.status}: ${op.errorCode ?? "unknown error"}`,
         });
       }
     }
 
     throw new ServiceUnavailableException({
-      code: 'SHOPIFY_BULK_TIMEOUT',
-      message: 'Bulk operation did not complete within the polling window',
+      code: "SHOPIFY_BULK_TIMEOUT",
+      message: "Bulk operation did not complete within the polling window",
     });
   }
 
@@ -277,19 +315,26 @@ export class ShopifyApiService implements OnModuleInit {
     return this.parseJson<T>(result.text);
   }
 
-  private async requestGraphql<T>(domain: string, token: string, query: string): Promise<T> {
+  private async requestGraphql<T>(
+    domain: string,
+    token: string,
+    query: string,
+  ): Promise<T> {
     const result = await this.requestRaw({
       domain,
       token,
-      method: 'POST',
-      path: '/graphql.json',
+      method: "POST",
+      path: "/graphql.json",
       body: { query },
     });
-    const parsed = this.parseJson<{ data: T; errors?: Array<{ message: string }> }>(result.text);
+    const parsed = this.parseJson<{
+      data: T;
+      errors?: Array<{ message: string }>;
+    }>(result.text);
     if (parsed.errors && parsed.errors.length > 0) {
       throw new BadGatewayException({
-        code: 'SHOPIFY_GRAPHQL_ERROR',
-        message: parsed.errors.map((e) => e.message).join('; '),
+        code: "SHOPIFY_GRAPHQL_ERROR",
+        message: parsed.errors.map((e) => e.message).join("; "),
       });
     }
     return parsed.data;
@@ -306,8 +351,9 @@ export class ShopifyApiService implements OnModuleInit {
       } catch (error) {
         if (this.isBreakerOpen(error)) {
           throw new ServiceUnavailableException({
-            code: 'SHOPIFY_CIRCUIT_OPEN',
-            message: 'Shopify integration is temporarily unavailable (circuit open)',
+            code: "SHOPIFY_CIRCUIT_OPEN",
+            message:
+              "Shopify integration is temporarily unavailable (circuit open)",
           });
         }
         if (attempt < MAX_RETRIES) {
@@ -315,8 +361,8 @@ export class ShopifyApiService implements OnModuleInit {
           continue;
         }
         throw new BadGatewayException({
-          code: 'SHOPIFY_UNAVAILABLE',
-          message: 'Shopify request failed after retries',
+          code: "SHOPIFY_UNAVAILABLE",
+          message: "Shopify request failed after retries",
         });
       }
 
@@ -328,14 +374,14 @@ export class ShopifyApiService implements OnModuleInit {
           continue;
         }
         throw new ServiceUnavailableException({
-          code: 'SHOPIFY_RATE_LIMITED',
-          message: 'Shopify rate limit exceeded after retries',
+          code: "SHOPIFY_RATE_LIMITED",
+          message: "Shopify rate limit exceeded after retries",
         });
       }
 
       if (result.status >= 400) {
         throw new BadGatewayException({
-          code: 'SHOPIFY_ERROR',
+          code: "SHOPIFY_ERROR",
           message: `Shopify responded with HTTP ${result.status}`,
         });
       }
@@ -344,18 +390,21 @@ export class ShopifyApiService implements OnModuleInit {
     }
 
     // Loop always returns or throws above; this satisfies the type checker.
-    throw new BadGatewayException({ code: 'SHOPIFY_UNAVAILABLE', message: 'Shopify request failed' });
+    throw new BadGatewayException({
+      code: "SHOPIFY_UNAVAILABLE",
+      message: "Shopify request failed",
+    });
   }
 
   /** The breaker action: exactly one network round-trip. */
   private async doRequest(req: ShopifyRequest): Promise<RawResult> {
     const url = this.buildUrl(req);
     const headers: Record<string, string> = {
-      'X-Shopify-Access-Token': req.token,
-      Accept: 'application/json',
+      "X-Shopify-Access-Token": req.token,
+      Accept: "application/json",
     };
     if (req.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
+      headers["Content-Type"] = "application/json";
     }
 
     let response: Response;
@@ -366,7 +415,9 @@ export class ShopifyApiService implements OnModuleInit {
         ...(req.body !== undefined ? { body: JSON.stringify(req.body) } : {}),
       });
     } catch (error) {
-      throw new ShopifyTransientError(`network error: ${(error as Error).message}`);
+      throw new ShopifyTransientError(
+        `network error: ${(error as Error).message}`,
+      );
     }
 
     const text = await response.text();
@@ -377,9 +428,9 @@ export class ShopifyApiService implements OnModuleInit {
 
     return {
       status: response.status,
-      callLimit: response.headers.get('X-Shopify-Shop-Api-Call-Limit'),
-      retryAfter: response.headers.get('Retry-After'),
-      link: response.headers.get('Link'),
+      callLimit: response.headers.get("X-Shopify-Shop-Api-Call-Limit"),
+      retryAfter: response.headers.get("Retry-After"),
+      link: response.headers.get("Link"),
       text,
     };
   }
@@ -391,7 +442,7 @@ export class ShopifyApiService implements OnModuleInit {
     }
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(req.query)) {
-      if (value !== undefined && value !== '') {
+      if (value !== undefined && value !== "") {
         search.append(key, String(value));
       }
     }
@@ -400,25 +451,35 @@ export class ShopifyApiService implements OnModuleInit {
   }
 
   /** Parse "32/40" → set a short throttle flag when usage exceeds 80%. */
-  private async recordRateLimit(domain: string, callLimit: string | null): Promise<void> {
+  private async recordRateLimit(
+    domain: string,
+    callLimit: string | null,
+  ): Promise<void> {
     if (!callLimit) {
       return;
     }
-    const [currentRaw, maxRaw] = callLimit.split('/');
+    const [currentRaw, maxRaw] = callLimit.split("/");
     const current = Number(currentRaw);
     const max = Number(maxRaw);
     if (!Number.isFinite(current) || !Number.isFinite(max) || max <= 0) {
       return;
     }
     if (current / max >= RATE_LIMIT_THRESHOLD) {
-      await this.cache.set(this.throttleKey(domain), '1', 'PX', THROTTLE_FLAG_TTL_MS);
+      await this.cache.set(
+        this.throttleKey(domain),
+        "1",
+        "PX",
+        THROTTLE_FLAG_TTL_MS,
+      );
     }
   }
 
   private async waitIfThrottled(domain: string): Promise<void> {
     const flagged = await this.cache.exists(this.throttleKey(domain));
     if (flagged === 1) {
-      this.logger.debug(`Throttling Shopify calls for ${domain} (bucket near limit)`);
+      this.logger.debug(
+        `Throttling Shopify calls for ${domain} (bucket near limit)`,
+      );
       await this.sleep(THROTTLE_WAIT_MS);
     }
   }
@@ -431,10 +492,10 @@ export class ShopifyApiService implements OnModuleInit {
     if (!link) {
       return null;
     }
-    for (const part of link.split(',')) {
+    for (const part of link.split(",")) {
       const match = part.match(/<([^>]+)>;\s*rel="next"/);
       if (match && match[1]) {
-        const pageInfo = new URL(match[1]).searchParams.get('page_info');
+        const pageInfo = new URL(match[1]).searchParams.get("page_info");
         if (pageInfo) {
           return pageInfo;
         }
@@ -444,7 +505,11 @@ export class ShopifyApiService implements OnModuleInit {
   }
 
   private isBreakerOpen(error: unknown): boolean {
-    return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'EOPENBREAKER';
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      (error as { code?: string }).code === "EOPENBREAKER"
+    );
   }
 
   private backoffMs(attempt: number): number {
@@ -453,7 +518,8 @@ export class ShopifyApiService implements OnModuleInit {
 
   private retryAfterMs(retryAfter: string | null): number {
     const seconds = retryAfter ? Number(retryAfter) : 1;
-    const base = Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 1_000;
+    const base =
+      Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 1_000;
     return base + Math.random() * 100;
   }
 

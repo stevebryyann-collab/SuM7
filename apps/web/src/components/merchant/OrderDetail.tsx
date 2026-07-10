@@ -20,7 +20,7 @@ import type { OrderDetail as OrderDetailType } from '@/types/api';
  * 32px monogram placeholder rather than a broken image. */
 function Thumb({ title }: { title: string }): JSX.Element {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-gray-200 bg-gray-50 text-xs font-medium text-gray-500">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-white/40 text-xs font-medium text-text-secondary">
       {title.slice(0, 1).toUpperCase()}
     </span>
   );
@@ -29,8 +29,8 @@ function Thumb({ title }: { title: string }): JSX.Element {
 function SummaryRow({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <div className="flex items-start justify-between gap-3 py-1.5 text-sm">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-right font-medium text-gray-900">{children}</span>
+      <span className="text-text-secondary">{label}</span>
+      <span className="text-right font-medium text-text-primary">{children}</span>
     </div>
   );
 }
@@ -50,22 +50,22 @@ export function OrderDetail({ order, shopifyDomain }: OrderDetailProps): JSX.Ele
     <>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <nav className="mb-1 text-xs text-gray-500">
-            <Link href="/orders" className="hover:text-gray-700">
+          <nav className="mb-1 text-xs text-text-secondary">
+            <Link href="/orders" className="hover:text-text-secondary">
               Orders
             </Link>
             <span className="px-1.5">/</span>
-            <span className="font-mono text-gray-700">{order.shopifyOrderNumber ?? order.id}</span>
+            <span className="font-mono text-text-secondary">{order.shopifyOrderNumber ?? order.id}</span>
           </nav>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+            <h1 className="text-xl font-semibold tracking-tight text-text-primary">
               Order {order.shopifyOrderNumber ?? ''}
             </h1>
             <StatusBadge status={order.status} />
             {order.invoice ? <StatusBadge status={order.invoice.status} /> : null}
             <SyncStatusBadge status={order.syncStatus} />
           </div>
-          <p className="mt-1 text-sm text-gray-500">Placed {formatDate(order.createdAt)}</p>
+          <p className="mt-1 text-sm text-text-secondary">Placed {formatDate(order.createdAt)}</p>
         </div>
         <div className="flex items-center gap-2">
           {order.invoice ? (
@@ -109,19 +109,19 @@ export function OrderDetail({ order, shopifyDomain }: OrderDetailProps): JSX.Ele
                       <div className="flex items-center gap-2">
                         <Thumb title={line.productTitle} />
                         <div className="min-w-0">
-                          <div className="truncate font-medium text-gray-900">{line.productTitle}</div>
+                          <div className="truncate font-medium text-text-primary">{line.productTitle}</div>
                           {line.variantTitle ? (
-                            <div className="truncate text-xs text-gray-500">{line.variantTitle}</div>
+                            <div className="truncate text-xs text-text-secondary">{line.variantTitle}</div>
                           ) : null}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-gray-600">{line.sku ?? '—'}</TableCell>
+                    <TableCell className="font-mono text-xs text-text-secondary">{line.sku ?? '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">{line.quantity}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {formatMoney(line.unitPrice)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums text-gray-600">
+                    <TableCell className="text-right tabular-nums text-text-secondary">
                       {line.discountPct ? `${Number(line.discountPct).toFixed(0)}%` : '—'}
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
@@ -132,11 +132,11 @@ export function OrderDetail({ order, shopifyDomain }: OrderDetailProps): JSX.Ele
               </TableBody>
             </Table>
           </div>
-          <div className="ml-auto w-full max-w-xs space-y-1 border-t border-gray-200 px-4 py-3">
+          <div className="ml-auto w-full max-w-xs space-y-1 border-t border-border px-4 py-3">
             <SummaryRow label="Subtotal">{formatMoney(order.subtotal)}</SummaryRow>
             <SummaryRow label="Tax">{formatMoney(order.taxAmount)}</SummaryRow>
             <SummaryRow label="Shipping">{formatMoney(order.shippingAmount)}</SummaryRow>
-            <div className="flex items-center justify-between border-t border-gray-200 pt-2 text-sm font-semibold text-gray-900">
+            <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold text-text-primary">
               <span>Total</span>
               <span className="font-mono tabular-nums">{formatMoney(order.total)}</span>
             </div>
@@ -145,7 +145,7 @@ export function OrderDetail({ order, shopifyDomain }: OrderDetailProps): JSX.Ele
 
         {/* Order summary */}
         <section className="panel h-fit p-4">
-          <h2 className="mb-2 text-label font-medium uppercase tracking-wider text-gray-500">
+          <h2 className="mb-2 text-label font-medium uppercase tracking-wider text-text-secondary">
             Order Summary
           </h2>
           <SummaryRow label="Buyer">
@@ -165,7 +165,7 @@ export function OrderDetail({ order, shopifyDomain }: OrderDetailProps): JSX.Ele
                 {order.invoice.invoiceNumber}
               </Link>
             ) : (
-              <span className="text-gray-400">Not yet generated</span>
+              <span className="text-text-tertiary">Not yet generated</span>
             )}
           </SummaryRow>
           <SummaryRow label="Shopify Order">
@@ -174,13 +174,13 @@ export function OrderDetail({ order, shopifyDomain }: OrderDetailProps): JSX.Ele
                 {order.shopifyOrderNumber ?? 'View'}
               </a>
             ) : (
-              <span className="text-gray-400">—</span>
+              <span className="text-text-tertiary">—</span>
             )}
           </SummaryRow>
           {order.notes ? (
-            <div className="mt-3 border-t border-gray-200 pt-3 text-sm">
-              <div className="mb-1 text-gray-500">Notes</div>
-              <p className="whitespace-pre-wrap text-gray-700">{order.notes}</p>
+            <div className="mt-3 border-t border-border pt-3 text-sm">
+              <div className="mb-1 text-text-secondary">Notes</div>
+              <p className="whitespace-pre-wrap text-text-secondary">{order.notes}</p>
             </div>
           ) : null}
         </section>

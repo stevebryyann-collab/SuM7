@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn';
  * Minimal click-to-open popover — no Radix/Floating-UI dependency (the web bundle
  * keeps its dep surface small; see the BulkOrderTable volume breakdown). Anchored
  * to its trigger via a relative wrapper, dismissed on outside-pointerdown or Escape.
- * Solid white panel, one layer of depth, no backdrop blur (design rules).
+ * Glass panel over blur (CLAUDE.md → Glass System).
  */
 export interface PopoverProps {
   /** Content rendered inside the trigger button (e.g. an info icon). */
@@ -63,8 +63,8 @@ export function Popover({
         aria-label={label}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          'inline-flex items-center justify-center rounded-sm text-gray-500 transition-colors duration-75',
-          'hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+          'inline-flex items-center justify-center rounded-full text-text-tertiary transition-colors duration-fast',
+          'hover:text-ocean focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40',
           triggerClassName,
         )}
       >
@@ -74,8 +74,8 @@ export function Popover({
         <div
           role="dialog"
           className={cn(
-            'absolute z-50 rounded-md border border-gray-200 bg-white shadow-sm',
-            'data-[state=open]:animate-fade-in',
+            'absolute z-50 rounded-lg border border-glass-border bg-glass-strong shadow-glass backdrop-blur-glass',
+            'animate-in fade-in-0 zoom-in-95',
             side === 'top' ? 'bottom-full mb-1' : 'top-full mt-1',
             align === 'end' ? 'right-0' : 'left-0',
             className,

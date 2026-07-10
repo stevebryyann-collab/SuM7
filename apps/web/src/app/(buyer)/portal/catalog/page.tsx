@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { X, Upload, RotateCcw } from 'lucide-react';
+import { Upload, RotateCcw, Bookmark } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,15 +11,17 @@ import { StatusBadge } from '@/components/shared/StatusBadge';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { BulkOrderTable } from '@/components/buyer/BulkOrderTable';
+import { FirstUseWelcome } from '@/components/buyer/FirstUseWelcome';
 import { CsvPreviewModal } from '@/components/buyer/CsvPreviewModal';
+import { SaveToListModal } from '@/components/buyer/SaveToListModal';
 import { useBuyerCatalog } from '@/hooks/useBuyerCatalog';
+import type { SaveCartItemInput } from '@/hooks/useShoppingLists';
 import { useBuyerMe } from '@/hooks/useBuyerAccount';
 import { useOrders, useOrder } from '@/hooks/useOrders';
 import { useBuyerMerchantId } from '@/components/providers/BuyerProviders';
-import { formatDate, formatPaymentTerms } from '@/lib/format';
+import { consumeCartSeed } from '@/lib/cart-seed';
+import { formatDate } from '@/lib/format';
 import type { CatalogProduct } from '@/types/api';
-
-const WELCOME_DISMISS_KEY = 'b2b.catalog.welcome.dismissed';
 
 /**
  * Buyer catalog + spreadsheet ordering. Loads the tier-priced catalog (infinite
@@ -33,28 +35,63 @@ export default function CatalogPage(): JSX.Element {
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [csvOpen, setCsvOpen] = useState(false);
   const [reorderOpen, setReorderOpen] = useState(false);
-  const [welcomeDismissed, setWelcomeDismissed] = useState(true);
+  const [saveListOpen, setSaveListOpen] = useState(false);
 
   const merchantId = useBuyerMerchantId();
   const query = useBuyerCatalog('');
   const buyerMe = useBuyerMe();
   const orders = useOrders({ mode: 'buyer' });
 
-  // Welcome bar shows once per browser (first visit).
-  useEffect(() => {
-    setWelcomeDismissed(localStorage.getItem(WELCOME_DISMISS_KEY) === '1');
-  }, []);
-
-  const dismissWelcome = (): void => {
-    localStorage.setItem(WELCOME_DISMISS_KEY, '1');
-    setWelcomeDismissed(true);
-  };
-
   const allProducts = useMemo<CatalogProduct[]>(
     () => (query.data?.pages ?? []).flatMap((page) => page.products),
     [query.data],
   );
   const isStale = (query.data?.pages ?? []).some((page) => page.stale);
+
+  // Seed the cart from a saved list / past order handed off via sessionStorage
+  // (see lib/cart-seed). Runs once on mount, before any user edits.
+  useEffect(() => {
+    const seed = consumeCartSeed();
+    if (seed) {
+      setQuantities((prev) => ({ ...prev, ...seed }));
+      toast.success('Loaded into your cart');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Flatten the working cart to save-cart line shape (attach product/variant
+  // metadata from the loaded catalog). Capped at the API's 200-item list limit.
+  const cartLines = useMemo<SaveCartItemInput[]>(() => {
+    const index = new Map<
+      string,
+      { productId: string; productTitle: string; variantTitle?: string; sku?: string }
+    >();
+    for (const product of allProducts) {
+      for (const variant of product.variants) {
+        index.set(variant.shopifyVariantId, {
+          productId: product.shopifyProductId,
+          productTitle: product.title,
+          variantTitle: [variant.color, variant.size].filter(Boolean).join(' / ') || undefined,
+          sku: variant.sku ?? undefined,
+        });
+      }
+    }
+    const lines: SaveCartItemInput[] = [];
+    for (const [variantId, qty] of Object.entries(quantities)) {
+      if (qty <= 0) continue;
+      const meta = index.get(variantId);
+      if (!meta) continue;
+      lines.push({
+        shopifyVariantId: variantId,
+        shopifyProductId: meta.productId,
+        productTitle: meta.productTitle,
+        variantTitle: meta.variantTitle,
+        sku: meta.sku,
+        quantity: qty,
+      });
+    }
+    return lines.slice(0, 200);
+  }, [allProducts, quantities]);
 
   // Client-side instant search across the loaded products (name or any SKU).
   const term = search.trim().toLowerCase();
@@ -89,32 +126,14 @@ export default function CatalogPage(): JSX.Element {
         actions={isStale ? <StatusBadge status="processing" label="Prices updating" /> : undefined}
       />
 
-      {!welcomeDismissed && buyerMe.data ? (
-        <div className="mb-4 flex items-start justify-between gap-4 rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-700">
-            Welcome, <span className="font-medium text-gray-900">{buyerMe.data.companyName}</span>! Your account is
-            set up with{' '}
-            <span className="font-medium text-gray-900">{buyerMe.data.pricingTierName ?? 'standard'}</span> pricing
-            and <span className="font-medium text-gray-900">{formatPaymentTerms(buyerMe.data.paymentTerms)}</span>{' '}
-            payment terms.
-          </p>
-          <button
-            type="button"
-            onClick={dismissWelcome}
-            aria-label="Dismiss welcome message"
-            className="flex-shrink-0 rounded-sm text-gray-400 hover:text-gray-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
+      {buyerMe.data ? <FirstUseWelcome buyerMe={buyerMe.data} /> : null}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <Input
           placeholder="Search products, SKUs…"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="h-9 w-72"
+          className="h-9 w-full sm:w-72"
           aria-label="Search products"
         />
         <div className="flex items-center gap-2">
@@ -126,6 +145,9 @@ export default function CatalogPage(): JSX.Element {
               <RotateCcw className="h-3.5 w-3.5" /> Reorder last order
             </Button>
           ) : null}
+          <Button variant="default" onClick={() => setSaveListOpen(true)} disabled={cartLines.length === 0}>
+            <Bookmark className="h-3.5 w-3.5" /> Save as list
+          </Button>
         </div>
       </div>
 
@@ -136,20 +158,20 @@ export default function CatalogPage(): JSX.Element {
       ) : query.isError ? (
         <div className="panel p-6 text-sm text-red-700">Failed to load the catalog. Please refresh.</div>
       ) : merchantId === null ? (
-        <div className="panel p-6 text-sm text-gray-600">
+        <div className="panel p-6 text-sm text-text-secondary">
           Unable to resolve your merchant context. Please return to the store and re-open the portal.
         </div>
       ) : (
         <>
           {term ? (
-            <p className="mb-2 text-sm text-gray-500">
-              Showing <span className="font-medium text-gray-900">{filteredProducts.length}</span> of{' '}
-              <span className="font-medium text-gray-900">{allProducts.length}</span> products
+            <p className="mb-2 text-sm text-text-secondary">
+              Showing <span className="font-medium text-text-primary">{filteredProducts.length}</span> of{' '}
+              <span className="font-medium text-text-primary">{allProducts.length}</span> products
             </p>
           ) : null}
 
           {term && filteredProducts.length === 0 ? (
-            <div className="panel p-6 text-center text-sm text-gray-600">
+            <div className="panel p-6 text-center text-sm text-text-secondary">
               No products match “{search}”.{' '}
               <button type="button" className="text-accent hover:underline" onClick={() => setSearch('')}>
                 Clear search.
@@ -187,6 +209,8 @@ export default function CatalogPage(): JSX.Element {
         products={allProducts}
         onApply={(updates) => setQuantities((prev) => ({ ...prev, ...updates }))}
       />
+
+      <SaveToListModal open={saveListOpen} onOpenChange={setSaveListOpen} items={cartLines} />
 
       <ConfirmDialog
         open={reorderOpen}

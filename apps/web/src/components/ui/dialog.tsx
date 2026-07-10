@@ -13,8 +13,10 @@ import { cn } from '@/lib/cn';
 /**
  * Centered modal dialog built on Radix Dialog (distinct from {@link Sheet},
  * which slides in from the right). Used for focused forms — the pricing-tier
- * editor and the CSV import preview. Solid scrim, one layer of depth, no
- * backdrop blur (design rules).
+ * editor and the CSV import preview. Blurred scrim, glass container, and a
+ * scale + fade settle on open (CLAUDE.md → Modals). The zoom/fade utilities
+ * come from tailwindcss-animate so they compose with Radix's translate
+ * centering instead of fighting it.
  */
 export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -27,7 +29,9 @@ const DialogOverlay = forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-gray-900/40 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
+      'fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-sm',
+      'data-[state=open]:animate-in data-[state=open]:fade-in-0',
+      'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
       className,
     )}
     {...props}
@@ -45,8 +49,10 @@ export const DialogContent = forwardRef<
       ref={ref}
       className={cn(
         'fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
-        'flex-col rounded-lg border border-gray-200 bg-white shadow-sm',
-        'data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
+        'flex-col rounded-2xl border border-glass-border bg-glass-strong shadow-glass-lg backdrop-blur-glass',
+        'duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out',
+        'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
+        'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
         className,
       )}
       {...props}
@@ -54,8 +60,8 @@ export const DialogContent = forwardRef<
       {children}
       <DialogPrimitive.Close
         className={cn(
-          'absolute right-4 top-4 rounded-sm text-gray-500 transition-colors hover:text-gray-900',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+          'absolute right-4 top-4 rounded-full p-1 text-text-tertiary transition-colors hover:bg-white/60 hover:text-text-primary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ocean/40',
         )}
       >
         <X className="h-4 w-4" />
@@ -67,7 +73,7 @@ export const DialogContent = forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 export function DialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>): JSX.Element {
-  return <div className={cn('border-b border-gray-200 px-6 py-4', className)} {...props} />;
+  return <div className={cn('border-b border-glass-border px-6 py-4', className)} {...props} />;
 }
 
 export function DialogBody({ className, ...props }: HTMLAttributes<HTMLDivElement>): JSX.Element {
@@ -78,7 +84,7 @@ export function DialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElem
   return (
     <div
       className={cn(
-        'flex items-center justify-end gap-2 border-t border-gray-200 px-6 py-4',
+        'flex items-center justify-end gap-2 border-t border-glass-border px-6 py-4',
         className,
       )}
       {...props}
@@ -92,7 +98,7 @@ export const DialogTitle = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-base font-semibold text-gray-900', className)}
+    className={cn('text-lg font-semibold text-text-primary', className)}
     {...props}
   />
 ));
@@ -104,7 +110,7 @@ export const DialogDescription = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('mt-1 text-sm text-gray-500', className)}
+    className={cn('mt-1 text-sm text-text-secondary', className)}
     {...props}
   />
 ));

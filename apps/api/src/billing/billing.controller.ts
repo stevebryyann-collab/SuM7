@@ -10,85 +10,94 @@ import {
   UnauthorizedException,
   UseGuards,
   type RawBodyRequest,
-} from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
-import type { Request } from 'express';
-import type Stripe from 'stripe';
-import { BillingTierSchema, type BillingTierInput, type SubscriptionTier } from '@b2b/shared';
-import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+} from "@nestjs/common";
+import { SkipThrottle } from "@nestjs/throttler";
+import type { Request } from "express";
+import type { EventEntity } from "@paddle/paddle-node-sdk";
+import { BillingTierSchema, type BillingTierInput } from "@b2b/shared";
+import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import {
   MerchantSessionGuard,
   type MerchantAuthenticatedRequest,
-} from '../auth/guards/merchant-session.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { AppConfigService } from '../config/app-config.service';
-import { BillingService, type BillingPlan } from './billing.service';
+} from "../auth/guards/merchant-session.guard";
+import { RolesGuard } from "../auth/guards/roles.guard";
+import { Roles } from "../auth/decorators/roles.decorator";
+import {
+  BillingService,
+  type BillingPlan,
+  type ChangeTierResult,
+} from "./billing.service";
 
 /**
- * Stripe billing HTTP surface.
+ * Paddle billing HTTP surface.
  *
  *   Merchant admin (NextAuth):
- *     POST /api/v1/billing/subscribe     create the hybrid subscription (owner)
- *     POST /api/v1/billing/change-tier   switch flat-price tier (owner)
- *     GET  /api/v1/billing/portal        Stripe Billing Portal URL (owner)
- *     GET  /api/v1/billing/usage         current-month GMV usage (all roles)
+ *     POST /api/v1/billing/subscribe            first subscribe / change tier (owner)
+ *     POST /api/v1/billing/change-tier          change tier (owner)
+ *     POST /api/v1/billing/change-plan          change tier — billing-page alias (owner)
+ *     GET  /api/v1/billing/portal               Paddle customer-portal URL (owner)
+ *     POST /api/v1/billing/create-portal-session Paddle customer-portal URL (owner)
+ *     GET  /api/v1/billing/usage                current-month GMV usage (all roles)
+ *     GET  /api/v1/billing/plan                 current plan snapshot (all roles)
  *
- *   Stripe callback (no guard, raw body, signature verified in controller):
+ * A tier mutation returns `{ checkoutUrl }` when the merchant has no Paddle
+ * subscription yet (Paddle can't create one server-side — the buyer completes a
+ * hosted checkout), or `{ tier }` when an existing subscription is changed in
+ * place with immediate proration.
+ *
+ *   Paddle callback (no guard, raw body, signature verified in controller):
  *     POST /api/v1/billing/webhook       @SkipThrottle, excluded from ValidationPipe
  */
-@Controller('api/v1/billing')
+@Controller("api/v1/billing")
 export class BillingController {
-  constructor(
-    private readonly billing: BillingService,
-    private readonly config: AppConfigService,
-  ) {}
+  constructor(private readonly billing: BillingService) {}
 
-  @Post('subscribe')
+  @Post("subscribe")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner')
-  @HttpCode(HttpStatus.CREATED)
+  @Roles("owner")
+  @HttpCode(HttpStatus.OK)
   async subscribe(
     @Req() req: MerchantAuthenticatedRequest,
     @Body(new ZodValidationPipe(BillingTierSchema)) dto: BillingTierInput,
-  ): Promise<{ subscriptionId: string; status: string }> {
-    const subscription = await this.billing.createSubscription(
+  ): Promise<ChangeTierResult> {
+    return this.billing.changeTier(
       req.merchant!.merchantId,
       dto.tier,
       req.merchant!.userId,
     );
-    return { subscriptionId: subscription.id, status: subscription.status };
   }
 
-  @Post('change-tier')
+  @Post("change-tier")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner')
+  @Roles("owner")
   @HttpCode(HttpStatus.OK)
   async changeTier(
     @Req() req: MerchantAuthenticatedRequest,
     @Body(new ZodValidationPipe(BillingTierSchema)) dto: BillingTierInput,
-  ): Promise<{ subscriptionId: string; tier: SubscriptionTier }> {
-    const subscription = await this.billing.changeTier(
+  ): Promise<ChangeTierResult> {
+    return this.billing.changeTier(
       req.merchant!.merchantId,
       dto.tier,
       req.merchant!.userId,
     );
-    return { subscriptionId: subscription.id, tier: dto.tier };
   }
 
-  @Get('portal')
+  @Get("portal")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner')
-  async portal(@Req() req: MerchantAuthenticatedRequest): Promise<{ url: string }> {
-    const returnUrl = `https://${this.config.get('PLATFORM_DOMAIN')}/merchant/billing`;
-    const url = await this.billing.createBillingPortalSession(req.merchant!.merchantId, returnUrl);
+  @Roles("owner")
+  async portal(
+    @Req() req: MerchantAuthenticatedRequest,
+  ): Promise<{ url: string }> {
+    const url = await this.billing.createBillingPortalSession(
+      req.merchant!.merchantId,
+    );
     return { url };
   }
 
-  @Get('usage')
+  @Get("usage")
   @UseGuards(MerchantSessionGuard, RolesGuard)
   async usage(@Req() req: MerchantAuthenticatedRequest): Promise<{
-    tier: SubscriptionTier;
+    tier: string;
     gmvCurrentMonth: string;
     freeThreshold: string;
     billableGmv: string;
@@ -99,41 +108,47 @@ export class BillingController {
 
   // ── Stage 4 billing-page aliases ────────────────────────────────────────
 
-  @Get('plan')
+  @Get("plan")
   @UseGuards(MerchantSessionGuard, RolesGuard)
   plan(@Req() req: MerchantAuthenticatedRequest): Promise<BillingPlan> {
     return this.billing.getPlan(req.merchant!.merchantId);
   }
 
-  /** Alias for the billing page's "Change plan" action (proration applied). */
-  @Post('change-plan')
+  /**
+   * Alias for the billing page's "Change plan" action. Returns `{ checkoutUrl }`
+   * for a first subscription (opened in a new tab) or `{ tier }` for an in-place
+   * prorated change.
+   */
+  @Post("change-plan")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner')
+  @Roles("owner")
   @HttpCode(HttpStatus.OK)
   async changePlan(
     @Req() req: MerchantAuthenticatedRequest,
     @Body(new ZodValidationPipe(BillingTierSchema)) dto: BillingTierInput,
-  ): Promise<{ subscriptionId: string; tier: SubscriptionTier }> {
-    const subscription = await this.billing.changeTier(
+  ): Promise<ChangeTierResult> {
+    return this.billing.changeTier(
       req.merchant!.merchantId,
       dto.tier,
       req.merchant!.userId,
     );
-    return { subscriptionId: subscription.id, tier: dto.tier };
   }
 
-  /** Alias for the billing page's "Manage billing" button (Stripe portal URL). */
-  @Post('create-portal-session')
+  /** Alias for the billing page's "Manage billing" button (Paddle portal URL). */
+  @Post("create-portal-session")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner')
+  @Roles("owner")
   @HttpCode(HttpStatus.OK)
-  async createPortalSession(@Req() req: MerchantAuthenticatedRequest): Promise<{ url: string }> {
-    const returnUrl = `https://${this.config.get('PLATFORM_DOMAIN')}/settings/billing`;
-    const url = await this.billing.createBillingPortalSession(req.merchant!.merchantId, returnUrl);
+  async createPortalSession(
+    @Req() req: MerchantAuthenticatedRequest,
+  ): Promise<{ url: string }> {
+    const url = await this.billing.createBillingPortalSession(
+      req.merchant!.merchantId,
+    );
     return { url };
   }
 
-  @Post('webhook')
+  @Post("webhook")
   @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   async webhook(
@@ -141,27 +156,30 @@ export class BillingController {
   ): Promise<{ received: true }> {
     const raw = req.rawBody;
     if (!raw) {
-      throw new BadRequestException({ code: 'MISSING_RAW_BODY', message: 'Raw body unavailable' });
+      throw new BadRequestException({
+        code: "MISSING_RAW_BODY",
+        message: "Raw body unavailable",
+      });
     }
-    const signature = req.headers['stripe-signature'];
-    if (typeof signature !== 'string') {
+    const signature = req.headers["paddle-signature"];
+    if (typeof signature !== "string") {
       throw new UnauthorizedException({
-        code: 'MISSING_SIGNATURE',
-        message: 'Missing Stripe-Signature header',
+        code: "MISSING_SIGNATURE",
+        message: "Missing Paddle-Signature header",
       });
     }
 
-    let event: Stripe.Event;
+    let event: EventEntity;
     try {
-      event = this.billing.constructEvent(raw, signature);
+      event = await this.billing.constructEvent(raw, signature);
     } catch (error) {
       throw new UnauthorizedException({
-        code: 'INVALID_SIGNATURE',
-        message: `Stripe signature verification failed: ${(error as Error).message}`,
+        code: "INVALID_SIGNATURE",
+        message: `Paddle signature verification failed: ${(error as Error).message}`,
       });
     }
 
-    await this.billing.handleStripeWebhook(event);
+    await this.billing.handleWebhook(event);
     return { received: true };
   }
 }

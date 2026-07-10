@@ -25,8 +25,8 @@ export function SignUpCard(): JSX.Element {
           fontFamily: 'inherit',
         },
         elements: {
-          card: 'shadow-sm border border-gray-200',
-          headerSubtitle: 'text-gray-500',
+          card: 'rounded-2xl border border-glass-border bg-glass-strong shadow-glass-lg backdrop-blur-glass',
+          headerSubtitle: 'text-text-secondary',
           formButtonPrimary:
             'bg-accent border border-accent-dark hover:brightness-100 active:brightness-95 normal-case',
           footerActionLink: 'text-accent',

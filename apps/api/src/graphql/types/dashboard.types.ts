@@ -13,6 +13,9 @@ export class MerchantDashboard {
   @Field(() => String, { description: 'Paid GMV for the previous calendar month.' })
   gmvPreviousMonth!: string;
 
+  @Field(() => String, { description: 'Lifetime paid GMV across all months.' })
+  allTimeGmv!: string;
+
   @Field(() => String, {
     nullable: true,
     description: 'Month-over-month GMV change percent (1dp), or null when no prior GMV.',

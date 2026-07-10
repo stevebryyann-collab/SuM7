@@ -50,7 +50,7 @@ function StepIcon({ tone }: { tone: StepTone }): JSX.Element {
   if (tone === 'done') return <Check className="h-4 w-4 text-green-600" />;
   if (tone === 'danger') return <CircleDot className="h-4 w-4 text-red-600" />;
   if (tone === 'current') return <CircleDot className="h-4 w-4 text-accent" />;
-  return <Circle className="h-4 w-4 text-gray-300" />;
+  return <Circle className="h-4 w-4 text-text-tertiary" />;
 }
 
 /** Vertical status timeline rendered on the invoice detail actions panel. */
@@ -67,12 +67,12 @@ export function InvoiceTimeline({ invoice }: { invoice: InvoiceDetail }): JSX.El
             <div
               className={cn(
                 'text-sm font-medium',
-                step.tone === 'pending' ? 'text-gray-400' : step.tone === 'danger' ? 'text-red-700' : 'text-gray-900',
+                step.tone === 'pending' ? 'text-text-tertiary' : step.tone === 'danger' ? 'text-red-700' : 'text-text-primary',
               )}
             >
               {step.label}
             </div>
-            <div className="text-xs text-gray-500">{step.detail}</div>
+            <div className="text-xs text-text-secondary">{step.detail}</div>
           </div>
         </li>
       ))}

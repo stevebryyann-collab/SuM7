@@ -14,9 +14,9 @@ import {
   Query,
   Req,
   UseGuards,
-} from '@nestjs/common';
-import { Redis } from 'ioredis';
-import { z } from 'zod';
+} from "@nestjs/common";
+import { Redis } from "ioredis";
+import { z } from "zod";
 import {
   CursorPaginationSchema,
   MarkPaidSchema,
@@ -24,13 +24,19 @@ import {
   type MarkPaidInput,
   type InvoiceStatus,
   type PaginatedResponse,
-} from '@b2b/shared';
-import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
-import { REDIS_CACHE } from '../redis/redis.module';
-import { MerchantSessionGuard, type MerchantAuthenticatedRequest } from '../auth/guards/merchant-session.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { ClerkBuyerGuard, type BuyerAuthenticatedRequest } from '../auth/guards/clerk-buyer.guard';
+} from "@b2b/shared";
+import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
+import { REDIS_CACHE } from "../redis/redis.module";
+import {
+  MerchantSessionGuard,
+  type MerchantAuthenticatedRequest,
+} from "../auth/guards/merchant-session.guard";
+import { RolesGuard } from "../auth/guards/roles.guard";
+import { Roles } from "../auth/decorators/roles.decorator";
+import {
+  ClerkBuyerGuard,
+  type BuyerAuthenticatedRequest,
+} from "../auth/guards/clerk-buyer.guard";
 import {
   InvoicesService,
   type ArAgingResult,
@@ -38,7 +44,7 @@ import {
   type InvoiceDetail,
   type InvoiceSummary,
   type SendReminderResult,
-} from './invoices.service';
+} from "./invoices.service";
 
 /** Body of `PATCH /invoices/:id/void` — a required, human-readable reason. */
 const VoidInvoiceSchema = z.object({
@@ -75,14 +81,15 @@ export class InvoicesController {
 
   // ── Merchant admin ──────────────────────────────────────────────────────
 
-  @Get('invoices')
+  @Get("invoices")
   @UseGuards(MerchantSessionGuard, RolesGuard)
   listInvoices(
     @Req() req: MerchantAuthenticatedRequest,
-    @Query(new ZodValidationPipe(CursorPaginationSchema)) page: CursorPaginationInput,
-    @Query('status') status?: string,
-    @Query('agingBucket') agingBucket?: string,
-    @Query('buyerId') buyerId?: string,
+    @Query(new ZodValidationPipe(CursorPaginationSchema))
+    page: CursorPaginationInput,
+    @Query("status") status?: string,
+    @Query("agingBucket") agingBucket?: string,
+    @Query("buyerId") buyerId?: string,
   ): Promise<PaginatedResponse<InvoiceSummary>> {
     return this.invoices.listInvoicesForMerchant(req.merchant!.merchantId, {
       ...page,
@@ -92,55 +99,56 @@ export class InvoicesController {
     });
   }
 
-  @Get('invoices/ar-aging')
+  @Get("invoices/ar-aging")
   @UseGuards(MerchantSessionGuard, RolesGuard)
   getArAging(@Req() req: MerchantAuthenticatedRequest): Promise<ArAgingResult> {
     return this.invoices.getArAging(req.merchant!.merchantId);
   }
 
-  @Get('invoices/ar-aging/export')
+  @Get("invoices/ar-aging/export")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Header('Content-Type', 'text/csv; charset=utf-8')
-  @Header('Content-Disposition', 'attachment; filename="ar-aging.csv"')
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="ar-aging.csv"')
   getArAgingExport(@Req() req: MerchantAuthenticatedRequest): Promise<string> {
     return this.invoices.exportArAgingCsv(req.merchant!.merchantId);
   }
 
-  @Get('invoices/:id/integrity')
+  @Get("invoices/:id/integrity")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner', 'admin')
+  @Roles("owner", "admin")
   verifyIntegrity(
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Req() req: MerchantAuthenticatedRequest,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
   ): Promise<IntegrityResult> {
-    return this.invoices.verifyPdfIntegrity(id);
+    return this.invoices.verifyPdfIntegrity(id, req.merchant!.merchantId);
   }
 
-  @Get('invoices/:id/pdf')
+  @Get("invoices/:id/pdf")
   @UseGuards(MerchantSessionGuard, RolesGuard)
   getInvoicePdf(
     @Req() req: MerchantAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
   ): Promise<{ url: string }> {
     return this.invoices.getInvoicePdfUrl(id, req.merchant!.merchantId);
   }
 
   // One-segment param route — declared AFTER the static `invoices/ar-aging*`
   // routes so Express does not match `ar-aging` as an `:id`.
-  @Get('invoices/:id')
+  @Get("invoices/:id")
   @UseGuards(MerchantSessionGuard, RolesGuard)
   getInvoice(
     @Req() req: MerchantAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
   ): Promise<InvoiceDetail> {
     return this.invoices.getInvoiceDetail(req.merchant!.merchantId, id);
   }
 
-  @Patch('invoices/:id/mark-paid')
+  @Patch("invoices/:id/mark-paid")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner', 'admin')
+  @Roles("owner", "admin")
   markPaid(
     @Req() req: MerchantAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Body(new ZodValidationPipe(MarkPaidSchema)) dto: MarkPaidInput,
   ): Promise<{ id: string; status: InvoiceStatus; amountPaid: string }> {
     const merchant = req.merchant!;
@@ -152,25 +160,30 @@ export class InvoicesController {
     );
   }
 
-  @Patch('invoices/:id/void')
+  @Patch("invoices/:id/void")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner', 'admin')
+  @Roles("owner", "admin")
   voidInvoice(
     @Req() req: MerchantAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Body(new ZodValidationPipe(VoidInvoiceSchema)) dto: VoidInvoiceInput,
   ): Promise<{ id: string; status: InvoiceStatus }> {
     const merchant = req.merchant!;
-    return this.invoices.voidInvoice(id, merchant.merchantId, dto.reason, merchant.userId);
+    return this.invoices.voidInvoice(
+      id,
+      merchant.merchantId,
+      dto.reason,
+      merchant.userId,
+    );
   }
 
-  @Post('invoices/:id/resend')
+  @Post("invoices/:id/resend")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner', 'admin')
+  @Roles("owner", "admin")
   @HttpCode(HttpStatus.OK)
   async resend(
     @Req() req: MerchantAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
   ): Promise<{ sent: boolean }> {
     // Per-invoice resend throttle (one send per window) backed by the cache Redis.
     const key = `invoice:resend:${id}`;
@@ -184,8 +197,9 @@ export class InvoicesController {
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          code: 'RESEND_RATE_LIMITED',
-          message: 'This invoice was re-sent recently; please wait before trying again',
+          code: "RESEND_RATE_LIMITED",
+          message:
+            "This invoice was re-sent recently; please wait before trying again",
           retryAfterSeconds: retryAfter,
         },
         HttpStatus.TOO_MANY_REQUESTS,
@@ -194,13 +208,13 @@ export class InvoicesController {
     return this.invoices.resendInvoiceEmail(id, req.merchant!.merchantId);
   }
 
-  @Post('invoices/:id/send-reminder')
+  @Post("invoices/:id/send-reminder")
   @UseGuards(MerchantSessionGuard, RolesGuard)
-  @Roles('owner', 'admin')
+  @Roles("owner", "admin")
   @HttpCode(HttpStatus.OK)
   sendReminder(
     @Req() req: MerchantAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
   ): Promise<SendReminderResult> {
     const merchant = req.merchant!;
     return this.invoices.sendReminder(id, merchant.merchantId, merchant.userId);
@@ -208,24 +222,55 @@ export class InvoicesController {
 
   // ── Buyer portal ────────────────────────────────────────────────────────
 
-  @Get('buyer/invoices')
+  @Get("buyer/invoices")
   @UseGuards(ClerkBuyerGuard)
   listBuyerInvoices(
     @Req() req: BuyerAuthenticatedRequest,
-    @Query(new ZodValidationPipe(CursorPaginationSchema)) page: CursorPaginationInput,
-    @Query('status') status?: string,
+    @Query(new ZodValidationPipe(CursorPaginationSchema))
+    page: CursorPaginationInput,
+    @Query("status") status?: string,
   ): Promise<PaginatedResponse<InvoiceSummary>> {
     const buyer = req.buyer!;
-    return this.invoices.listInvoicesForBuyer(buyer.buyerId, buyer.merchantId, { ...page, status });
+    return this.invoices.listInvoicesForBuyer(buyer.buyerId, buyer.merchantId, {
+      ...page,
+      status,
+    });
   }
 
-  @Get('buyer/invoices/:id/download')
+  @Get("buyer/invoices/:id/download")
   @UseGuards(ClerkBuyerGuard)
   async downloadInvoice(
     @Req() req: BuyerAuthenticatedRequest,
-    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
   ): Promise<{ url: string }> {
     const url = await this.invoices.getPresignedUrl(id, req.buyer!.buyerId);
     return { url };
+  }
+
+  /**
+   * Fast "is this invoice cryptographically sealed?" probe for the buyer portal
+   * download page. Ownership-checked in the service; cached 1h (the hash presence
+   * only flips once, at generation). Returns { hasIntegrityHash, invoiceNumber }.
+   */
+  @Get("buyer/invoices/:id/integrity-status")
+  @UseGuards(ClerkBuyerGuard)
+  async invoiceIntegrityStatus(
+    @Req() req: BuyerAuthenticatedRequest,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+  ): Promise<{ hasIntegrityHash: boolean; invoiceNumber: string }> {
+    const cacheKey = `invoice:integrity:${req.buyer!.buyerId}:${id}`;
+    const cached = await this.cache.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as {
+        hasIntegrityHash: boolean;
+        invoiceNumber: string;
+      };
+    }
+    const result = await this.invoices.getBuyerInvoiceIntegrity(
+      id,
+      req.buyer!.buyerId,
+    );
+    await this.cache.set(cacheKey, JSON.stringify(result), "EX", 3600);
+    return result;
   }
 }

@@ -20,6 +20,8 @@ import { ApiClientError } from '@/lib/api/error';
 import { formatMoney, formatDate, formatPaymentTerms, paymentTermsDays } from '@/lib/format';
 import { useCreateOrder } from '@/hooks/useCreateOrder';
 import { useBnplInitiate } from '@/hooks/useBnpl';
+import { useCreateStandingOrder } from '@/hooks/useStandingOrders';
+import { toast } from '@/components/shared/toasts';
 import { BnplSection } from './BnplSection';
 import type { BuyerMe, OrderCreatedResult } from '@/types/api';
 
@@ -148,19 +150,20 @@ export function ReviewOrderModal({
             <DialogBody>
               <div className="flex flex-col items-center py-6 text-center">
                 <CheckCircle2 className="h-12 w-12 text-green-600" />
-                <p className="mt-3 text-lg font-semibold text-gray-900">Order Placed!</p>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-3 text-lg font-semibold text-text-primary">Order Placed!</p>
+                <p className="mt-1 text-sm text-text-secondary">
                   Order <span className="font-mono">{result.shopifyOrderNumber}</span> &middot;{' '}
                   {formatMoney(result.total)}
                 </p>
-                <p className="mt-2 text-sm text-gray-500">
+                <p className="mt-2 text-sm text-text-secondary">
                   Your invoice will arrive by email within 60 seconds.
                 </p>
                 {bnplNotice ? (
-                  <p className="mt-3 max-w-md rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <p className="mt-3 max-w-md rounded-md border border-glass-border bg-white/40 px-3 py-2 text-xs text-text-secondary">
                     {bnplNotice}
                   </p>
                 ) : null}
+                <ReorderReminderPrompt orderId={result.orderId} />
               </div>
             </DialogBody>
             <DialogFooter>
@@ -195,9 +198,9 @@ export function ReviewOrderModal({
             <DialogBody className="space-y-4">
               {error ? <OrderErrorBanner error={error} subtotal={subtotal} buyerMe={buyerMe} /> : null}
 
-              <div className="overflow-hidden rounded-md border border-gray-200">
+              <div className="overflow-hidden rounded-md border border-border">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-left text-label uppercase tracking-wide text-gray-500">
+                  <thead className="bg-fog-soft text-left text-label uppercase tracking-wide text-text-secondary">
                     <tr>
                       <th className="px-3 py-2 font-medium">Product</th>
                       <th className="px-3 py-2 text-right font-medium">Qty</th>
@@ -207,18 +210,18 @@ export function ReviewOrderModal({
                   </thead>
                   <tbody>
                     {lines.map((line) => (
-                      <tr key={line.variantId} className="border-t border-gray-100">
+                      <tr key={line.variantId} className="border-t border-border">
                         <td className="px-3 py-1.5">
-                          <span className="text-gray-900">{line.productTitle}</span>
+                          <span className="text-text-primary">{line.productTitle}</span>
                           {line.variantLabel && line.variantLabel !== '—' ? (
-                            <span className="text-gray-400"> · {line.variantLabel}</span>
+                            <span className="text-text-tertiary"> · {line.variantLabel}</span>
                           ) : null}
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-gray-700">{line.quantity}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-700">
+                        <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">{line.quantity}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-secondary">
                           {formatMoney(line.unitPrice)}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900">
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-primary">
                           {formatMoney(line.lineTotal)}
                         </td>
                       </tr>
@@ -233,17 +236,17 @@ export function ReviewOrderModal({
                 <Row label="Shipping" value="As agreed" muted />
               </dl>
 
-              <div className="space-y-1.5 border-t border-gray-200 pt-3 text-sm">
+              <div className="space-y-1.5 border-t border-border pt-3 text-sm">
                 <Row label="Payment terms" value={formatPaymentTerms(buyerMe?.paymentTerms)} />
                 <Row label="Estimated invoice date" value={formatDate(new Date())} />
                 <Row label="Estimated due date" value={formatDate(dueDate)} />
-                <p className="pt-1 text-xs text-gray-500">
+                <p className="pt-1 text-xs text-text-secondary">
                   An invoice will be emailed to you within 60 seconds of placing your order.
                 </p>
               </div>
 
               {creditLimit !== null ? (
-                <div className="space-y-1.5 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
+                <div className="space-y-1.5 rounded-md border border-glass-border bg-white/40 p-3 text-sm">
                   <Row
                     label="Credit used"
                     value={`${formatMoney(creditUsed)} of ${formatMoney(creditLimit)}`}
@@ -297,14 +300,14 @@ function Row({
 }): JSX.Element {
   return (
     <div className="flex items-center justify-between">
-      <dt className="text-gray-500">{label}</dt>
+      <dt className="text-text-secondary">{label}</dt>
       <dd
         className={
           strong
-            ? 'font-semibold tabular-nums text-gray-900'
+            ? 'font-semibold tabular-nums text-text-primary'
             : muted
-              ? 'text-gray-400'
-              : 'tabular-nums text-gray-900'
+              ? 'text-text-tertiary'
+              : 'tabular-nums text-text-primary'
         }
       >
         {value}
@@ -341,6 +344,68 @@ function OrderErrorBanner({
     <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
       <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
       <p>{message}</p>
+    </div>
+  );
+}
+
+const REORDER_OPTIONS = [
+  { days: 7, label: 'Every week' },
+  { days: 14, label: 'Every 2 weeks' },
+  { days: 30, label: 'Monthly' },
+] as const;
+
+/**
+ * Post-placement "set a reorder reminder?" prompt. Creates a standing order tied
+ * to the just-placed order; once chosen (or dismissed) it collapses to a single
+ * confirmation line. Remounts fresh each time the success state is shown.
+ */
+function ReorderReminderPrompt({ orderId }: { orderId: string }): JSX.Element {
+  const create = useCreateStandingOrder();
+  const [chosen, setChosen] = useState<string | null>(null);
+
+  const choose = (days: 7 | 14 | 30, label: string): void => {
+    create.mutate(
+      { sourceOrderId: orderId, frequencyDays: days },
+      {
+        onSuccess: () => {
+          setChosen(label);
+          toast.success(`We'll remind you to reorder ${label.toLowerCase()}.`);
+        },
+        onError: (error) =>
+          toast.error(error instanceof ApiClientError ? error.message : 'Could not set reminder'),
+      },
+    );
+  };
+
+  if (chosen === 'none') return <span aria-hidden />;
+  if (chosen) {
+    return (
+      <p className="mt-4 flex items-center justify-center gap-1.5 text-sm text-text-secondary">
+        <CheckCircle2 className="h-4 w-4 text-green-600" />
+        We&apos;ll remind you to reorder {chosen.toLowerCase()}.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-4 w-full max-w-md rounded-md border border-glass-border bg-white/40 p-3 text-center">
+      <p className="text-sm font-medium text-text-primary">Set a reminder to reorder?</p>
+      <div className="mt-2 flex flex-wrap justify-center gap-2">
+        {REORDER_OPTIONS.map((option) => (
+          <Button
+            key={option.days}
+            variant="default"
+            size="sm"
+            disabled={create.isPending}
+            onClick={() => choose(option.days, option.label)}
+          >
+            {option.label}
+          </Button>
+        ))}
+        <Button variant="ghost" size="sm" disabled={create.isPending} onClick={() => setChosen('none')}>
+          No thanks
+        </Button>
+      </div>
     </div>
   );
 }

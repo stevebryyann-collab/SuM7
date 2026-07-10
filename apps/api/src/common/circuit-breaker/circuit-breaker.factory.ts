@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import CircuitBreaker from 'opossum';
-import * as Sentry from '@sentry/node';
+import { Injectable, Logger } from "@nestjs/common";
+import CircuitBreaker from "opossum";
+import * as Sentry from "@sentry/node";
 
 /**
  * Per-service action timeouts (ms). The key is the breaker-name prefix before
@@ -9,7 +9,7 @@ import * as Sentry from '@sentry/node';
  */
 const SERVICE_TIMEOUTS: Record<string, number> = {
   shopify: 10_000,
-  stripe: 15_000,
+  paddle: 15_000,
   resolve: 10_000,
   resend: 5_000,
 };
@@ -66,11 +66,13 @@ export class CircuitBreakerFactory {
       ...(options.errorFilter ? { errorFilter: options.errorFilter } : {}),
     });
 
-    breaker.on('open', () => {
-      this.logger.error(`[circuit-breaker:${name}] OPEN — failing fast for ${RESET_TIMEOUT}ms`);
+    breaker.on("open", () => {
+      this.logger.error(
+        `[circuit-breaker:${name}] OPEN — failing fast for ${RESET_TIMEOUT}ms`,
+      );
       Sentry.captureMessage(`Circuit breaker OPEN: ${name}`, {
-        level: 'error',
-        tags: { component: 'circuit-breaker', breaker: name },
+        level: "error",
+        tags: { component: "circuit-breaker", breaker: name },
         extra: {
           fires: breaker.stats.fires,
           failures: breaker.stats.failures,
@@ -78,10 +80,12 @@ export class CircuitBreakerFactory {
         },
       });
     });
-    breaker.on('halfOpen', () => {
-      this.logger.warn(`[circuit-breaker:${name}] HALF-OPEN — probing recovery`);
+    breaker.on("halfOpen", () => {
+      this.logger.warn(
+        `[circuit-breaker:${name}] HALF-OPEN — probing recovery`,
+      );
     });
-    breaker.on('close', () => {
+    breaker.on("close", () => {
       this.logger.log(`[circuit-breaker:${name}] CLOSED — service healthy`);
     });
 
@@ -100,7 +104,7 @@ export class CircuitBreakerFactory {
   }
 
   private resolveTimeout(name: string): number {
-    const prefix = name.split(':')[0] ?? name;
+    const prefix = name.split(":")[0] ?? name;
     return SERVICE_TIMEOUTS[prefix] ?? DEFAULT_TIMEOUT;
   }
 }

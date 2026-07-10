@@ -1,6 +1,7 @@
 'use client';
 
 import { apiRequest, type ApiRequestOptions } from './core';
+import { REP_SESSION_TOKEN_KEY } from '@/lib/rep-session';
 
 /**
  * Buyer auth is owned entirely by Clerk. The Clerk session token is only
@@ -36,6 +37,21 @@ function merchantContextToken(): string | null {
 }
 
 /**
+ * When a sales rep is placing an order on a buyer's behalf, the rep portal stores
+ * the impersonation token in sessionStorage. We forward it so the API's
+ * SalesRepSessionGuard resolves the BUYER principal — the rep sees exactly what
+ * the buyer would. Absent for ordinary buyer sessions.
+ */
+function repSessionToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage.getItem(REP_SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * API client for buyer-portal routes. Attaches the Clerk Bearer token AND the
  * signed `X-Merchant-Context` header, from which the API resolves the buyer's
  * merchant tenant server-side (replacing the broken cross-domain cookie). NEVER
@@ -47,6 +63,9 @@ export async function buyerFetch<T>(
 ): Promise<T> {
   const token = await buyerToken();
   const ctx = merchantContextToken();
-  const headers = ctx ? { ...options.headers, 'X-Merchant-Context': ctx } : options.headers;
+  const rep = repSessionToken();
+  const headers: Record<string, string> = { ...options.headers };
+  if (ctx) headers['X-Merchant-Context'] = ctx;
+  if (rep) headers['X-Sales-Rep-Session'] = rep;
   return apiRequest<T>(path, { ...options, token, headers });
 }

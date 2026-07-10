@@ -1,49 +1,49 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { toast } from 'sonner';
+import { useMemo, useState } from 'react';
 import { subDays, subMonths } from 'date-fns';
-import { ChevronDown, ChevronUp, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import type { AnalyticsExportType } from '@b2b/shared/schemas';
-import { PageHeader } from '@/components/shared/PageHeader';
+import { PageLayout } from '@/components/merchant/PageLayout';
 import { DashboardKpiCard } from '@/components/merchant/DashboardKpiCard';
 import { GmvTrendChart } from '@/components/merchant/GmvTrendChart';
-import { OrderTrendChart } from '@/components/merchant/OrderTrendChart';
+import { TopBuyersChart } from '@/components/merchant/TopBuyersChart';
+import { MonthlyGmvChart } from '@/components/merchant/MonthlyGmvChart';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
+  DataTable,
+  DataTableHeader,
+  DataTableHeaderCell,
+  DataTableBody,
+  DataTableRow,
+  DataTableCell,
+  DataTableEmpty,
+} from '@/components/shared/DataTable';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { KpiCardSkeleton, ChartSkeleton } from '@/components/shared/LoadingSkeleton';
+import { FadeIn } from '@/components/shared/FadeIn';
+import { toast } from '@/components/shared/toasts';
 import { useAnalytics, useAnalyticsExport } from '@/hooks/useAnalytics';
 import { ApiClientError } from '@/lib/api/error';
-import { formatMoney, formatMonth } from '@/lib/format';
+import { formatMoney, formatDate } from '@/lib/format';
 import { cn } from '@/lib/cn';
 
-type Preset = '7d' | '30d' | '90d' | '12m' | 'custom';
+const PRESETS = [
+  { value: '7d', label: '7D' },
+  { value: '30d', label: '30D' },
+  { value: '90d', label: '90D' },
+  { value: '12m', label: '12M' },
+] as const;
 
-const PRESETS: { value: Preset; label: string }[] = [
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-  { value: '90d', label: '90 days' },
-  { value: '12m', label: '12 months' },
-  { value: 'custom', label: 'Custom' },
-];
+type Preset = (typeof PRESETS)[number]['value'];
 
-/** Resolve a preset (or custom inputs) into an inclusive ISO [from, to] window. */
-function resolveRange(preset: Preset, customFrom: string, customTo: string): { from: string; to: string } {
+/** Resolve a preset into an inclusive ISO [from, to] window. */
+function resolveRange(preset: Preset): { from: string; to: string } {
   const now = new Date();
-  if (preset === 'custom') {
-    const from = customFrom ? new Date(`${customFrom}T00:00:00`) : subDays(now, 29);
-    const to = customTo ? new Date(`${customTo}T23:59:59`) : now;
-    return { from: from.toISOString(), to: to.toISOString() };
-  }
   const from =
     preset === '7d'
       ? subDays(now, 6)
@@ -55,214 +55,193 @@ function resolveRange(preset: Preset, customFrom: string, customTo: string): { f
   return { from: from.toISOString(), to: now.toISOString() };
 }
 
+/**
+ * Merchant analytics. A header date-range selector (7D/30D/90D/12M) drives one
+ * aggregator request: KPI cards, a full-width GMV trend, a Top-10 buyers bar +
+ * monthly-GMV bar, and tabbed detail tables (top buyers / per-day order trend).
+ * All money is right-aligned tabular monospace; charts share one axis style.
+ */
 export default function AnalyticsPage(): JSX.Element {
   const [preset, setPreset] = useState<Preset>('30d');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
-
-  const range = useMemo(
-    () => resolveRange(preset, customFrom, customTo),
-    [preset, customFrom, customTo],
-  );
+  const range = useMemo(() => resolveRange(preset), [preset]);
   const { data, isLoading, isError } = useAnalytics(range);
 
   return (
-    <>
-      <PageHeader
-        title="Analytics"
-        description="GMV, orders, and top buyers over time."
-        actions={<ExportMenu />}
-      />
-
-      {/* Date range selector */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white p-0.5 shadow-sm">
-          {PRESETS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setPreset(option.value)}
-              className={cn(
-                'rounded px-3 py-1 text-sm font-medium transition-colors duration-75',
-                preset === option.value ? 'bg-accent text-accent-fg' : 'text-gray-600 hover:bg-gray-100',
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        {preset === 'custom' ? (
-          <div className="flex items-center gap-2">
-            <Input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="h-8 w-40"
-              aria-label="From date"
-            />
-            <span className="text-sm text-gray-400">to</span>
-            <Input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="h-8 w-40"
-              aria-label="To date"
-            />
+    <PageLayout
+      title="Analytics"
+      subtitle="GMV, orders, and top buyers over time."
+      headerActions={
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface p-0.5">
+            {PRESETS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setPreset(option.value)}
+                className={cn(
+                  'rounded px-3 py-1 text-sm font-medium transition-colors duration-fast',
+                  preset === option.value
+                    ? 'bg-accent-subtle text-accent'
+                    : 'text-text-secondary hover:bg-neutral-bg',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-        ) : null}
-      </div>
-
+          <ExportMenu />
+        </div>
+      }
+    >
       {isError ? (
-        <div className="panel p-8 text-center text-sm text-red-700">
+        <div className="rounded-lg border border-border bg-surface p-8 text-center text-sm text-danger shadow-sm">
           Analytics failed to load. Refresh to try again.
         </div>
       ) : (
         <>
-          {/* KPI cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {isLoading || !data ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="rounded-lg border border-gray-200 bg-white p-5">
-                  <LoadingSkeleton rows={2} columns={[2]} />
-                </div>
-              ))
-            ) : (
-              <>
-                <DashboardKpiCard title="GMV" value={formatMoney(data.kpis.gmv)} />
-                <DashboardKpiCard title="Orders" value={String(data.kpis.orders)} />
+          {/* Row 1 — KPI cards */}
+          {isLoading || !data ? (
+            <KpiCardSkeleton />
+          ) : (
+            <FadeIn delay={0}>
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <DashboardKpiCard title="Total GMV" value={formatMoney(data.kpis.gmv)} />
+                <DashboardKpiCard title="Orders Placed" value={String(data.kpis.orders)} />
                 <DashboardKpiCard title="Avg Order Value" value={formatMoney(data.kpis.avgOrderValue)} />
                 <DashboardKpiCard title="Active Buyers" value={String(data.kpis.activeBuyers)} />
-              </>
-            )}
-          </div>
+              </div>
+            </FadeIn>
+          )}
 
-          {/* Trend charts */}
+          {/* Row 2 — GMV trend (full width) */}
+          <ChartCard title="GMV Trend" period="Daily" className="mt-6">
+            {isLoading || !data ? (
+              <ChartSkeleton height={200} />
+            ) : (
+              <FadeIn delay={50}>
+                <GmvTrendChart data={data.trend} />
+              </FadeIn>
+            )}
+          </ChartCard>
+
+          {/* Row 3 — top buyers + monthly GMV */}
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <section className="panel p-5">
-              <h2 className="mb-4 text-label uppercase tracking-wider text-gray-500">GMV Trend</h2>
-              {isLoading || !data ? <LoadingSkeleton rows={6} columns={[1]} /> : <GmvTrendChart data={data.trend} />}
-            </section>
-            <section className="panel p-5">
-              <h2 className="mb-4 text-label uppercase tracking-wider text-gray-500">Order Count</h2>
-              {isLoading || !data ? <LoadingSkeleton rows={6} columns={[1]} /> : <OrderTrendChart data={data.trend} />}
-            </section>
+            <ChartCard title="Top 10 Buyers" period="By GMV">
+              {isLoading || !data ? (
+                <ChartSkeleton height={288} />
+              ) : (
+                <FadeIn delay={50}>
+                  <TopBuyersChart data={data.topBuyers} />
+                </FadeIn>
+              )}
+            </ChartCard>
+            <ChartCard title="Monthly GMV" period="Last 12 months">
+              {isLoading || !data ? (
+                <ChartSkeleton height={288} />
+              ) : (
+                <FadeIn delay={50}>
+                  <MonthlyGmvChart data={data.monthly} />
+                </FadeIn>
+              )}
+            </ChartCard>
           </div>
 
-          {/* Top buyers */}
-          <section className="panel mt-6">
-            <div className="border-b border-gray-200 px-4 py-3">
-              <h2 className="text-label uppercase tracking-wider text-gray-500">Top 10 Buyers</h2>
-            </div>
-            {isLoading || !data ? (
-              <LoadingSkeleton rows={6} columns={[1, 3, 2, 1, 2]} />
-            ) : data.topBuyers.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-500">No buyer activity in this period.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">#</TableHead>
-                    <TableHead>Company</TableHead>
-                    <TableHead className="text-right">GMV</TableHead>
-                    <TableHead className="text-right">Orders</TableHead>
-                    <TableHead className="text-right">Avg Order</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.topBuyers.map((buyer, i) => (
-                    <TableRow key={buyer.buyerId} className="hover:bg-blue-50">
-                      <TableCell className="text-gray-500 tabular-nums">{i + 1}</TableCell>
-                      <TableCell>
-                        <Link href="/buyers" className="font-medium text-gray-900 hover:text-accent hover:underline">
-                          {buyer.companyName}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatMoney(buyer.gmv)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{buyer.orderCount}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatMoney(buyer.avgOrderValue)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </section>
-
-          {/* Monthly GMV */}
-          <section className="panel mt-6">
-            <div className="border-b border-gray-200 px-4 py-3">
-              <h2 className="text-label uppercase tracking-wider text-gray-500">Monthly GMV (last 12 months)</h2>
-            </div>
-            {isLoading || !data ? (
-              <LoadingSkeleton rows={6} columns={[2, 2, 1, 2, 1]} />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead className="text-right">GMV</TableHead>
-                    <TableHead className="text-right">Orders</TableHead>
-                    <TableHead className="text-right">Avg Order</TableHead>
-                    <TableHead className="text-right">YoY</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.monthly.map((row) => (
-                    <TableRow key={row.month}>
-                      <TableCell className="text-gray-700">{formatMonth(row.month)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatMoney(row.gmv)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.orders}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatMoney(row.avgOrder)}</TableCell>
-                      <TableCell className="text-right">
-                        <YoyCell value={row.yoyChangePct} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </section>
+          {/* Row 4 — detail tables */}
+          <FadeIn delay={100} className="mt-6">
+            <Tabs defaultValue="buyers">
+              <TabsList>
+                <TabsTrigger value="buyers">Top Buyers</TabsTrigger>
+                <TabsTrigger value="trend">Order Trend</TabsTrigger>
+              </TabsList>
+              <TabsContent value="buyers">
+                <DataTable>
+                  <DataTableHeader>
+                    <tr>
+                      <DataTableHeaderCell className="w-12">#</DataTableHeaderCell>
+                      <DataTableHeaderCell>Company</DataTableHeaderCell>
+                      <DataTableHeaderCell align="right">GMV</DataTableHeaderCell>
+                      <DataTableHeaderCell align="right">Orders</DataTableHeaderCell>
+                      <DataTableHeaderCell align="right">Avg Order</DataTableHeaderCell>
+                    </tr>
+                  </DataTableHeader>
+                  <DataTableBody>
+                    {!data || data.topBuyers.length === 0 ? (
+                      <DataTableEmpty colSpan={5} title="No buyer activity in this period" />
+                    ) : (
+                      data.topBuyers.map((buyer, i) => (
+                        <DataTableRow key={buyer.buyerId}>
+                          <DataTableCell className="text-text-tertiary tabular-nums">{i + 1}</DataTableCell>
+                          <DataTableCell className="font-medium">{buyer.companyName}</DataTableCell>
+                          <DataTableCell align="right" className="font-mono">{formatMoney(buyer.gmv)}</DataTableCell>
+                          <DataTableCell align="right">{buyer.orderCount}</DataTableCell>
+                          <DataTableCell align="right" className="font-mono">
+                            {formatMoney(buyer.avgOrderValue)}
+                          </DataTableCell>
+                        </DataTableRow>
+                      ))
+                    )}
+                  </DataTableBody>
+                </DataTable>
+              </TabsContent>
+              <TabsContent value="trend">
+                <DataTable>
+                  <DataTableHeader>
+                    <tr>
+                      <DataTableHeaderCell>Date</DataTableHeaderCell>
+                      <DataTableHeaderCell align="right">Orders</DataTableHeaderCell>
+                      <DataTableHeaderCell align="right">GMV</DataTableHeaderCell>
+                    </tr>
+                  </DataTableHeader>
+                  <DataTableBody>
+                    {!data || data.trend.length === 0 ? (
+                      <DataTableEmpty colSpan={3} title="No orders in this period" />
+                    ) : (
+                      [...data.trend].reverse().map((point) => (
+                        <DataTableRow key={point.date}>
+                          <DataTableCell className="text-text-secondary">{formatDate(point.date)}</DataTableCell>
+                          <DataTableCell align="right">{point.orderCount}</DataTableCell>
+                          <DataTableCell align="right" className="font-mono">{formatMoney(point.gmv)}</DataTableCell>
+                        </DataTableRow>
+                      ))
+                    )}
+                  </DataTableBody>
+                </DataTable>
+              </TabsContent>
+            </Tabs>
+          </FadeIn>
         </>
       )}
-    </>
+    </PageLayout>
   );
 }
 
-function YoyCell({ value }: { value: string | null }): JSX.Element {
-  if (value === null) return <span className="text-gray-400">—</span>;
-  const num = Number(value);
-  const up = num >= 0;
+function ChartCard({
+  title,
+  period,
+  className,
+  children,
+}: {
+  title: string;
+  period: string;
+  className?: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
-    <span className={cn('inline-flex items-center justify-end font-medium tabular-nums', up ? 'text-green-700' : 'text-red-700')}>
-      {up ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-      {Math.abs(num).toFixed(1)}%
-    </span>
+    <section className={cn('rounded-lg border border-border bg-surface p-5 shadow-sm', className)}>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-medium text-text-primary">{title}</h2>
+        <span className="text-xs text-text-secondary">{period}</span>
+      </div>
+      {children}
+    </section>
   );
 }
 
 /** Export dropdown: orders / invoices / buyers CSV + an async GDPR export. */
 function ExportMenu(): JSX.Element {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   const exporter = useAnalyticsExport();
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
   const run = (type: AnalyticsExportType): void => {
-    setOpen(false);
     exporter.mutate(type, {
       onSuccess: (result) => {
         if (type === 'gdpr' && typeof result !== 'string') {
@@ -277,38 +256,21 @@ function ExportMenu(): JSX.Element {
   };
 
   return (
-    <div className="relative" ref={ref}>
-      <Button variant="default" size="sm" onClick={() => setOpen((v) => !v)} disabled={exporter.isPending}>
-        <Download className="h-4 w-4" />
-        Export data
-        <ChevronDown className="h-4 w-4 text-gray-500" />
-      </Button>
-      {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-50 mt-1 w-56 overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm"
-        >
-          <MenuButton onClick={() => run('orders')}>Export orders CSV</MenuButton>
-          <MenuButton onClick={() => run('invoices')}>Export invoices CSV</MenuButton>
-          <MenuButton onClick={() => run('buyers')}>Export buyers CSV</MenuButton>
-          <div className="border-t border-gray-200">
-            <MenuButton onClick={() => run('gdpr')}>GDPR export (emailed)</MenuButton>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MenuButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }): JSX.Element {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+    <DropdownMenu
+      label="Export data"
+      trigger={
+        <span className="inline-flex items-center gap-2">
+          <Download className="h-4 w-4" />
+          Export
+        </span>
+      }
+      triggerClassName="h-9 w-auto gap-2 border border-border-strong px-3 text-sm font-medium text-text-primary"
     >
-      {children}
-    </button>
+      <DropdownMenuItem onSelect={() => run('orders')}>Export orders CSV</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => run('invoices')}>Export invoices CSV</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => run('buyers')}>Export buyers CSV</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => run('gdpr')}>GDPR export (emailed)</DropdownMenuItem>
+    </DropdownMenu>
   );
 }

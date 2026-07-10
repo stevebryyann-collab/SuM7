@@ -18,11 +18,11 @@ export function ComingSoon({
     <>
       <PageHeader title={title} description={description} />
       <section className="panel flex flex-col items-center justify-center px-6 py-16 text-center">
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
-          <Hammer className="h-6 w-6 text-gray-500" />
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-fog-soft">
+          <Hammer className="h-6 w-6 text-text-secondary" />
         </div>
-        <h2 className="text-base font-semibold text-gray-900">Coming soon</h2>
-        <p className="mt-1 max-w-sm text-sm text-gray-500">
+        <h2 className="text-base font-semibold text-text-primary">Coming soon</h2>
+        <p className="mt-1 max-w-sm text-sm text-text-secondary">
           This screen is on the way. The data and actions it needs are already wired on the backend.
         </p>
       </section>

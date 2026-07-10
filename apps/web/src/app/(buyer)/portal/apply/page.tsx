@@ -135,17 +135,17 @@ function PendingCard({ status }: { status: ApplicationStatusDto }): JSX.Element 
   return (
     <div className="panel mx-auto max-w-lg space-y-4 p-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-gray-900">Application status</h2>
+        <h2 className="text-base font-semibold text-text-primary">Application status</h2>
         <StatusBadge status="pending" label="Under Review" className="bg-amber-100 text-amber-800" />
       </div>
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-text-secondary">
         Your application is being reviewed by {status.merchantDisplayName}. You&apos;ll receive an email
         notification when a decision is made.
       </p>
-      <dl className="text-sm text-gray-500">
-        <div className="flex justify-between border-t border-gray-200 py-2">
+      <dl className="text-sm text-text-secondary">
+        <div className="flex justify-between border-t border-border py-2">
           <dt>Applied</dt>
-          <dd className="text-gray-900">{formatDateTime(status.appliedAt)}</dd>
+          <dd className="text-text-primary">{formatDateTime(status.appliedAt)}</dd>
         </div>
       </dl>
       <SignOutButton />
@@ -157,11 +157,11 @@ function RejectedCard({ status }: { status: ApplicationStatusDto }): JSX.Element
   return (
     <div className="panel mx-auto max-w-lg space-y-4 p-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-gray-900">Application status</h2>
-        <StatusBadge status="rejected" label="Application Declined" className="bg-gray-100 text-gray-800" />
+        <h2 className="text-base font-semibold text-text-primary">Application status</h2>
+        <StatusBadge status="rejected" label="Application Declined" className="bg-fog-soft text-text-primary" />
       </div>
-      <p className="text-sm text-gray-600">Your application was not approved at this time.</p>
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-text-secondary">Your application was not approved at this time.</p>
+      <p className="text-sm text-text-secondary">
         If you have questions, contact{' '}
         <a href={`mailto:${status.contactEmail}`} className="text-accent">
           {status.merchantDisplayName}
@@ -177,13 +177,13 @@ function SuspendedCard({ status }: { status: ApplicationStatusDto }): JSX.Elemen
   return (
     <div className="panel mx-auto max-w-lg space-y-4 p-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold text-gray-900">Account status</h2>
+        <h2 className="text-base font-semibold text-text-primary">Account status</h2>
         <StatusBadge status="suspended" label="Suspended" />
       </div>
-      <p className="text-sm text-gray-600">
-        Your wholesale account with {status.merchantDisplayName} is currently suspended.
+      <p className="text-sm text-text-secondary">
+        Your trade account with {status.merchantDisplayName} is currently suspended.
       </p>
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-text-secondary">
         If you have questions, contact{' '}
         <a href={`mailto:${status.contactEmail}`} className="text-accent">
           {status.merchantDisplayName}
@@ -240,7 +240,7 @@ function ApplicationForm({ merchantName }: { merchantName: string }): JSX.Elemen
       // Code-specific copy (shown inline, not just a toast).
       if (error.code === 'ALREADY_APPROVED') {
         setFormError({
-          message: 'You already have an approved account. Log in to access the wholesale portal.',
+          message: 'You already have an approved trade account. Log in to access your trade portal.',
           href: '/buyer-login',
           cta: 'Log in',
         });
@@ -266,8 +266,8 @@ function ApplicationForm({ merchantName }: { merchantName: string }): JSX.Elemen
   return (
     <div className="mx-auto max-w-lg">
       <PageHeader
-        title="Apply for wholesale"
-        description={`Tell us about your business to request a ${merchantName} wholesale account.`}
+        title="Apply for a trade account"
+        description={`Complete your business details to apply for a trade account with ${merchantName}.`}
       />
       <form onSubmit={onSubmit} className="panel space-y-4 p-6">
         <Field label="Company Name" error={errors.companyName?.message} required>
@@ -366,7 +366,7 @@ function Field({
           {label}
           {required ? <span className="ml-0.5 text-red-600">*</span> : null}
         </Label>
-        {hint ? <span className="text-xs text-gray-400">{hint}</span> : null}
+        {hint ? <span className="text-xs text-text-tertiary">{hint}</span> : null}
       </div>
       {children}
       {error ? <p className="text-xs text-red-700">{error}</p> : null}

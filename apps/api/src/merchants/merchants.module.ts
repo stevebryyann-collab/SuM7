@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CatalogModule } from '../catalog/catalog.module';
 import { MerchantsController } from './merchants.controller';
 import { SettingsController } from './settings.controller';
 import { TeamController } from './team.controller';
+import { MerchantSettingsController } from './merchant-settings.controller';
 import { MerchantsService } from './merchants.service';
 
 /**
@@ -16,8 +18,8 @@ import { MerchantsService } from './merchants.service';
  * MerchantContextService, EncryptionService and AppConfigService.
  */
 @Module({
-  imports: [AuthModule],
-  controllers: [MerchantsController, SettingsController, TeamController],
+  imports: [AuthModule, CatalogModule],
+  controllers: [MerchantsController, SettingsController, TeamController, MerchantSettingsController],
   providers: [MerchantsService],
   exports: [MerchantsService],
 })

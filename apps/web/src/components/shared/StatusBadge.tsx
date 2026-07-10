@@ -1,51 +1,57 @@
 import { cn } from '@/lib/cn';
 
 /**
- * Solid-fill status badge. NEVER outlined, NEVER translucent (design rule):
- * `bg-{color}-100 text-{color}-800`. Covers invoice, order, approval and sync
- * statuses with a sensible neutral fallback.
+ * Status badge — a soft rounded-full chip (CLAUDE.md → small chips / Color
+ * palette): a gentle tinted fill with a matching-hue label and a hairline
+ * border, so it reads clearly against glass without shouting. Color is chosen
+ * purely from the `status` string; the optional `variant` is context for future
+ * per-domain extensions and does not affect the mapping today.
+ *
+ * Token colors only (success/warning/danger/neutral/accent), with two semantic
+ * exceptions that have no token equivalent: `viewed` (purple) and `back_order`
+ * (orange) — these mirror the explicit status spec.
  */
-type BadgeTone = 'green' | 'yellow' | 'orange' | 'red' | 'blue' | 'gray' | 'purple';
+export type StatusBadgeVariant = 'invoice' | 'order' | 'application' | 'buyer' | 'inventory';
 
-const TONE_CLASSES: Record<BadgeTone, string> = {
-  green: 'bg-green-100 text-green-800',
-  yellow: 'bg-yellow-100 text-yellow-800',
-  orange: 'bg-orange-100 text-orange-800',
-  red: 'bg-red-100 text-red-800',
-  blue: 'bg-blue-100 text-blue-800',
-  gray: 'bg-gray-100 text-gray-800',
-  purple: 'bg-purple-100 text-purple-800',
-};
-
-/** Map a domain status string onto a tone + human label. */
-const STATUS_MAP: Record<string, { tone: BadgeTone; label: string }> = {
+/** status string → solid bg + text + border classes. */
+const STATUS_CLASSES: Record<string, string> = {
   // Invoice
-  draft: { tone: 'gray', label: 'Draft' },
-  sent: { tone: 'blue', label: 'Sent' },
-  viewed: { tone: 'blue', label: 'Viewed' },
-  partially_paid: { tone: 'yellow', label: 'Partially Paid' },
-  paid: { tone: 'green', label: 'Paid' },
-  overdue: { tone: 'red', label: 'Overdue' },
-  void: { tone: 'gray', label: 'Void' },
-  defaulted: { tone: 'red', label: 'Defaulted' },
-  // Approval
-  pending: { tone: 'yellow', label: 'Pending' },
-  approved: { tone: 'green', label: 'Approved' },
-  rejected: { tone: 'red', label: 'Rejected' },
-  suspended: { tone: 'red', label: 'Suspended' },
-  // Order / sync
-  confirmed: { tone: 'blue', label: 'Confirmed' },
-  processing: { tone: 'yellow', label: 'Processing' },
-  fulfilled: { tone: 'green', label: 'Fulfilled' },
-  cancelled: { tone: 'gray', label: 'Cancelled' },
-  synced: { tone: 'green', label: 'Synced' },
-  pending_sync: { tone: 'yellow', label: 'Pending Sync' },
-  sync_failed: { tone: 'red', label: 'Sync Failed' },
+  paid: 'bg-success-bg text-success border-success-border',
+  overdue: 'bg-danger-bg text-danger border-danger-border',
+  sent: 'bg-accent-subtle text-accent border-accent-border',
+  viewed: 'bg-purple-50 text-purple-700 border-purple-200',
+  partially_paid: 'bg-warning-bg text-warning border-warning-border',
+  void: 'bg-neutral-bg text-neutral border-border-strong',
+  draft: 'bg-neutral-bg text-neutral border-border-strong',
+  defaulted: 'bg-danger-bg text-danger border-danger-border',
+  // Application / buyer
+  pending: 'bg-warning-bg text-warning border-warning-border',
+  approved: 'bg-success-bg text-success border-success-border',
+  rejected: 'bg-neutral-bg text-neutral border-border-strong',
+  suspended: 'bg-danger-bg text-danger border-danger-border',
+  // Order
+  confirmed: 'bg-accent-subtle text-accent border-accent-border',
+  processing: 'bg-warning-bg text-warning border-warning-border',
+  fulfilled: 'bg-success-bg text-success border-success-border',
+  cancelled: 'bg-neutral-bg text-neutral border-border-strong',
+  back_order: 'bg-orange-50 text-orange-700 border-orange-200',
+  // Inventory
+  in_stock: 'bg-success-bg text-success border-success-border',
+  low_stock: 'bg-warning-bg text-warning border-warning-border',
+  out_of_stock: 'bg-danger-bg text-danger border-danger-border',
+  // Shopify sync
+  synced: 'bg-success-bg text-success border-success-border',
+  pending_sync: 'bg-warning-bg text-warning border-warning-border',
+  sync_failed: 'bg-danger-bg text-danger border-danger-border',
 };
+
+const NEUTRAL_CLASSES = 'bg-neutral-bg text-neutral border-border-strong';
 
 export interface StatusBadgeProps {
   status: string;
-  /** Override the displayed label (defaults to the mapped/humanized status). */
+  /** Optional context for future per-domain mappings (not used for coloring yet). */
+  variant?: StatusBadgeVariant;
+  /** Override the displayed label (defaults to the humanized status). */
   label?: string;
   className?: string;
 }
@@ -57,16 +63,16 @@ function humanize(status: string): string {
     .join(' ');
 }
 
-export function StatusBadge({ status, label, className }: StatusBadgeProps): JSX.Element {
-  const mapped = STATUS_MAP[status];
-  const tone = mapped?.tone ?? 'gray';
-  const text = label ?? mapped?.label ?? humanize(status);
+export function StatusBadge({ status, variant: _variant, label, className }: StatusBadgeProps): JSX.Element {
+  const classes = STATUS_CLASSES[status] ?? NEUTRAL_CLASSES;
+  const text = label ?? humanize(status);
 
   return (
     <span
+      data-testid="status-badge"
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-        TONE_CLASSES[tone],
+        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-2xs font-medium uppercase tracking-wide transition-colors duration-base',
+        classes,
         className,
       )}
     >

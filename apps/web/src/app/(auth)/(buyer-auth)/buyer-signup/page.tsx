@@ -16,8 +16,8 @@ export default async function BuyerSignupPage(): Promise<JSX.Element> {
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="text-center">
-        <h1 className="text-lg font-semibold text-gray-900">Create your wholesale account</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-lg font-semibold text-text-primary">Create your wholesale account</h1>
+        <p className="mt-1 text-sm text-text-secondary">
           {subheading} After creating your account, you&apos;ll complete your business application.
         </p>
       </div>

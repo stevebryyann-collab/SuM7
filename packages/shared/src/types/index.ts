@@ -22,7 +22,7 @@ export type InvoiceStatus =
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 
-export type MerchantRole = 'owner' | 'admin' | 'staff';
+export type MerchantRole = 'owner' | 'admin' | 'staff' | 'sales_rep';
 
 export type SubscriptionTier = 'starter' | 'growth' | 'pro';
 

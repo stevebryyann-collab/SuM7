@@ -36,9 +36,9 @@ export function PiiField({
 }: PiiFieldProps): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-label uppercase tracking-wider text-gray-500">{label}</span>
+      <span className="text-label uppercase tracking-wider text-text-secondary">{label}</span>
       <div className="flex items-center gap-2">
-        <span className="font-mono text-sm text-gray-900">
+        <span className="font-mono text-sm text-text-primary">
           {!hasValue ? '—' : revealed ? value ?? '—' : '••••••••'}
         </span>
         {hasValue && !revealed ? (

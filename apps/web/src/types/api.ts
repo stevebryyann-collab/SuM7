@@ -19,6 +19,8 @@ import type {
 export interface MerchantDashboard {
   gmvCurrentMonth: string;
   gmvPreviousMonth: string;
+  /** Lifetime paid GMV across all months (drives the GMV milestone toasts). */
+  allTimeGmv: string;
   gmvChangePercent: string | null;
   outstandingArBalance: string;
   overdueInvoiceCount: number;
@@ -124,6 +126,10 @@ export interface PricingTierSummary {
   priority: number;
   isActive: boolean;
   buyerCount: number;
+  /** Only meaningful for `volume_breaks` tiers. */
+  conditionsJson: PricingTierConditions | null;
+  /** Only meaningful for `fixed_price_list` tiers. */
+  overrideCount: number;
   createdAt: string;
 }
 
@@ -149,9 +155,8 @@ export interface PricingOverrideSummary {
   createdAt: string;
 }
 
-/** Tier detail = summary header + conditions + first page of overrides. */
+/** Tier detail = summary header + conditions + first page of overrides. `conditionsJson` is inherited from the summary. */
 export interface PricingTierDetail extends PricingTierSummary {
-  conditionsJson: PricingTierConditions | null;
   overrides: PaginatedResponse<PricingOverrideSummary>;
 }
 
@@ -205,6 +210,13 @@ export interface OrderDetail {
   dueDate: string | null;
   notes: string | null;
   createdAt: string;
+  /** Part 2/3: back-order flag + Shopify fulfillment tracking (buyer order detail). */
+  containsBackOrder: boolean;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  fulfillmentService: string | null;
+  shippedAt: string | null;
+  estimatedDeliveryAt: string | null;
   lineItems: OrderLineDetail[];
   invoice: {
     id: string;

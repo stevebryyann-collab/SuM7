@@ -7,13 +7,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-} from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
-import { Decimal } from 'decimal.js';
-import { createClerkClient, type ClerkClient } from '@clerk/backend';
-import { Redis } from 'ioredis';
-import * as Sentry from '@sentry/node';
+} from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import { Decimal } from "decimal.js";
+import { createClerkClient, type ClerkClient } from "@clerk/backend";
+import { Redis } from "ioredis";
+import * as Sentry from "@sentry/node";
 import {
   merchantDisplayNameFromDomain,
   type ApproveBuyerInput,
@@ -24,16 +24,23 @@ import {
   type PaymentTerms,
   type RejectBuyerInput,
   type UpdateBuyerInput,
-} from '@b2b/shared';
-import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
-import { EmailService } from '../email/email.service';
-import { AppConfigService } from '../config/app-config.service';
-import { REDIS_CACHE } from '../redis/redis.module';
+} from "@b2b/shared";
+import {
+  PrismaService,
+  type PrismaTransaction,
+} from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
+import { EmailService } from "../email/email.service";
+import { AppConfigService } from "../config/app-config.service";
+import { REDIS_CACHE } from "../redis/redis.module";
 
 /** Banker's-rounding Decimal — consistent with the rest of the money pipeline. */
-const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
-const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const Money = Decimal.clone({
+  rounding: Decimal.ROUND_HALF_EVEN,
+  precision: 40,
+});
+const UUID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 const APPLY_RATE_LIMIT = 5;
 const APPLY_RATE_WINDOW_SECONDS = 3600;
@@ -41,17 +48,17 @@ const PENDING_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Human-readable labels for payment terms (used in buyer-facing emails). */
 const PAYMENT_TERMS_LABELS: Record<PaymentTerms, string> = {
-  immediate: 'Due immediately',
-  net15: 'Net 15 days',
-  net30: 'Net 30 days',
-  net60: 'Net 60 days',
-  net90: 'Net 90 days',
+  immediate: "Due immediately",
+  net15: "Net 15 days",
+  net30: "Net 30 days",
+  net60: "Net 60 days",
+  net90: "Net 90 days",
 };
 
 /** Result of submitting a registration application. */
 export interface ApplicationResult {
   applicationId: string;
-  status: 'pending';
+  status: "pending";
 }
 
 /**
@@ -76,7 +83,7 @@ export interface MerchantContextView {
  *   suspended — relationship suspended                 → suspended card
  */
 export interface ApplicationStatusView {
-  status: 'none' | 'pending' | 'approved' | 'rejected' | 'suspended';
+  status: "none" | "pending" | "approved" | "rejected" | "suspended";
   companyName: string | null;
   appliedAt: string | null;
   reviewedAt: string | null;
@@ -283,7 +290,9 @@ export class BuyersService {
     private readonly config: AppConfigService,
     @Inject(REDIS_CACHE) private readonly cache: Redis,
   ) {
-    this.clerk = createClerkClient({ secretKey: this.config.get('CLERK_SECRET_KEY') });
+    this.clerk = createClerkClient({
+      secretKey: this.config.get("CLERK_SECRET_KEY"),
+    });
   }
 
   // ── Registration (pre-approval, ClerkAuthenticatedGuard) ────────────────
@@ -312,11 +321,11 @@ export class BuyersService {
     //    (the form no longer collects email); fall back to the dto only if a
     //    caller supplied one. The Zod schema trims + lowercases; re-normalize
     //    defensively in case a caller bypasses the pipe.
-    const email = (clerkEmail ?? dto.email ?? '').trim().toLowerCase();
+    const email = (clerkEmail ?? dto.email ?? "").trim().toLowerCase();
     if (!email) {
       throw new BadRequestException({
-        code: 'MISSING_EMAIL',
-        message: 'No verified email is associated with this account',
+        code: "MISSING_EMAIL",
+        message: "No verified email is associated with this account",
       });
     }
     const companyName = dto.companyName.trim();
@@ -324,14 +333,18 @@ export class BuyersService {
     // 3. Existing approved relationship for this Clerk user + merchant → 409.
     const existing = await this.merchantContext.run(merchantId, () =>
       this.prisma.merchantBuyerRelationship.findFirst({
-        where: { merchantId, buyer: { clerkUserId }, approvalStatus: 'approved' },
+        where: {
+          merchantId,
+          buyer: { clerkUserId },
+          approvalStatus: "approved",
+        },
         select: { id: true },
       }),
     );
     if (existing) {
       throw new ConflictException({
-        code: 'ALREADY_APPROVED',
-        message: 'You already have an approved account with this merchant',
+        code: "ALREADY_APPROVED",
+        message: "You already have an approved account with this merchant",
       });
     }
 
@@ -340,7 +353,7 @@ export class BuyersService {
       this.prisma.buyerRegistrationApplication.findFirst({
         where: {
           merchantId,
-          status: 'pending',
+          status: "pending",
           email,
           createdAt: { gte: new Date(Date.now() - PENDING_WINDOW_MS) },
         },
@@ -349,7 +362,10 @@ export class BuyersService {
     );
     if (recentPending) {
       throw new HttpException(
-        { code: 'APPLICATION_PENDING', message: 'An application is already under review' },
+        {
+          code: "APPLICATION_PENDING",
+          message: "An application is already under review",
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -366,7 +382,9 @@ export class BuyersService {
           where: { id: found.id },
           data: {
             companyName,
-            ...(dto.businessType ? { businessType: dto.businessType.trim() } : {}),
+            ...(dto.businessType
+              ? { businessType: dto.businessType.trim() }
+              : {}),
           },
           select: { id: true },
         });
@@ -376,8 +394,10 @@ export class BuyersService {
           email,
           clerkUserId,
           companyName,
-          passwordHash: '',
-          ...(dto.businessType ? { businessType: dto.businessType.trim() } : {}),
+          passwordHash: "",
+          ...(dto.businessType
+            ? { businessType: dto.businessType.trim() }
+            : {}),
         },
         select: { id: true },
       });
@@ -396,7 +416,7 @@ export class BuyersService {
           phone: dto.phone?.trim() ?? null,
           estimatedMonthlyOrder: dto.estimatedMonthlyOrder?.trim() ?? null,
           message: dto.message?.trim() ?? null,
-          status: 'pending',
+          status: "pending",
           ipAddress,
           userAgent,
         },
@@ -416,7 +436,7 @@ export class BuyersService {
     // 8. Merchant owner alert (non-throwing).
     const owner = await this.merchantContext.run(merchantId, () =>
       this.prisma.merchantUser.findFirst({
-        where: { merchantId, role: 'owner' },
+        where: { merchantId, role: "owner" },
         select: { email: true },
       }),
     );
@@ -432,16 +452,16 @@ export class BuyersService {
 
     // 9. Audit.
     await this.writeAudit(merchantId, {
-      entityType: 'buyer_registration_application',
+      entityType: "buyer_registration_application",
       entityId: application.id,
-      action: 'created',
-      actorType: 'buyer',
+      action: "created",
+      actorType: "buyer",
       actorId: buyer.id,
       ipAddress,
       userAgent,
     });
 
-    return { applicationId: application.id, status: 'pending' };
+    return { applicationId: application.id, status: "pending" };
   }
 
   // ── Buyer self-service reads (pre-approval) ──────────────────────────────
@@ -496,19 +516,19 @@ export class BuyersService {
           select: { approvalStatus: true, approvedAt: true },
         }),
       );
-      if (relationship?.approvalStatus === 'approved') {
+      if (relationship?.approvalStatus === "approved") {
         return {
           ...base,
-          status: 'approved',
+          status: "approved",
           companyName: null,
           appliedAt: null,
           reviewedAt: relationship.approvedAt?.toISOString() ?? null,
         };
       }
-      if (relationship?.approvalStatus === 'suspended') {
+      if (relationship?.approvalStatus === "suspended") {
         return {
           ...base,
-          status: 'suspended',
+          status: "suspended",
           companyName: null,
           appliedAt: null,
           reviewedAt: relationship.approvedAt?.toISOString() ?? null,
@@ -522,22 +542,33 @@ export class BuyersService {
       ? await this.merchantContext.run(merchantId, () =>
           this.prisma.buyerRegistrationApplication.findFirst({
             where: { merchantId, email },
-            orderBy: { createdAt: 'desc' },
-            select: { status: true, companyName: true, createdAt: true, reviewedAt: true },
+            orderBy: { createdAt: "desc" },
+            select: {
+              status: true,
+              companyName: true,
+              createdAt: true,
+              reviewedAt: true,
+            },
           }),
         )
       : null;
 
     if (!application) {
-      return { ...base, status: 'none', companyName: null, appliedAt: null, reviewedAt: null };
+      return {
+        ...base,
+        status: "none",
+        companyName: null,
+        appliedAt: null,
+        reviewedAt: null,
+      };
     }
 
     const status =
-      application.status === 'approved'
-        ? 'approved'
-        : application.status === 'rejected'
-          ? 'rejected'
-          : 'pending';
+      application.status === "approved"
+        ? "approved"
+        : application.status === "rejected"
+          ? "rejected"
+          : "pending";
 
     return {
       ...base,
@@ -566,7 +597,10 @@ export class BuyersService {
       }),
     );
     if (!buyer) {
-      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+      throw new NotFoundException({
+        code: "BUYER_NOT_FOUND",
+        message: "Buyer not found",
+      });
     }
 
     // Merchant plan drives BNPL availability (growth/pro only).
@@ -592,8 +626,8 @@ export class BuyersService {
     );
     if (!relationship) {
       throw new NotFoundException({
-        code: 'RELATIONSHIP_NOT_FOUND',
-        message: 'No relationship with this merchant',
+        code: "RELATIONSHIP_NOT_FOUND",
+        message: "No relationship with this merchant",
       });
     }
 
@@ -602,13 +636,17 @@ export class BuyersService {
       : null;
     const creditUsed = new Money(relationship.creditUsed.toString()).toFixed(2);
     const creditAvailable = creditLimit
-      ? Money.max(new Money(creditLimit).minus(new Money(creditUsed)), new Money(0)).toFixed(2)
+      ? Money.max(
+          new Money(creditLimit).minus(new Money(creditUsed)),
+          new Money(0),
+        ).toFixed(2)
       : null;
     const minOrderAmount = relationship.pricingTier?.minOrderAmount
       ? new Money(relationship.pricingTier.minOrderAmount.toString()).toFixed(2)
       : null;
     const bnplEnabled =
-      merchant?.subscriptionTier === 'growth' || merchant?.subscriptionTier === 'pro';
+      merchant?.subscriptionTier === "growth" ||
+      merchant?.subscriptionTier === "pro";
 
     return {
       companyName: buyer.companyName,
@@ -618,7 +656,9 @@ export class BuyersService {
       creditLimit,
       creditUsed,
       creditAvailable,
-      memberSince: (relationship.approvedAt ?? relationship.createdAt).toISOString(),
+      memberSince: (
+        relationship.approvedAt ?? relationship.createdAt
+      ).toISOString(),
       bnplEnabled,
     };
   }
@@ -642,12 +682,17 @@ export class BuyersService {
     this.assertUuid(actorId);
     if (dto.pricingTierId) this.assertUuid(dto.pricingTierId);
 
-    const creditLimit = dto.creditLimit != null ? new Money(dto.creditLimit).toFixed(2) : null;
+    const creditLimit =
+      dto.creditLimit != null ? new Money(dto.creditLimit).toFixed(2) : null;
 
     const result = await this.prisma.$transaction(
       async (tx) => {
         await this.setTenant(tx, merchantId);
-        const application = await this.lockApplication(tx, applicationId, merchantId);
+        const application = await this.lockApplication(
+          tx,
+          applicationId,
+          merchantId,
+        );
 
         const buyer = await tx.buyer.findUnique({
           where: { email: application.email },
@@ -655,8 +700,8 @@ export class BuyersService {
         });
         if (!buyer) {
           throw new NotFoundException({
-            code: 'BUYER_NOT_FOUND',
-            message: 'No buyer record matches this application',
+            code: "BUYER_NOT_FOUND",
+            message: "No buyer record matches this application",
           });
         }
 
@@ -665,7 +710,7 @@ export class BuyersService {
           create: {
             merchantId,
             buyerId: buyer.id,
-            approvalStatus: 'approved',
+            approvalStatus: "approved",
             pricingTierId: dto.pricingTierId ?? null,
             paymentTerms: dto.paymentTerms,
             creditLimit,
@@ -674,7 +719,7 @@ export class BuyersService {
             approvedAt: new Date(),
           },
           update: {
-            approvalStatus: 'approved',
+            approvalStatus: "approved",
             pricingTierId: dto.pricingTierId ?? null,
             paymentTerms: dto.paymentTerms,
             creditLimit,
@@ -686,7 +731,11 @@ export class BuyersService {
 
         await tx.buyerRegistrationApplication.update({
           where: { id: applicationId },
-          data: { status: 'approved', reviewedBy: actorId, reviewedAt: new Date() },
+          data: {
+            status: "approved",
+            reviewedBy: actorId,
+            reviewedAt: new Date(),
+          },
         });
 
         // Resolve the assigned tier's name for the approval email (tenant is set
@@ -701,10 +750,10 @@ export class BuyersService {
         }
 
         await this.writeAuditTx(tx, merchantId, {
-          entityType: 'buyer_registration_application',
+          entityType: "buyer_registration_application",
           entityId: applicationId,
-          action: 'approved',
-          actorType: 'merchant_user',
+          action: "approved",
+          actorType: "merchant_user",
           actorId,
           newValueJson: {
             pricingTierId: dto.pricingTierId ?? null,
@@ -713,7 +762,11 @@ export class BuyersService {
           },
         });
 
-        return { buyerEmail: buyer.email, buyerCompany: buyer.companyName, pricingTierName };
+        return {
+          buyerEmail: buyer.email,
+          buyerCompany: buyer.companyName,
+          pricingTierName,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -726,7 +779,7 @@ export class BuyersService {
       paymentTermsLabel: PAYMENT_TERMS_LABELS[dto.paymentTerms],
       pricingTierName: result.pricingTierName,
       creditLimit,
-      currency: 'USD',
+      currency: "USD",
       portalUrl: merchant.portalUrl,
     });
   }
@@ -748,12 +801,16 @@ export class BuyersService {
     const result = await this.prisma.$transaction(
       async (tx) => {
         await this.setTenant(tx, merchantId);
-        const application = await this.lockApplication(tx, applicationId, merchantId);
+        const application = await this.lockApplication(
+          tx,
+          applicationId,
+          merchantId,
+        );
 
         await tx.buyerRegistrationApplication.update({
           where: { id: applicationId },
           data: {
-            status: 'rejected',
+            status: "rejected",
             reviewedBy: actorId,
             rejectionReason: dto.rejectionReason,
             reviewedAt: new Date(),
@@ -761,15 +818,18 @@ export class BuyersService {
         });
 
         await this.writeAuditTx(tx, merchantId, {
-          entityType: 'buyer_registration_application',
+          entityType: "buyer_registration_application",
           entityId: applicationId,
-          action: 'rejected',
-          actorType: 'merchant_user',
+          action: "rejected",
+          actorType: "merchant_user",
           actorId,
           newValueJson: { rejectionReason: dto.rejectionReason },
         });
 
-        return { email: application.email, companyName: application.companyName };
+        return {
+          email: application.email,
+          companyName: application.companyName,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -797,18 +857,21 @@ export class BuyersService {
     status?: string,
   ): Promise<ApplicationListItem[]> {
     this.assertUuid(merchantId);
-    const filterStatus = (status ?? 'pending').trim();
-    if (!['pending', 'approved', 'rejected'].includes(filterStatus)) {
+    const filterStatus = (status ?? "pending").trim();
+    if (!["pending", "approved", "rejected"].includes(filterStatus)) {
       throw new BadRequestException({
-        code: 'INVALID_STATUS',
+        code: "INVALID_STATUS",
         message: `Unknown application status: ${filterStatus}`,
       });
     }
 
     const rows = await this.merchantContext.run(merchantId, () =>
       this.prisma.buyerRegistrationApplication.findMany({
-        where: { merchantId, status: filterStatus as 'pending' | 'approved' | 'rejected' },
-        orderBy: { createdAt: 'desc' },
+        where: {
+          merchantId,
+          status: filterStatus as "pending" | "approved" | "rejected",
+        },
+        orderBy: { createdAt: "desc" },
         take: 200,
         select: {
           id: true,
@@ -866,16 +929,16 @@ export class BuyersService {
     );
     if (!application) {
       throw new NotFoundException({
-        code: 'APPLICATION_NOT_FOUND',
-        message: 'Application not found',
+        code: "APPLICATION_NOT_FOUND",
+        message: "Application not found",
       });
     }
 
     await this.writeAudit(merchantId, {
-      entityType: 'buyer_registration_application',
+      entityType: "buyer_registration_application",
       entityId: applicationId,
-      action: 'pii_revealed',
-      actorType: 'merchant_user',
+      action: "pii_revealed",
+      actorType: "merchant_user",
       actorId,
     });
 
@@ -898,14 +961,18 @@ export class BuyersService {
     if (params.pricingTierId) this.assertUuid(params.pricingTierId);
     const cursor = this.decodeCursor(params.cursor);
 
-    const conditions: Prisma.Sql[] = [Prisma.sql`r.merchant_id = ${merchantId}::uuid`];
+    const conditions: Prisma.Sql[] = [
+      Prisma.sql`r.merchant_id = ${merchantId}::uuid`,
+    ];
     if (params.approvalStatus) {
       conditions.push(
         Prisma.sql`r.approval_status = ${params.approvalStatus}::"ApprovalStatus"`,
       );
     }
     if (params.pricingTierId) {
-      conditions.push(Prisma.sql`r.pricing_tier_id = ${params.pricingTierId}::uuid`);
+      conditions.push(
+        Prisma.sql`r.pricing_tier_id = ${params.pricingTierId}::uuid`,
+      );
     }
     if (params.searchQuery && params.searchQuery.trim().length > 0) {
       const term = `%${params.searchQuery.trim()}%`;
@@ -918,10 +985,12 @@ export class BuyersService {
         )} AND r.id < ${cursor.id}::uuid))`,
       );
     }
-    const where = Prisma.join(conditions, ' AND ');
+    const where = Prisma.join(conditions, " AND ");
 
-    const rows = await this.merchantContext.run(merchantId, () =>
-      this.prisma.$queryRaw<BuyerListRow[]>`
+    const rows = await this.merchantContext.run(
+      merchantId,
+      () =>
+        this.prisma.$queryRaw<BuyerListRow[]>`
         SELECT
           r.id            AS "relationshipId",
           r.buyer_id      AS "buyerId",
@@ -952,7 +1021,10 @@ export class BuyersService {
     const last = page[page.length - 1];
     const endCursor =
       hasNextPage && last
-        ? this.encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.relationshipId })
+        ? this.encodeCursor({
+            createdAt: last.createdAt.toISOString(),
+            id: last.relationshipId,
+          })
         : null;
 
     return {
@@ -963,9 +1035,13 @@ export class BuyersService {
         approvalStatus: row.approvalStatus,
         pricingTierName: row.pricingTierName,
         paymentTerms: row.paymentTerms,
-        creditLimit: row.creditLimit ? new Money(row.creditLimit.toString()).toFixed(2) : null,
+        creditLimit: row.creditLimit
+          ? new Money(row.creditLimit.toString()).toFixed(2)
+          : null,
         orderCount: Number(row.orderCount),
-        outstandingInvoiceTotal: new Money(row.outstandingInvoiceTotal.toString()).toFixed(2),
+        outstandingInvoiceTotal: new Money(
+          row.outstandingInvoiceTotal.toString(),
+        ).toFixed(2),
         lastOrderAt: row.lastOrderAt ? row.lastOrderAt.toISOString() : null,
         createdAt: row.createdAt.toISOString(),
       })),
@@ -979,7 +1055,11 @@ export class BuyersService {
    * Suspend a buyer's access for this merchant. The Clerk session stays valid;
    * ClerkBuyerGuard blocks portal access on the `suspended` approval status.
    */
-  async suspendBuyer(buyerId: string, merchantId: string, actorId: string): Promise<void> {
+  async suspendBuyer(
+    buyerId: string,
+    merchantId: string,
+    actorId: string,
+  ): Promise<void> {
     this.assertUuid(buyerId);
     this.assertUuid(merchantId);
     this.assertUuid(actorId);
@@ -987,21 +1067,21 @@ export class BuyersService {
     const updated = await this.merchantContext.run(merchantId, () =>
       this.prisma.merchantBuyerRelationship.updateMany({
         where: { merchantId, buyerId },
-        data: { approvalStatus: 'suspended' },
+        data: { approvalStatus: "suspended" },
       }),
     );
     if (updated.count === 0) {
       throw new NotFoundException({
-        code: 'RELATIONSHIP_NOT_FOUND',
-        message: 'No relationship with this buyer',
+        code: "RELATIONSHIP_NOT_FOUND",
+        message: "No relationship with this buyer",
       });
     }
 
     await this.writeAudit(merchantId, {
-      entityType: 'merchant_buyer_relationship',
+      entityType: "merchant_buyer_relationship",
       entityId: buyerId,
-      action: 'suspended',
-      actorType: 'merchant_user',
+      action: "suspended",
+      actorType: "merchant_user",
       actorId,
     });
   }
@@ -1012,7 +1092,11 @@ export class BuyersService {
    * status transition is atomic, and refuses anything that is not currently
    * `suspended` (idempotency + guard against reinstating a rejected/pending row).
    */
-  async reinstateBuyer(buyerId: string, merchantId: string, actorId: string): Promise<void> {
+  async reinstateBuyer(
+    buyerId: string,
+    merchantId: string,
+    actorId: string,
+  ): Promise<void> {
     this.assertUuid(buyerId);
     this.assertUuid(merchantId);
     this.assertUuid(actorId);
@@ -1021,25 +1105,27 @@ export class BuyersService {
       async (tx) => {
         await this.setTenant(tx, merchantId);
         const rel = await this.lockRelationship(tx, buyerId, merchantId);
-        if (rel.approvalStatus !== 'suspended') {
+        if (rel.approvalStatus !== "suspended") {
           throw new ConflictException({
-            code: 'NOT_SUSPENDED',
+            code: "NOT_SUSPENDED",
             message: `Buyer is ${rel.approvalStatus}, not suspended`,
           });
         }
 
         await tx.merchantBuyerRelationship.update({
           where: { id: rel.id },
-          data: { approvalStatus: 'approved' },
+          data: { approvalStatus: "approved" },
         });
 
         await this.writeAuditTx(tx, merchantId, {
-          entityType: 'merchant_buyer_relationship',
+          entityType: "merchant_buyer_relationship",
           entityId: buyerId,
-          action: 'reinstated',
-          actorType: 'merchant_user',
+          action: "reinstated",
+          actorType: "merchant_user",
           actorId,
-          newValueJson: { approvalStatus: { from: 'suspended', to: 'approved' } },
+          newValueJson: {
+            approvalStatus: { from: "suspended", to: "approved" },
+          },
         });
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -1083,19 +1169,24 @@ export class BuyersService {
           });
           if (!tier) {
             throw new NotFoundException({
-              code: 'PRICING_TIER_NOT_FOUND',
-              message: 'Pricing tier not found',
+              code: "PRICING_TIER_NOT_FOUND",
+              message: "Pricing tier not found",
             });
           }
         }
 
         const data: Prisma.MerchantBuyerRelationshipUncheckedUpdateInput = {};
-        if (dto.pricingTierId !== undefined) data.pricingTierId = dto.pricingTierId;
-        if (dto.paymentTerms !== undefined) data.paymentTerms = dto.paymentTerms;
+        if (dto.pricingTierId !== undefined)
+          data.pricingTierId = dto.pricingTierId;
+        if (dto.paymentTerms !== undefined)
+          data.paymentTerms = dto.paymentTerms;
         if (creditLimit !== undefined) data.creditLimit = creditLimit;
         if (dto.notes !== undefined) data.notes = dto.notes;
 
-        await tx.merchantBuyerRelationship.update({ where: { id: rel.id }, data });
+        await tx.merchantBuyerRelationship.update({
+          where: { id: rel.id },
+          data,
+        });
 
         const changes: Record<string, Prisma.InputJsonValue | null> = {};
         const previous: Record<string, Prisma.InputJsonValue | null> = {};
@@ -1109,7 +1200,9 @@ export class BuyersService {
         }
         if (creditLimit !== undefined) {
           changes.creditLimit = creditLimit;
-          previous.creditLimit = rel.creditLimit ? new Money(rel.creditLimit.toString()).toFixed(2) : null;
+          previous.creditLimit = rel.creditLimit
+            ? new Money(rel.creditLimit.toString()).toFixed(2)
+            : null;
         }
         if (dto.notes !== undefined) {
           changes.notes = dto.notes;
@@ -1117,10 +1210,10 @@ export class BuyersService {
         }
 
         await this.writeAuditTx(tx, merchantId, {
-          entityType: 'merchant_buyer_relationship',
+          entityType: "merchant_buyer_relationship",
           entityId: buyerId,
-          action: 'updated',
-          actorType: 'merchant_user',
+          action: "updated",
+          actorType: "merchant_user",
           actorId,
           newValueJson: { changes, previous },
         });
@@ -1136,7 +1229,10 @@ export class BuyersService {
    * the approved-buyer inline edit. Same per-buyer aggregates as the list
    * (orders, outstanding AR, last order) via scalar subqueries. PII is excluded.
    */
-  async getBuyerDetail(buyerId: string, merchantId: string): Promise<BuyerDetail> {
+  async getBuyerDetail(
+    buyerId: string,
+    merchantId: string,
+  ): Promise<BuyerDetail> {
     this.assertUuid(buyerId);
     this.assertUuid(merchantId);
 
@@ -1147,11 +1243,16 @@ export class BuyersService {
       }),
     );
     if (!buyer) {
-      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+      throw new NotFoundException({
+        code: "BUYER_NOT_FOUND",
+        message: "Buyer not found",
+      });
     }
 
-    const rows = await this.merchantContext.run(merchantId, () =>
-      this.prisma.$queryRaw<BuyerDetailRow[]>`
+    const rows = await this.merchantContext.run(
+      merchantId,
+      () =>
+        this.prisma.$queryRaw<BuyerDetailRow[]>`
         SELECT
           r.approval_status AS "approvalStatus",
           r.pricing_tier_id AS "pricingTierId",
@@ -1176,8 +1277,8 @@ export class BuyersService {
     const row = rows[0];
     if (!row) {
       throw new NotFoundException({
-        code: 'RELATIONSHIP_NOT_FOUND',
-        message: 'No relationship with this buyer',
+        code: "RELATIONSHIP_NOT_FOUND",
+        message: "No relationship with this buyer",
       });
     }
 
@@ -1190,10 +1291,14 @@ export class BuyersService {
       pricingTierId: row.pricingTierId,
       pricingTierName: row.pricingTierName,
       paymentTerms: row.paymentTerms,
-      creditLimit: row.creditLimit ? new Money(row.creditLimit.toString()).toFixed(2) : null,
+      creditLimit: row.creditLimit
+        ? new Money(row.creditLimit.toString()).toFixed(2)
+        : null,
       notes: row.notes,
       orderCount: Number(row.orderCount),
-      outstandingInvoiceTotal: new Money(row.outstandingInvoiceTotal.toString()).toFixed(2),
+      outstandingInvoiceTotal: new Money(
+        row.outstandingInvoiceTotal.toString(),
+      ).toFixed(2),
       lastOrderAt: row.lastOrderAt ? row.lastOrderAt.toISOString() : null,
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
@@ -1206,51 +1311,74 @@ export class BuyersService {
    * Subject-access export for a buyer scoped to this merchant. PII (taxId, phone)
    * is intentionally NOT included/decrypted; financial records are summarized.
    */
-  async getBuyerGdprExport(buyerId: string, merchantId: string): Promise<GdprExport> {
+  async getBuyerGdprExport(
+    buyerId: string,
+    merchantId: string,
+  ): Promise<GdprExport> {
     this.assertUuid(buyerId);
     this.assertUuid(merchantId);
 
     const buyer = await this.merchantContext.runAsSystem(() =>
       this.prisma.buyer.findUnique({
         where: { id: buyerId },
-        select: { companyName: true, email: true, businessType: true, createdAt: true },
+        select: {
+          companyName: true,
+          email: true,
+          businessType: true,
+          createdAt: true,
+        },
       }),
     );
     if (!buyer) {
-      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+      throw new NotFoundException({
+        code: "BUYER_NOT_FOUND",
+        message: "Buyer not found",
+      });
     }
 
     const data = await this.merchantContext.run(merchantId, async () => {
-      const relationship = await this.prisma.merchantBuyerRelationship.findFirst({
-        where: { merchantId, buyerId },
-        select: {
-          approvalStatus: true,
-          paymentTerms: true,
-          creditLimit: true,
-          pricingTier: { select: { name: true } },
-        },
-      });
+      const relationship =
+        await this.prisma.merchantBuyerRelationship.findFirst({
+          where: { merchantId, buyerId },
+          select: {
+            approvalStatus: true,
+            paymentTerms: true,
+            creditLimit: true,
+            pricingTier: { select: { name: true } },
+          },
+        });
       if (!relationship) {
         throw new NotFoundException({
-          code: 'RELATIONSHIP_NOT_FOUND',
-          message: 'No relationship with this buyer',
+          code: "RELATIONSHIP_NOT_FOUND",
+          message: "No relationship with this buyer",
         });
       }
       const orders = await this.prisma.order.findMany({
         where: { merchantId, buyerId },
-        orderBy: { createdAt: 'desc' },
-        select: { shopifyOrderNumber: true, total: true, status: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        select: {
+          shopifyOrderNumber: true,
+          total: true,
+          status: true,
+          createdAt: true,
+        },
       });
       const invoices = await this.prisma.invoice.findMany({
         where: { merchantId, buyerId },
-        orderBy: { createdAt: 'desc' },
-        select: { invoiceNumber: true, total: true, status: true, dueDate: true },
+        orderBy: { createdAt: "desc" },
+        select: {
+          invoiceNumber: true,
+          total: true,
+          status: true,
+          dueDate: true,
+        },
       });
-      const applications = await this.prisma.buyerRegistrationApplication.findMany({
-        where: { merchantId, email: buyer.email },
-        orderBy: { createdAt: 'desc' },
-        select: { status: true, createdAt: true, reviewedAt: true },
-      });
+      const applications =
+        await this.prisma.buyerRegistrationApplication.findMany({
+          where: { merchantId, email: buyer.email },
+          orderBy: { createdAt: "desc" },
+          select: { status: true, createdAt: true, reviewedAt: true },
+        });
       return { relationship, orders, invoices, applications };
     });
 
@@ -1294,31 +1422,57 @@ export class BuyersService {
    * obligation), anonymizes the buyer record, unlinks + deletes the Clerk account
    * (best-effort), and retains orders/invoices for the 7-year retention window.
    */
-  async eraseBuyer(buyerId: string, merchantId: string, actorId: string): Promise<void> {
+  async eraseBuyer(
+    buyerId: string,
+    merchantId: string,
+    actorId: string,
+  ): Promise<void> {
     this.assertUuid(buyerId);
     this.assertUuid(merchantId);
     this.assertUuid(actorId);
 
+    // 0. Tenant scoping — the buyer must belong to this merchant. Buyers are
+    // unified cross-merchant, so without this check any merchant could erase
+    // another merchant's buyer by supplying a bare UUID.
+    const relationship = await this.merchantContext.run(merchantId, () =>
+      this.prisma.merchantBuyerRelationship.findFirst({
+        where: { merchantId, buyerId },
+        select: { id: true },
+      }),
+    );
+    if (!relationship) {
+      throw new NotFoundException({
+        code: "RELATIONSHIP_NOT_FOUND",
+        message: "No relationship with this buyer",
+      });
+    }
+
     // 1. No outstanding unpaid invoices.
     const outstanding = await this.merchantContext.run(merchantId, () =>
       this.prisma.invoice.count({
-        where: { merchantId, buyerId, status: { notIn: ['paid', 'void'] } },
+        where: { merchantId, buyerId, status: { notIn: ["paid", "void"] } },
       }),
     );
     if (outstanding > 0) {
       throw new ConflictException({
-        code: 'OUTSTANDING_INVOICES',
-        message: 'Cannot erase a buyer with outstanding invoices',
+        code: "OUTSTANDING_INVOICES",
+        message: "Cannot erase a buyer with outstanding invoices",
         count: outstanding,
       });
     }
 
     // 2. Load the Clerk linkage before we null it out.
     const buyer = await this.merchantContext.runAsSystem(() =>
-      this.prisma.buyer.findUnique({ where: { id: buyerId }, select: { clerkUserId: true } }),
+      this.prisma.buyer.findUnique({
+        where: { id: buyerId },
+        select: { clerkUserId: true },
+      }),
     );
     if (!buyer) {
-      throw new NotFoundException({ code: 'BUYER_NOT_FOUND', message: 'Buyer not found' });
+      throw new NotFoundException({
+        code: "BUYER_NOT_FOUND",
+        message: "Buyer not found",
+      });
     }
 
     // 3. Anonymize the buyer record (authoritative erasure record).
@@ -1328,12 +1482,12 @@ export class BuyersService {
         data: {
           anonymizedAt: new Date(),
           email: `erased+${randomUUID()}@redacted.invalid`,
-          companyName: 'ERASED',
+          companyName: "ERASED",
           taxId: null,
           phone: null,
           addressJson: Prisma.DbNull,
           clerkUserId: null,
-          passwordHash: '',
+          passwordHash: "",
         },
       }),
     );
@@ -1344,8 +1498,8 @@ export class BuyersService {
         await this.clerk.users.deleteUser(buyer.clerkUserId);
       } catch (error) {
         Sentry.captureException(error, {
-          level: 'error',
-          tags: { component: 'buyers', stage: 'clerk_delete' },
+          level: "error",
+          tags: { component: "buyers", stage: "clerk_delete" },
           extra: { buyerId, clerkUserId: buyer.clerkUserId },
         });
         this.logger.error(
@@ -1356,10 +1510,10 @@ export class BuyersService {
 
     // 5/6. Orders + invoices retained (7-year obligation). Audit the erasure.
     await this.writeAudit(merchantId, {
-      entityType: 'buyer',
+      entityType: "buyer",
       entityId: buyerId,
-      action: 'gdpr_erased',
-      actorType: 'merchant_user',
+      action: "gdpr_erased",
+      actorType: "merchant_user",
       actorId,
     });
   }
@@ -1374,7 +1528,10 @@ export class BuyersService {
     }
     if (count > APPLY_RATE_LIMIT) {
       throw new HttpException(
-        { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many applications; try again later' },
+        {
+          code: "RATE_LIMIT_EXCEEDED",
+          message: "Too many applications; try again later",
+        },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -1397,13 +1554,13 @@ export class BuyersService {
     const application = rows[0];
     if (!application || application.merchantId !== merchantId) {
       throw new NotFoundException({
-        code: 'APPLICATION_NOT_FOUND',
-        message: 'Application not found',
+        code: "APPLICATION_NOT_FOUND",
+        message: "Application not found",
       });
     }
-    if (application.status !== 'pending') {
+    if (application.status !== "pending") {
       throw new ConflictException({
-        code: 'APPLICATION_NOT_PENDING',
+        code: "APPLICATION_NOT_PENDING",
         message: `Application is already ${application.status}`,
       });
     }
@@ -1428,8 +1585,8 @@ export class BuyersService {
     const relationship = rows[0];
     if (!relationship) {
       throw new NotFoundException({
-        code: 'RELATIONSHIP_NOT_FOUND',
-        message: 'No relationship with this buyer',
+        code: "RELATIONSHIP_NOT_FOUND",
+        message: "No relationship with this buyer",
       });
     }
     return relationship;
@@ -1437,20 +1594,30 @@ export class BuyersService {
 
   private async loadMerchantName(
     merchantId: string,
-  ): Promise<{ name: string; displayName: string; contactEmail: string; portalUrl: string; shopDomain: string }> {
+  ): Promise<{
+    name: string;
+    displayName: string;
+    contactEmail: string;
+    portalUrl: string;
+    shopDomain: string;
+  }> {
     const merchant = await this.merchantContext.runAsSystem(() =>
       this.prisma.merchant.findUnique({
         where: { id: merchantId },
-        select: { shopifyDomain: true, users: { where: { role: 'owner' }, select: { email: true }, take: 1 } },
+        select: {
+          shopifyDomain: true,
+          users: { where: { role: "owner" }, select: { email: true }, take: 1 },
+        },
       }),
     );
-    const domain = merchant?.shopifyDomain ?? 'your supplier';
+    const domain = merchant?.shopifyDomain ?? "your supplier";
     return {
       // `name` keeps the raw domain (back-compat for existing email callers);
       // `displayName` is the white-label, title-cased store name.
       name: domain,
       displayName: merchantDisplayNameFromDomain(merchant?.shopifyDomain),
-      contactEmail: merchant?.users[0]?.email ?? this.config.get('RESEND_FROM_ADDRESS'),
+      contactEmail:
+        merchant?.users[0]?.email ?? this.config.get("RESEND_FROM_ADDRESS"),
       portalUrl: `https://${domain}`,
       shopDomain: domain,
     };
@@ -1458,7 +1625,7 @@ export class BuyersService {
 
   private applicationReviewUrl(): string {
     // Deep-link straight to the pending-applications queue in the merchant admin.
-    return `https://${this.config.get('PLATFORM_DOMAIN')}/buyers?status=pending`;
+    return `https://${this.config.get("PLATFORM_DOMAIN")}/buyers?status=pending`;
   }
 
   private async writeAudit(
@@ -1467,7 +1634,7 @@ export class BuyersService {
       entityType: string;
       entityId: string;
       action: string;
-      actorType: 'buyer' | 'merchant_user' | 'system';
+      actorType: "buyer" | "merchant_user" | "system";
       actorId: string;
       newValueJson?: Prisma.InputJsonValue;
       ipAddress?: string;
@@ -1484,14 +1651,18 @@ export class BuyersService {
             action: entry.action,
             actorType: entry.actorType,
             actorId: entry.actorId,
-            ...(entry.newValueJson !== undefined ? { newValueJson: entry.newValueJson } : {}),
+            ...(entry.newValueJson !== undefined
+              ? { newValueJson: entry.newValueJson }
+              : {}),
             ...(entry.ipAddress ? { ipAddress: entry.ipAddress } : {}),
             ...(entry.userAgent ? { userAgent: entry.userAgent } : {}),
           },
         }),
       );
     } catch (error) {
-      this.logger.error(`Failed to write audit log: ${(error as Error).message}`);
+      this.logger.error(
+        `Failed to write audit log: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -1502,7 +1673,7 @@ export class BuyersService {
       entityType: string;
       entityId: string;
       action: string;
-      actorType: 'buyer' | 'merchant_user' | 'system';
+      actorType: "buyer" | "merchant_user" | "system";
       actorId: string;
       newValueJson?: Prisma.InputJsonValue;
     },
@@ -1515,36 +1686,54 @@ export class BuyersService {
         action: entry.action,
         actorType: entry.actorType,
         actorId: entry.actorId,
-        ...(entry.newValueJson !== undefined ? { newValueJson: entry.newValueJson } : {}),
+        ...(entry.newValueJson !== undefined
+          ? { newValueJson: entry.newValueJson }
+          : {}),
       },
     });
   }
 
-  private async setTenant(tx: PrismaTransaction, merchantId: string): Promise<void> {
+  private async setTenant(
+    tx: PrismaTransaction,
+    merchantId: string,
+  ): Promise<void> {
     this.assertUuid(merchantId);
-    await tx.$executeRawUnsafe(`SET LOCAL app.current_merchant_id = '${merchantId}'`);
+    await tx.$executeRawUnsafe(
+      `SET LOCAL app.current_merchant_id = '${merchantId}'`,
+    );
   }
 
   private encodeCursor(cursor: DecodedCursor): string {
-    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
+    return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64");
   }
 
   private decodeCursor(raw: string | undefined): DecodedCursor | null {
     if (!raw) return null;
     try {
-      const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Partial<DecodedCursor>;
-      if (typeof parsed.createdAt === 'string' && typeof parsed.id === 'string') {
+      const parsed = JSON.parse(
+        Buffer.from(raw, "base64").toString("utf8"),
+      ) as Partial<DecodedCursor>;
+      if (
+        typeof parsed.createdAt === "string" &&
+        typeof parsed.id === "string"
+      ) {
         return { createdAt: parsed.createdAt, id: parsed.id };
       }
     } catch {
       // fall through to the invalid-cursor error
     }
-    throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Malformed pagination cursor' });
+    throw new BadRequestException({
+      code: "INVALID_CURSOR",
+      message: "Malformed pagination cursor",
+    });
   }
 
   private assertUuid(value: string): void {
     if (!UUID_RE.test(value)) {
-      throw new BadRequestException({ code: 'INVALID_ID', message: `Malformed id: ${value}` });
+      throw new BadRequestException({
+        code: "INVALID_ID",
+        message: `Malformed id: ${value}`,
+      });
     }
   }
 }

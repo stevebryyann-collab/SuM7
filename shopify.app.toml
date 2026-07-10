@@ -1,0 +1,118 @@
+# ──────────────────────────────────────────────────────────────────────────
+# Shopify app configuration (Shopify CLI managed).
+#
+# This is the SINGLE SOURCE OF TRUTH that registers the app's scopes, OAuth
+# redirect URLs, and — critically — every webhook subscription (including the
+# three mandatory GDPR/compliance topics). Without this file the handlers in
+# apps/api/src/webhooks/*.controller.ts can never fire: Shopify is never told
+# to deliver to them. `shopify app deploy` pushes this config to the app.
+#
+# Placeholders to replace before `shopify app deploy`:
+#   • client_id            → the app's Client ID (Partner Dashboard → app → API credentials)
+#   • <APP_URL>            → the Next.js web host (Vercel), e.g. https://app.example.com  (== SHOPIFY_APP_URL)
+#   • <API_URL>            → the NestJS API host (Railway), e.g. https://api.example.com  (webhooks post here)
+#
+# WHY TWO HOSTS: the embedded/admin UI + OAuth live on the web app (<APP_URL>),
+# but webhooks are ingested by the NestJS API (<API_URL>/webhooks/*), which
+# preserves the raw body for HMAC verification and is exempt from rate limiting.
+# Keep the split — do not point webhooks at the web host.
+# ──────────────────────────────────────────────────────────────────────────
+
+client_id = "REPLACE_WITH_SHOPIFY_CLIENT_ID"
+name = "Wholesale Portal"
+handle = "wholesale-portal"
+application_url = "<APP_URL>"
+embedded = true
+
+[access_scopes]
+# Keep in lockstep with SHOPIFY_SCOPES in .env / env.validation.ts and the
+# NextAuth provider default in auth-options.ts. Request the MINIMUM needed:
+#   read_products      → catalog sync (products/*), pricing overrides
+#   read_orders        → order ingestion for invoicing / AR
+#   write_orders       → draft-order / wholesale-checkout creation
+#   read_customers     → buyer (company) sync; triggers Protected Customer Data review
+scopes = "read_products,write_orders,read_orders,read_customers"
+
+[auth]
+# NextAuth's Shopify OAuth callback. The route builds per-shop authorize/token
+# URLs from the request `shop` param (apps/web/src/lib/auth/shopify-provider.ts).
+redirect_urls = [
+  "<APP_URL>/api/auth/callback/shopify",
+]
+
+[webhooks]
+# Must match the Admin API version the NestJS ShopifyApiService targets
+# (apps/api/src/shopify/shopify-api.service.ts → API_VERSION).
+api_version = "2025-10"
+
+# ── Business webhooks (verified by WebhookHmacGuard, ingested to BullMQ) ──────
+# Each URI maps 1:1 to a @Post route on WebhooksController (/webhooks/*).
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "<API_URL>/webhooks/app/uninstalled"
+
+[[webhooks.subscriptions]]
+topics = [ "orders/create" ]
+uri = "<API_URL>/webhooks/orders/created"
+
+[[webhooks.subscriptions]]
+topics = [ "orders/updated" ]
+uri = "<API_URL>/webhooks/orders/updated"
+
+[[webhooks.subscriptions]]
+topics = [ "orders/paid" ]
+uri = "<API_URL>/webhooks/orders/paid"
+
+[[webhooks.subscriptions]]
+topics = [ "fulfillments/create" ]
+uri = "<API_URL>/webhooks/fulfillments/create"
+
+[[webhooks.subscriptions]]
+topics = [ "fulfillments/update" ]
+uri = "<API_URL>/webhooks/fulfillments/update"
+
+[[webhooks.subscriptions]]
+topics = [ "products/create" ]
+uri = "<API_URL>/webhooks/products/created"
+
+[[webhooks.subscriptions]]
+topics = [ "products/update" ]
+uri = "<API_URL>/webhooks/products/updated"
+
+[[webhooks.subscriptions]]
+topics = [ "products/delete" ]
+uri = "<API_URL>/webhooks/products/deleted"
+
+[[webhooks.subscriptions]]
+topics = [ "customers/create" ]
+uri = "<API_URL>/webhooks/customers/create"
+
+[[webhooks.subscriptions]]
+topics = [ "customers/update" ]
+uri = "<API_URL>/webhooks/customers/updated"
+
+[[webhooks.subscriptions]]
+topics = [ "inventory_levels/update" ]
+uri = "<API_URL>/webhooks/inventory-levels/updated"
+
+# ── Mandatory GDPR / privacy compliance webhooks ─────────────────────────────
+# Shopify delivers all three compliance topics to this SINGLE endpoint and names
+# the topic in the X-Shopify-Topic header. ComplianceWebhooksController.dispatch
+# verifies HMAC inline (NOT via WebhookHmacGuard — shop/redact and
+# customers/redact can arrive after uninstall, when no active merchant exists)
+# and routes by topic. Missing these three is an automatic App Store rejection.
+[webhooks.privacy_compliance]
+customer_data_request_url = "<API_URL>/webhooks/compliance"
+customer_deletion_url = "<API_URL>/webhooks/compliance"
+shop_deletion_url = "<API_URL>/webhooks/compliance"
+
+[app_proxy]
+# White-label buyer portal: buyers reach it on the merchant's storefront domain.
+# Shopify proxies https://<shop>/apps/wholesale/* → <APP_URL>/portal/* (the edge
+# middleware verifies the App-Proxy HMAC and sets the tenant context cookie).
+url = "<APP_URL>/portal"
+subpath = "wholesale"
+prefix = "apps"
+
+[pos]
+embedded = false

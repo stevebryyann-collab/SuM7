@@ -123,3 +123,34 @@ export function paymentTermsDays(terms: string | null | undefined): number {
       return 0;
   }
 }
+
+// ── Centralized formatting aliases (Part 4, Task 9) ─────────────────────────
+// The helpers above (formatMoney/formatDate/formatRelative/…) predate the Part-4
+// spec and are already used across every page. Rather than rename ~all call
+// sites (pure regression risk), these thin aliases expose the spec's names so
+// NEW code reads consistently. Prefer these in new components.
+
+/** Whole-number formatting with thousands separators, e.g. `12,450`. */
+export function number(value: number | string | null | undefined): string {
+  const num = typeof value === 'number' ? value : Number(value ?? 0);
+  if (!Number.isFinite(num)) return '0';
+  return new Intl.NumberFormat('en-US').format(num);
+}
+
+/** Signed percent to `decimals` places, e.g. `+12.4%`, `-3.0%`, `0.0%`. */
+export function percent(value: number, decimals = 1): string {
+  if (!Number.isFinite(value)) return '0%';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(decimals)}%`;
+}
+
+/** USD money — alias of {@link formatMoney}. */
+export const currency = formatMoney;
+/** Compact USD for chart axes/tooltips — alias of {@link formatMoneyCompact}. */
+export const compactCurrency = formatMoneyCompact;
+/** Absolute short date (e.g. `Jun 15, 2026`) — alias of {@link formatDate}. */
+export const absoluteDate = formatDate;
+/** Compact axis date (e.g. `Jun 15`) — alias of {@link formatDateShort}. */
+export const absoluteDateShort = formatDateShort;
+/** Relative age (e.g. `3 minutes ago`) — alias of {@link formatRelative}. */
+export const relativeTime = formatRelative;

@@ -54,9 +54,9 @@ export function BnplSection({
   }, [result, selectedTermDays, onSelectTermDays]);
 
   return (
-    <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-      <p className="text-sm font-medium text-gray-900">Pay later with Resolve</p>
-      <p className="mt-0.5 text-xs text-gray-500">
+    <div className="rounded-md border border-glass-border bg-white/40 p-3">
+      <p className="text-sm font-medium text-text-primary">Pay later with Resolve</p>
+      <p className="mt-0.5 text-xs text-text-secondary">
         Split this order into monthly payments. Check your eligibility instantly.
       </p>
 
@@ -108,7 +108,7 @@ export function BnplSection({
           </fieldset>
         </div>
       ) : (
-        <div className="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+        <div className="mt-3 rounded-md border border-glass-border bg-white/60 px-3 py-2 text-xs text-text-secondary">
           BNPL financing is not available for this order. Your order will proceed with standard Net 30 terms.
         </div>
       )}
@@ -131,7 +131,7 @@ function TermRadio({
     <label
       className={cn(
         'flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm',
-        checked ? 'border-accent bg-white' : 'border-gray-200 bg-white hover:bg-gray-50',
+        checked ? 'border-accent bg-white/60' : 'border-border bg-white/60 hover:bg-white/40',
       )}
     >
       <input
@@ -141,8 +141,8 @@ function TermRadio({
         onChange={onChange}
         className="h-4 w-4 accent-accent"
       />
-      <span className="text-gray-900">{label}</span>
-      <span className="text-gray-500">— {hint}</span>
+      <span className="text-text-primary">{label}</span>
+      <span className="text-text-secondary">— {hint}</span>
     </label>
   );
 }

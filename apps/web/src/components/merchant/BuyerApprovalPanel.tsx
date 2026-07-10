@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -48,7 +49,8 @@ import {
   useUpdateBuyer,
 } from '@/hooks/useBuyers';
 import { usePricingTiers } from '@/hooks/usePricingTiers';
-import type { ApplicationPii, BuyerApplication } from '@/types/api';
+import { dashboardKeys } from '@/hooks/useDashboard';
+import type { ApplicationPii, BuyerApplication, DashboardData } from '@/types/api';
 
 const PAYMENT_TERMS: PaymentTerms[] = ['immediate', 'net15', 'net30', 'net60', 'net90'];
 const PAYMENT_TERMS_LABELS: Record<PaymentTerms, string> = {
@@ -147,6 +149,7 @@ function ApplicationPanel({
   const approve = useApproveBuyer();
   const reject = useRejectBuyer();
   const reveal = useRevealApplicationPii();
+  const queryClient = useQueryClient();
   const [confirmReject, setConfirmReject] = useState(false);
   const [confirmReveal, setConfirmReveal] = useState(false);
   const [revealed, setRevealed] = useState<ApplicationPii | null>(null);
@@ -198,9 +201,24 @@ function ApplicationPanel({
   }, [revealed]);
 
   const onApprove = approveForm.handleSubmit((values) => {
+    // Read the dashboard cache BEFORE the mutation invalidates it — if this
+    // merchant hadn't approved anyone yet this month, this approval is their
+    // first, and gets the celebratory message instead of the generic one. An
+    // empty/absent cache (merchant never visited the dashboard) degrades
+    // safely to the generic toast rather than firing an extra request.
+    const cachedDashboard = queryClient.getQueryData<DashboardData>(dashboardKeys.all);
+    const isFirstBuyer = cachedDashboard?.kpis.newBuyersThisMonth === 0;
+
     approve.mutate(values, {
       onSuccess: () => {
-        toast.success(`${application.companyName} approved`);
+        if (isFirstBuyer) {
+          toast.success(
+            `First buyer approved! ${application.companyName} can now place orders through your wholesale portal.`,
+            { duration: 8000, description: 'Share your portal link to invite more buyers.' },
+          );
+        } else {
+          toast.success(`${application.companyName} approved`);
+        }
         onOpenChange(false);
       },
       onError: (error) =>
@@ -281,14 +299,14 @@ function ApplicationPanel({
               <Detail label="Status" value={application.status} />
             </dl>
             {isRevealed ? (
-              <p className="mt-3 text-xs text-gray-400">
+              <p className="mt-3 text-xs text-text-tertiary">
                 Sensitive fields auto-hide 30 seconds after reveal.
               </p>
             ) : null}
             {application.message ? (
               <div className="mt-4">
-                <span className="text-label uppercase tracking-wider text-gray-500">Message</span>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{application.message}</p>
+                <span className="text-label uppercase tracking-wider text-text-secondary">Message</span>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-text-secondary">{application.message}</p>
               </div>
             ) : null}
           </TabsContent>
@@ -383,7 +401,7 @@ function ApplicationPanel({
                       {...approveForm.register('notes')}
                     />
                     <div className="flex justify-end">
-                      <span className="text-xs text-gray-400 tabular-nums">
+                      <span className="text-xs text-text-tertiary tabular-nums">
                         {approveNotes.length}/{NOTES_MAX}
                       </span>
                     </div>
@@ -416,7 +434,7 @@ function ApplicationPanel({
                       ) : (
                         <span />
                       )}
-                      <span className="text-xs text-gray-400 tabular-nums">
+                      <span className="text-xs text-text-tertiary tabular-nums">
                         {rejectionReason.length}/{REJECTION_MAX}
                       </span>
                     </div>
@@ -530,7 +548,7 @@ function BuyerPanel({
             <dl className="grid grid-cols-2 gap-4">
               <Detail label="Company" value={detail.companyName} />
               <div className="flex flex-col gap-1">
-                <span className="text-label uppercase tracking-wider text-gray-500">Status</span>
+                <span className="text-label uppercase tracking-wider text-text-secondary">Status</span>
                 <span>
                   <StatusBadge status={detail.approvalStatus} />
                 </span>
@@ -547,8 +565,8 @@ function BuyerPanel({
             </dl>
 
             {isApproved ? (
-              <form onSubmit={onSave} className="mt-6 space-y-4 border-t border-gray-200 pt-4">
-                <h3 className="text-label uppercase tracking-wider text-gray-500">Edit Relationship</h3>
+              <form onSubmit={onSave} className="mt-6 space-y-4 border-t border-border pt-4">
+                <h3 className="text-label uppercase tracking-wider text-text-secondary">Edit Relationship</h3>
 
                 <div className="space-y-1.5">
                   <Label htmlFor="editTier">Pricing Tier</Label>
@@ -636,7 +654,7 @@ function BuyerPanel({
                 </Button>
               </form>
             ) : (
-              <div className="mt-6 space-y-4 border-t border-gray-200 pt-4">
+              <div className="mt-6 space-y-4 border-t border-border pt-4">
                 <Detail label="Pricing Tier" value={detail.pricingTierName ?? 'Default'} />
                 <Detail label="Payment Terms" value={PAYMENT_TERMS_LABELS[detail.paymentTerms]} />
                 <Detail
@@ -644,7 +662,7 @@ function BuyerPanel({
                   value={detail.creditLimit ? formatMoney(detail.creditLimit) : 'No limit'}
                 />
                 {detail.notes ? <Detail label="Internal Notes" value={detail.notes} /> : null}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-text-secondary">
                   Relationship settings are editable only for approved buyers.
                 </p>
               </div>
@@ -665,8 +683,8 @@ function BuyerPanel({
 function Detail({ label, value }: { label: string; value: string }): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-label uppercase tracking-wider text-gray-500">{label}</span>
-      <span className="break-words text-sm text-gray-900">{value}</span>
+      <span className="text-label uppercase tracking-wider text-text-secondary">{label}</span>
+      <span className="break-words text-sm text-text-primary">{value}</span>
     </div>
   );
 }

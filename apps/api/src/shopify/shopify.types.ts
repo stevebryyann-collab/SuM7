@@ -1,5 +1,5 @@
 /**
- * Typed views over the Shopify Admin REST API (2024-07) resources this platform
+ * Typed views over the Shopify Admin REST API (2025-10) resources this platform
  * consumes. These are intentionally partial — only fields the platform reads or
  * writes are modelled — but every modelled field is strongly typed (zero `any`).
  * Monetary values are kept as the strings Shopify returns to avoid float drift.
@@ -118,7 +118,7 @@ export interface ShopifyProduct {
   body_html: string | null;
   vendor: string;
   product_type: string;
-  status: 'active' | 'archived' | 'draft';
+  status: "active" | "archived" | "draft";
   tags: string;
   options: ShopifyProductOption[];
   variants: ShopifyVariant[];
@@ -151,7 +151,7 @@ export interface ShopifyDraftOrderInput {
 export interface ShopifyDraftOrder {
   id: number;
   name: string;
-  status: 'open' | 'invoice_sent' | 'completed';
+  status: "open" | "invoice_sent" | "completed";
   currency: string;
   subtotal_price: string;
   total_tax: string;
@@ -171,7 +171,7 @@ export interface ShopifyDraftOrder {
 export interface ListProductsParams {
   /** Page size (Shopify max 250). */
   limit?: number;
-  status?: 'active' | 'archived' | 'draft';
+  status?: "active" | "archived" | "draft";
   /** ISO-8601; only products updated at or after this time. */
   updatedAtMin?: string;
   /** Restrict to a comma-separated set of product ids. */

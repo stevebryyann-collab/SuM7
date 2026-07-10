@@ -45,11 +45,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     return (
       <div className="panel mx-auto my-12 max-w-md p-8 text-center">
-        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-          <AlertTriangle className="h-5 w-5 text-red-700" aria-hidden />
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-bg">
+          <AlertTriangle className="h-5 w-5 text-danger" aria-hidden />
         </div>
-        <h2 className="text-base font-semibold text-gray-900">Something went wrong</h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <h2 className="text-lg font-semibold text-text-primary">Something went wrong</h2>
+        <p className="mt-1 text-sm text-text-secondary">
           An unexpected error occurred while rendering this view.
         </p>
         <Button variant="primary" className="mt-6" onClick={this.handleRefresh}>

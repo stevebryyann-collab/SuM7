@@ -109,6 +109,7 @@ async function bootstrap(): Promise<void> {
       'Idempotency-Key',
       'X-Request-Id',
       'X-Merchant-Context',
+      'X-Sales-Rep-Session',
     ],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
   });

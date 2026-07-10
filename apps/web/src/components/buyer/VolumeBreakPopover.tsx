@@ -43,13 +43,13 @@ export function VolumeBreakPopover({
       trigger={<Info className="h-3.5 w-3.5 text-accent" />}
       className="w-64 p-0"
     >
-      <div className="border-b border-gray-200 px-3 py-2">
-        <p className="text-xs font-medium text-gray-900">Volume pricing</p>
-        <p className="text-[11px] text-gray-500">Order more to unlock a lower unit price.</p>
+      <div className="border-b border-border px-3 py-2">
+        <p className="text-xs font-medium text-text-primary">Volume pricing</p>
+        <p className="text-[11px] text-text-secondary">Order more to unlock a lower unit price.</p>
       </div>
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500">
+          <tr className="text-left text-[11px] uppercase tracking-wide text-text-secondary">
             <th className="px-3 py-1.5 font-medium">Quantity</th>
             <th className="px-3 py-1.5 text-right font-medium">Price / unit</th>
             <th className="px-3 py-1.5 text-right font-medium">You save</th>
@@ -62,12 +62,12 @@ export function VolumeBreakPopover({
             const unit = pctOffUnit(basePrice, row.discountPct);
             const isActive = active ? !row.isBase && row.minQty === active.minQty : row.isBase;
             return (
-              <tr key={row.minQty} className={cn('border-t border-gray-100', isActive && 'bg-blue-50')}>
-                <td className="px-3 py-1.5 tabular-nums text-gray-700">{rangeLabel}</td>
-                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-gray-900">
+              <tr key={row.minQty} className={cn('border-t border-border', isActive && 'bg-ocean-soft')}>
+                <td className="px-3 py-1.5 tabular-nums text-text-secondary">{rangeLabel}</td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-text-primary">
                   {formatMoney(unit)}
                 </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-gray-600">
+                <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">
                   {row.discountPct > 0 ? `${row.discountPct}%` : '—'}
                 </td>
               </tr>

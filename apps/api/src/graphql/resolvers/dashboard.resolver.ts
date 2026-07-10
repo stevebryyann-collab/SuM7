@@ -12,6 +12,7 @@ const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 }
 interface DashboardRow {
   gmv_current_month: Prisma_Decimal;
   gmv_previous_month: Prisma_Decimal;
+  all_time_gmv: Prisma_Decimal;
   outstanding_ar_balance: Prisma_Decimal;
   overdue_invoice_count: bigint;
   overdue_invoice_amount: Prisma_Decimal;
@@ -56,6 +57,10 @@ export class DashboardResolver {
               AND paid_at >= date_trunc('month', NOW() - INTERVAL '1 month')
               AND paid_at < date_trunc('month', NOW())
           ),
+          all_time_gmv AS (
+            SELECT COALESCE(SUM(total), 0) AS gmv FROM invoices
+            WHERE merchant_id = ${merchantId}::uuid AND status = 'paid'
+          ),
           ar_summary AS (
             SELECT
               COALESCE(SUM(total - amount_paid), 0) AS outstanding_balance,
@@ -75,6 +80,7 @@ export class DashboardResolver {
         SELECT
           (SELECT gmv FROM current_gmv)              AS gmv_current_month,
           (SELECT gmv FROM previous_gmv)             AS gmv_previous_month,
+          (SELECT gmv FROM all_time_gmv)             AS all_time_gmv,
           (SELECT outstanding_balance FROM ar_summary) AS outstanding_ar_balance,
           (SELECT overdue_count FROM ar_summary)     AS overdue_invoice_count,
           (SELECT overdue_amount FROM ar_summary)    AS overdue_invoice_amount,
@@ -93,6 +99,7 @@ export class DashboardResolver {
     return {
       gmvCurrentMonth: currentGmv.toFixed(2),
       gmvPreviousMonth: previousGmv.toFixed(2),
+      allTimeGmv: new Money((row?.all_time_gmv ?? '0').toString()).toFixed(2),
       gmvChangePercent,
       outstandingArBalance: new Money((row?.outstanding_ar_balance ?? '0').toString()).toFixed(2),
       overdueInvoiceCount: Number(row?.overdue_invoice_count ?? 0),

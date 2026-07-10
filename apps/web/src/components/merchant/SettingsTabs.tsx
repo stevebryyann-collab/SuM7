@@ -23,7 +23,7 @@ export function SettingsTabs(): JSX.Element {
   const isOwner = session?.role === 'owner';
 
   return (
-    <div className="mb-6 inline-flex w-full items-center gap-1 border-b border-gray-200">
+    <div className="mb-6 inline-flex w-full items-center gap-1 border-b border-border">
       {TABS.filter((tab) => !tab.ownerOnly || isOwner).map((tab) => {
         const active = pathname === tab.href;
         return (
@@ -34,8 +34,8 @@ export function SettingsTabs(): JSX.Element {
               'inline-flex items-center whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors duration-75',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
               active
-                ? 'border-accent text-gray-900'
-                : 'border-transparent text-gray-500 hover:text-gray-700',
+                ? 'border-accent text-text-primary'
+                : 'border-transparent text-text-secondary hover:text-text-secondary',
             )}
           >
             {tab.label}

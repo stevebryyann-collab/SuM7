@@ -15,9 +15,9 @@ import type { ArAgingReport } from '@/types/api';
 import { formatMoney, formatMoneyCompact } from '@/lib/format';
 
 /**
- * Horizontal AR-aging bar chart. Five fixed buckets with solid, semantically
- * escalating colors (green → dark red). Clicking a bar navigates to the filtered
- * invoice list. Tooltip shows bucket label, invoice count and outstanding amount.
+ * Horizontal AR-aging bar chart. Five fixed buckets on the palette's semantic
+ * escalation (mint → deep coral). Clicking a bar navigates to the filtered
+ * invoice list. Tooltip (glass) shows bucket label, invoice count and amount.
  */
 interface AgingDatum {
   key: string;
@@ -28,12 +28,15 @@ interface AgingDatum {
   filter: string;
 }
 
+const GRID = '#DCE7F3';
+const TICK = '#5A6B7E';
+
 const BUCKETS: Array<{ key: keyof ArAgingReport; label: string; color: string; filter: string }> = [
-  { key: 'current', label: 'Current', color: '#16a34a', filter: 'current' },
-  { key: 'overdue_1_30', label: '1–30 days', color: '#ca8a04', filter: '1-30' },
-  { key: 'overdue_31_60', label: '31–60 days', color: '#ea580c', filter: '31-60' },
-  { key: 'overdue_61_90', label: '61–90 days', color: '#dc2626', filter: '61-90' },
-  { key: 'overdue_90_plus', label: '90+ days', color: '#991b1b', filter: '90-plus' },
+  { key: 'current', label: 'Current', color: '#34C759', filter: 'current' },
+  { key: 'overdue_1_30', label: '1–30 days', color: '#FF9F0A', filter: '1-30' },
+  { key: 'overdue_31_60', label: '31–60 days', color: '#FF7A1A', filter: '31-60' },
+  { key: 'overdue_61_90', label: '61–90 days', color: '#FF453A', filter: '61-90' },
+  { key: 'overdue_90_plus', label: '90+ days', color: '#C42B22', filter: '90-plus' },
 ];
 
 function AgingTooltip({ active, payload }: TooltipProps<number, string>): JSX.Element | null {
@@ -41,12 +44,12 @@ function AgingTooltip({ active, payload }: TooltipProps<number, string>): JSX.El
   const datum = payload[0]?.payload as AgingDatum | undefined;
   if (!datum) return null;
   return (
-    <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs shadow-sm">
-      <p className="font-medium text-gray-900">{datum.label}</p>
-      <p className="mt-1 text-gray-500">
+    <div className="rounded-lg border border-glass-border bg-glass-strong px-3 py-2 text-xs shadow-glass backdrop-blur-glass">
+      <p className="font-medium text-text-primary">{datum.label}</p>
+      <p className="mt-1 text-text-secondary">
         {datum.count} invoice{datum.count === 1 ? '' : 's'}
       </p>
-      <p className="font-medium tabular-nums text-gray-900">{formatMoney(datum.amount)}</p>
+      <p className="font-medium tabular-nums text-text-primary">{formatMoney(datum.amount)}</p>
     </div>
   );
 }
@@ -78,22 +81,22 @@ export function ArAgingChart({ data }: { data: ArAgingReport }): JSX.Element {
           <XAxis
             type="number"
             tickFormatter={(v: number) => formatMoneyCompact(v)}
-            tick={{ fontSize: 11, fill: '#6b7280' }}
-            axisLine={{ stroke: '#e5e7eb' }}
+            tick={{ fontSize: 11, fill: TICK }}
+            axisLine={{ stroke: GRID }}
             tickLine={false}
           />
           <YAxis
             type="category"
             dataKey="label"
             width={80}
-            tick={{ fontSize: 11, fill: '#374151' }}
+            tick={{ fontSize: 11, fill: TICK }}
             axisLine={false}
             tickLine={false}
           />
-          <Tooltip content={<AgingTooltip />} cursor={{ fill: '#f3f4f6' }} />
+          <Tooltip content={<AgingTooltip />} cursor={{ fill: 'rgba(10,132,255,0.06)' }} />
           <Bar
             dataKey="amount"
-            radius={[0, 2, 2, 0]}
+            radius={[0, 8, 8, 0]}
             cursor="pointer"
             onClick={(entry: AgingDatum) => router.push(`/invoices?agingBucket=${entry.filter}`)}
           >

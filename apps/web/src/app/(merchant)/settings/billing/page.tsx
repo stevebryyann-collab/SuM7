@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { Check, X } from 'lucide-react';
-import type { SubscriptionTier } from '@b2b/shared/types';
-import { PageHeader } from '@/components/shared/PageHeader';
-import { SettingsTabs } from '@/components/merchant/SettingsTabs';
+import { useState } from "react";
+import { toast } from "sonner";
+import { Check, X } from "lucide-react";
+import type { SubscriptionTier } from "@b2b/shared/types";
+import { PageLayout } from "@/components/merchant/PageLayout";
+import { SettingsTabs } from "@/components/merchant/SettingsTabs";
 import {
   Dialog,
   DialogBody,
@@ -13,15 +13,20 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
-import { useBillingPlan, useBillingUsage, useChangePlan, useCreatePortalSession } from '@/hooks/useBilling';
-import { ApiClientError } from '@/lib/api/error';
-import { formatMoney, formatDate } from '@/lib/format';
-import { cn } from '@/lib/cn';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { LoadingSkeleton } from "@/components/shared/LoadingSkeleton";
+import {
+  useBillingPlan,
+  useBillingUsage,
+  useChangePlan,
+  useCreatePortalSession,
+} from "@/hooks/useBilling";
+import { ApiClientError } from "@/lib/api/error";
+import { formatMoney, formatDate } from "@/lib/format";
+import { cn } from "@/lib/cn";
 
 interface PlanSpec {
   tier: SubscriptionTier;
@@ -35,12 +40,43 @@ interface PlanSpec {
 }
 
 const PLANS: PlanSpec[] = [
-  { tier: 'starter', name: 'Starter', price: '$29', freeTier: '$20K', rate: '0.5%', bnpl: false, advancedAnalytics: false, prioritySupport: false },
-  { tier: 'growth', name: 'Growth', price: '$79', freeTier: '$50K', rate: '0.4%', bnpl: true, advancedAnalytics: false, prioritySupport: false },
-  { tier: 'pro', name: 'Pro', price: '$199', freeTier: '$150K', rate: '0.3%', bnpl: true, advancedAnalytics: true, prioritySupport: true },
+  {
+    tier: "starter",
+    name: "Starter",
+    price: "$29",
+    freeTier: "$20K",
+    rate: "0.5%",
+    bnpl: false,
+    advancedAnalytics: false,
+    prioritySupport: false,
+  },
+  {
+    tier: "growth",
+    name: "Growth",
+    price: "$79",
+    freeTier: "$50K",
+    rate: "0.4%",
+    bnpl: true,
+    advancedAnalytics: false,
+    prioritySupport: false,
+  },
+  {
+    tier: "pro",
+    name: "Pro",
+    price: "$199",
+    freeTier: "$150K",
+    rate: "0.3%",
+    bnpl: true,
+    advancedAnalytics: true,
+    prioritySupport: true,
+  },
 ];
 
-const TIER_RATE_LABEL: Record<string, string> = { starter: '0.5%', growth: '0.4%', pro: '0.3%' };
+const TIER_RATE_LABEL: Record<string, string> = {
+  starter: "0.5%",
+  growth: "0.4%",
+  pro: "0.3%",
+};
 
 export default function BillingSettingsPage(): JSX.Element {
   const { data: plan, isLoading: planLoading } = useBillingPlan();
@@ -57,21 +93,32 @@ export default function BillingSettingsPage(): JSX.Element {
     if (!pendingTier) return;
     const tier = pendingTier;
     changePlan.mutate(tier, {
-      onSuccess: () => {
-        toast.success('Plan updated');
+      onSuccess: (data) => {
+        // First subscription → the hook opened Paddle checkout in a new tab;
+        // that tab confirms the outcome, so we don't show a success toast here.
+        // An in-place (prorated) tier change is applied synchronously.
+        if (!data.checkoutUrl) {
+          toast.success("Plan updated");
+        }
         setPendingTier(null);
         setModalOpen(false);
       },
       onError: (error) => {
         setPendingTier(null);
-        toast.error(error instanceof ApiClientError ? error.message : 'Could not update plan');
+        toast.error(
+          error instanceof ApiClientError
+            ? error.message
+            : "Could not update plan",
+        );
       },
     });
   };
 
   return (
-    <>
-      <PageHeader title="Billing" description="Your plan, GMV usage, and payment method." />
+    <PageLayout
+      title="Billing"
+      subtitle="Your plan, GMV usage, and payment method."
+    >
       <SettingsTabs />
 
       <div className="space-y-6">
@@ -83,26 +130,38 @@ export default function BillingSettingsPage(): JSX.Element {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold capitalize text-gray-900">{plan.tier} plan</h2>
+                  <h2 className="text-base font-semibold capitalize text-text-primary">
+                    {plan.tier} plan
+                  </h2>
                   <PlanStatusBadge status={String(plan.status)} />
                 </div>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-text-secondary">
                   {plan.priceLabel}
                   {plan.nextBillingDate ? (
                     <>
-                      {' · '}
-                      {isTrial ? 'Trial ends' : 'Next billing'} {formatDate(plan.nextBillingDate)}
+                      {" · "}
+                      {isTrial ? "Trial ends" : "Next billing"}{" "}
+                      {formatDate(plan.nextBillingDate)}
                     </>
                   ) : null}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="default" size="sm" disabled={portal.isPending} onClick={() => portal.mutate()}>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={portal.isPending}
+                  onClick={() => portal.mutate()}
+                >
                   {portal.isPending ? <Spinner /> : null}
                   Manage billing
                 </Button>
-                <Button variant="primary" size="sm" onClick={() => setModalOpen(true)}>
-                  {isTrial ? 'Choose a plan' : 'Change plan'}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setModalOpen(true)}
+                >
+                  {isTrial ? "Choose a plan" : "Change plan"}
                 </Button>
               </div>
             </div>
@@ -111,7 +170,9 @@ export default function BillingSettingsPage(): JSX.Element {
 
         {/* GMV usage */}
         <section className="panel p-5">
-          <h2 className="text-base font-semibold text-gray-900">GMV usage this month</h2>
+          <h2 className="text-base font-semibold text-text-primary">
+            GMV usage this month
+          </h2>
           {usageLoading || !usage ? (
             <div className="mt-4">
               <LoadingSkeleton rows={2} columns={[4]} />
@@ -122,17 +183,21 @@ export default function BillingSettingsPage(): JSX.Element {
               freeThreshold={Number(usage.freeThreshold)}
               billable={Number(usage.billableGmv)}
               estimatedFee={usage.estimatedFee}
-              rateLabel={TIER_RATE_LABEL[String(usage.tier)] ?? '0.5%'}
+              rateLabel={TIER_RATE_LABEL[String(usage.tier)] ?? "0.5%"}
             />
           )}
         </section>
 
         {/* Plan comparison */}
         <section className="panel overflow-hidden">
-          <div className="border-b border-gray-200 px-4 py-3">
-            <h2 className="text-label uppercase tracking-wider text-gray-500">Plan comparison</h2>
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-label uppercase tracking-wider text-text-secondary">
+              Plan comparison
+            </h2>
           </div>
-          <PlanComparison currentTier={plan ? (plan.tier as SubscriptionTier) : null} />
+          <PlanComparison
+            currentTier={plan ? (plan.tier as SubscriptionTier) : null}
+          />
         </section>
       </div>
 
@@ -140,31 +205,42 @@ export default function BillingSettingsPage(): JSX.Element {
         open={modalOpen}
         onOpenChange={(open) => !changePlan.isPending && setModalOpen(open)}
         currentTier={plan ? (plan.tier as SubscriptionTier) : null}
+        isTrial={isTrial}
         onSelect={(tier) => setPendingTier(tier)}
       />
 
       <ConfirmDialog
         open={pendingTier !== null}
         onOpenChange={(open) => !open && setPendingTier(null)}
-        title="Change plan?"
-        description="You'll be charged the prorated difference immediately."
-        confirmLabel="Confirm change"
+        title={isTrial ? "Continue to checkout?" : "Change plan?"}
+        description={
+          isTrial
+            ? "You'll be taken to Paddle checkout in a new tab to complete payment."
+            : "You'll be charged the prorated difference immediately."
+        }
+        confirmLabel={isTrial ? "Continue" : "Confirm change"}
         isLoading={changePlan.isPending}
         onConfirm={confirmChange}
       />
-    </>
+    </PageLayout>
   );
 }
 
 function PlanStatusBadge({ status }: { status: string }): JSX.Element {
   const tone: Record<string, string> = {
-    active: 'bg-green-100 text-green-800',
-    trial: 'bg-blue-100 text-blue-800',
-    inactive: 'bg-red-100 text-red-800',
+    active: "bg-green-100 text-green-800",
+    trial: "bg-ocean-soft text-ocean-deep",
+    inactive: "bg-red-100 text-red-800",
   };
-  const label = status.length > 0 ? status[0]!.toUpperCase() + status.slice(1) : status;
+  const label =
+    status.length > 0 ? status[0]!.toUpperCase() + status.slice(1) : status;
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', tone[status] ?? 'bg-gray-100 text-gray-800')}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        tone[status] ?? "bg-fog-soft text-text-primary",
+      )}
+    >
       {label}
     </span>
   );
@@ -183,53 +259,81 @@ function UsageMeter({
   estimatedFee: string;
   rateLabel: string;
 }): JSX.Element {
-  const pct = freeThreshold > 0 ? Math.min(100, Math.round((gmv / freeThreshold) * 100)) : 0;
+  const pct =
+    freeThreshold > 0
+      ? Math.min(100, Math.round((gmv / freeThreshold) * 100))
+      : 0;
   const overFreeTier = billable > 0;
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-700">
+        <span className="text-text-secondary">
           {formatMoney(gmv)} of {formatMoney(freeThreshold)} free tier used
         </span>
-        <span className="tabular-nums text-gray-500">{pct}%</span>
+        <span className="tabular-nums text-text-secondary">{pct}%</span>
       </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-200">
+      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-fog-soft">
         <div
-          className={cn('h-full rounded-full', overFreeTier ? 'bg-red-500' : 'bg-accent')}
+          className={cn(
+            "h-full rounded-full",
+            overFreeTier ? "bg-red-500" : "bg-accent",
+          )}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <p className="mt-2 text-sm text-gray-500">
+      <p className="mt-2 text-sm text-text-secondary">
         {overFreeTier ? (
           <>
-            You have used {formatMoney(gmv)} of GMV. {formatMoney(billable)} is billable at {rateLabel} ={' '}
-            <span className="font-medium text-gray-900">{formatMoney(estimatedFee)}</span> in usage fees.
+            You have used {formatMoney(gmv)} of GMV. {formatMoney(billable)} is
+            billable at {rateLabel} ={" "}
+            <span className="font-medium text-text-primary">
+              {formatMoney(estimatedFee)}
+            </span>{" "}
+            in usage fees.
           </>
         ) : (
-          'No usage fees this month.'
+          "No usage fees this month."
         )}
       </p>
     </div>
   );
 }
 
-function PlanComparison({ currentTier }: { currentTier: SubscriptionTier | null }): JSX.Element {
-  const rows: { label: string; render: (plan: PlanSpec) => JSX.Element | string }[] = [
-    { label: 'Monthly price', render: (p) => `${p.price}/mo` },
-    { label: 'GMV free tier', render: (p) => p.freeTier },
-    { label: 'GMV rate above', render: (p) => p.rate },
-    { label: 'BNPL', render: (p) => <BoolMark on={p.bnpl} /> },
-    { label: 'Advanced analytics', render: (p) => <BoolMark on={p.advancedAnalytics} /> },
-    { label: 'Priority support', render: (p) => <BoolMark on={p.prioritySupport} /> },
+function PlanComparison({
+  currentTier,
+}: {
+  currentTier: SubscriptionTier | null;
+}): JSX.Element {
+  const rows: {
+    label: string;
+    render: (plan: PlanSpec) => JSX.Element | string;
+  }[] = [
+    { label: "Monthly price", render: (p) => `${p.price}/mo` },
+    { label: "GMV free tier", render: (p) => p.freeTier },
+    { label: "GMV rate above", render: (p) => p.rate },
+    { label: "BNPL", render: (p) => <BoolMark on={p.bnpl} /> },
+    {
+      label: "Advanced analytics",
+      render: (p) => <BoolMark on={p.advancedAnalytics} />,
+    },
+    {
+      label: "Priority support",
+      render: (p) => <BoolMark on={p.prioritySupport} />,
+    },
   ];
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-200">
-            <th className="px-4 py-2 text-left font-medium text-gray-500">Feature</th>
+          <tr className="border-b border-border">
+            <th className="px-4 py-2 text-left font-medium text-text-secondary">
+              Feature
+            </th>
             {PLANS.map((plan) => (
-              <th key={plan.tier} className="px-4 py-2 text-center font-semibold text-gray-900">
+              <th
+                key={plan.tier}
+                className="px-4 py-2 text-center font-semibold text-text-primary"
+              >
                 {plan.name}
                 {currentTier === plan.tier ? (
                   <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent-fg">
@@ -242,10 +346,16 @@ function PlanComparison({ currentTier }: { currentTier: SubscriptionTier | null 
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.label} className="border-b border-gray-200 last:border-0">
-              <td className="px-4 py-2 text-gray-600">{row.label}</td>
+            <tr
+              key={row.label}
+              className="border-b border-border last:border-0"
+            >
+              <td className="px-4 py-2 text-text-secondary">{row.label}</td>
               {PLANS.map((plan) => (
-                <td key={plan.tier} className="px-4 py-2 text-center tabular-nums text-gray-900">
+                <td
+                  key={plan.tier}
+                  className="px-4 py-2 text-center tabular-nums text-text-primary"
+                >
                   {row.render(plan)}
                 </td>
               ))}
@@ -261,7 +371,7 @@ function BoolMark({ on }: { on: boolean }): JSX.Element {
   return on ? (
     <Check className="mx-auto h-4 w-4 text-green-600" />
   ) : (
-    <X className="mx-auto h-4 w-4 text-gray-300" />
+    <X className="mx-auto h-4 w-4 text-text-tertiary" />
   );
 }
 
@@ -269,19 +379,25 @@ function ChangePlanModal({
   open,
   onOpenChange,
   currentTier,
+  isTrial,
   onSelect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentTier: SubscriptionTier | null;
+  isTrial: boolean;
   onSelect: (tier: SubscriptionTier) => void;
 }): JSX.Element {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Change plan</DialogTitle>
-          <DialogDescription>Pick a plan. You&apos;ll be charged the prorated difference immediately.</DialogDescription>
+          <DialogTitle>{isTrial ? "Choose a plan" : "Change plan"}</DialogTitle>
+          <DialogDescription>
+            {isTrial
+              ? "Pick a plan. You'll continue to Paddle checkout to complete payment."
+              : "Pick a plan. You'll be charged the prorated difference immediately."}
+          </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -291,35 +407,43 @@ function ChangePlanModal({
                 <div
                   key={plan.tier}
                   className={cn(
-                    'flex flex-col rounded-lg border p-4',
-                    isCurrent ? 'border-accent bg-accent/5' : 'border-gray-200',
+                    "flex flex-col rounded-lg border p-4",
+                    isCurrent
+                      ? "border-accent bg-accent/5"
+                      : "border-glass-border",
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-900">{plan.name}</h3>
+                    <h3 className="text-sm font-semibold text-text-primary">
+                      {plan.name}
+                    </h3>
                     {isCurrent ? (
                       <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent-fg">
                         Current plan
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">{plan.price}</p>
-                  <p className="text-xs text-gray-500">per month</p>
-                  <ul className="mt-3 flex-1 space-y-1 text-xs text-gray-600">
+                  <p className="mt-1 text-2xl font-semibold tracking-tight text-text-primary">
+                    {plan.price}
+                  </p>
+                  <p className="text-xs text-text-secondary">per month</p>
+                  <ul className="mt-3 flex-1 space-y-1 text-xs text-text-secondary">
                     <li>{plan.freeTier} GMV free tier</li>
                     <li>{plan.rate} on GMV above</li>
                     {plan.bnpl ? <li>BNPL enabled</li> : null}
-                    {plan.advancedAnalytics ? <li>Advanced analytics</li> : null}
+                    {plan.advancedAnalytics ? (
+                      <li>Advanced analytics</li>
+                    ) : null}
                     {plan.prioritySupport ? <li>Priority support</li> : null}
                   </ul>
                   <Button
-                    variant={isCurrent ? 'default' : 'primary'}
+                    variant={isCurrent ? "default" : "primary"}
                     size="sm"
                     className="mt-4"
                     disabled={isCurrent}
                     onClick={() => onSelect(plan.tier)}
                   >
-                    {isCurrent ? 'Current plan' : `Select ${plan.name}`}
+                    {isCurrent ? "Current plan" : `Select ${plan.name}`}
                   </Button>
                 </div>
               );

@@ -4,7 +4,7 @@ import { forwardRef, type ElementRef, type ComponentPropsWithoutRef } from 'reac
 import * as LabelPrimitive from '@radix-ui/react-label';
 import { cn } from '@/lib/cn';
 
-/** Form label — 11px uppercase tracked, gray-500 (the single label type style). */
+/** Form label — 11px uppercase tracked, fog-gray secondary (the single label type style). */
 export const Label = forwardRef<
   ElementRef<typeof LabelPrimitive.Root>,
   ComponentPropsWithoutRef<typeof LabelPrimitive.Root>
@@ -12,7 +12,7 @@ export const Label = forwardRef<
   <LabelPrimitive.Root
     ref={ref}
     className={cn(
-      'text-label font-medium uppercase tracking-wider text-gray-500',
+      'text-label font-medium uppercase tracking-wider text-text-secondary',
       'peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
       className,
     )}

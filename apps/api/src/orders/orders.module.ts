@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { DiscountCodesModule } from '../discount-codes/discount-codes.module';
+import { CatalogModule } from '../catalog/catalog.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
@@ -10,7 +12,7 @@ import { OrdersService } from './orders.service';
  * global. OrdersService is exported for any future cross-module use.
  */
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, DiscountCodesModule, CatalogModule],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

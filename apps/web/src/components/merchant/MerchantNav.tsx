@@ -36,10 +36,10 @@ export function MerchantNav(): JSX.Element {
   const { data: session } = useSession();
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-muted">
-      <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-4">
-        <BarChart3 className="h-5 w-5 text-accent" />
-        <span className="text-sm font-semibold text-gray-900">Wholesale</span>
+    <aside className="flex w-56 shrink-0 flex-col border-r border-glass-border bg-glass-strong backdrop-blur-nav">
+      <div className="flex items-center gap-2 border-b border-glass-border px-4 py-4">
+        <BarChart3 className="h-5 w-5 text-ocean" />
+        <span className="text-sm font-semibold text-text-primary">Wholesale</span>
       </div>
 
       <nav className="flex-1 space-y-1 px-2 py-3">
@@ -51,8 +51,8 @@ export function MerchantNav(): JSX.Element {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-75',
-                active ? 'bg-accent text-accent-fg' : 'text-gray-700 hover:bg-gray-200',
+                'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-fast',
+                active ? 'bg-ocean-soft text-ocean-deep shadow-sm' : 'text-text-secondary hover:bg-white/60',
               )}
             >
               <Icon className="h-4 w-4" />
@@ -62,8 +62,8 @@ export function MerchantNav(): JSX.Element {
         })}
       </nav>
 
-      <div className="border-t border-gray-200 px-3 py-3">
-        <p className="truncate text-xs text-gray-500" title={session?.shopifyDomain ?? ''}>
+      <div className="border-t border-glass-border px-3 py-3">
+        <p className="truncate text-xs text-text-secondary" title={session?.shopifyDomain ?? ''}>
           {session?.shopifyDomain ?? 'Not signed in'}
         </p>
         <Button
