@@ -1,15 +1,18 @@
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { Decimal } from 'decimal.js';
-import { PrismaService } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
+import { Injectable } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { Decimal } from "decimal.js";
+import { PrismaService } from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
 import {
   InvoicesService,
   type ArAgingResult,
   type InvoiceSummary,
-} from '../invoices/invoices.service';
+} from "../invoices/invoices.service";
 
-const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
+const Money = Decimal.clone({
+  rounding: Decimal.ROUND_HALF_EVEN,
+  precision: 40,
+});
 
 /** KPI cards on the merchant dashboard. All money is a 2dp decimal string. */
 export interface DashboardKpis {
@@ -91,13 +94,14 @@ export class DashboardService {
   ) {}
 
   async getDashboard(merchantId: string): Promise<DashboardData> {
-    const [kpis, aging, gmvTrend, recent, pendingApplications] = await Promise.all([
-      this.getKpis(merchantId),
-      this.invoices.getArAging(merchantId),
-      this.getGmvTrend(merchantId),
-      this.invoices.listInvoicesForMerchant(merchantId, { limit: 10 }),
-      this.getPendingApplications(merchantId),
-    ]);
+    const [kpis, aging, gmvTrend, recent, pendingApplications] =
+      await Promise.all([
+        this.getKpis(merchantId),
+        this.invoices.getArAging(merchantId),
+        this.getGmvTrend(merchantId),
+        this.invoices.listInvoicesForMerchant(merchantId, { limit: 10 }),
+        this.getPendingApplications(merchantId),
+      ]);
 
     return {
       kpis: kpis.kpis,
@@ -112,8 +116,10 @@ export class DashboardService {
   private async getKpis(
     merchantId: string,
   ): Promise<{ kpis: DashboardKpis; setup: DashboardSetup }> {
-    const rows = await this.merchantContext.run(merchantId, () =>
-      this.prisma.$queryRaw<KpiRow[]>`
+    const rows = await this.merchantContext.run(
+      merchantId,
+      () =>
+        this.prisma.$queryRaw<KpiRow[]>`
         SELECT
           (SELECT COALESCE(SUM(total), 0) FROM invoices
              WHERE merchant_id = ${merchantId}::uuid AND status = 'paid'
@@ -141,14 +147,19 @@ export class DashboardService {
              WHERE merchant_id = ${merchantId}::uuid) AS has_tier,
           (SELECT COUNT(*) > 0 FROM merchant_buyer_relationships
              WHERE merchant_id = ${merchantId}::uuid AND approval_status = 'approved') AS has_approved_buyer,
-          (SELECT subscription_stripe_id IS NOT NULL FROM merchants
+          (SELECT subscription_paddle_id IS NOT NULL FROM merchants
              WHERE id = ${merchantId}::uuid) AS has_subscription`,
     );
     const row = rows[0];
     const current = new Money((row?.gmv_current ?? 0).toString());
     const previous = new Money((row?.gmv_previous ?? 0).toString());
     const changePercent = previous.greaterThan(0)
-      ? current.minus(previous).dividedBy(previous).times(100).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toFixed(2)
+      ? current
+          .minus(previous)
+          .dividedBy(previous)
+          .times(100)
+          .toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN)
+          .toFixed(2)
       : null;
 
     return {
@@ -156,10 +167,14 @@ export class DashboardService {
         gmvCurrentMonth: current.toFixed(2),
         gmvPreviousMonth: previous.toFixed(2),
         gmvChangePercent: changePercent,
-        outstandingArBalance: new Money((row?.outstanding_ar ?? 0).toString()).toFixed(2),
+        outstandingArBalance: new Money(
+          (row?.outstanding_ar ?? 0).toString(),
+        ).toFixed(2),
         outstandingInvoiceCount: Number(row?.outstanding_count ?? 0),
         overdueInvoiceCount: Number(row?.overdue_count ?? 0),
-        overdueInvoiceAmount: new Money((row?.overdue_amount ?? 0).toString()).toFixed(2),
+        overdueInvoiceAmount: new Money(
+          (row?.overdue_amount ?? 0).toString(),
+        ).toFixed(2),
         newBuyersThisMonth: Number(row?.new_buyers ?? 0),
         pendingApplicationCount: Number(row?.pending_apps ?? 0),
       },
@@ -171,9 +186,13 @@ export class DashboardService {
     };
   }
 
-  private async getGmvTrend(merchantId: string): Promise<DashboardTrendPoint[]> {
-    const rows = await this.merchantContext.run(merchantId, () =>
-      this.prisma.$queryRaw<TrendRow[]>`
+  private async getGmvTrend(
+    merchantId: string,
+  ): Promise<DashboardTrendPoint[]> {
+    const rows = await this.merchantContext.run(
+      merchantId,
+      () =>
+        this.prisma.$queryRaw<TrendRow[]>`
         SELECT
           d.day::date AS day,
           COALESCE(SUM(o.total), 0) AS gmv
@@ -199,10 +218,15 @@ export class DashboardService {
   ): Promise<DashboardPendingApplication[]> {
     const rows = await this.merchantContext.run(merchantId, () =>
       this.prisma.buyerRegistrationApplication.findMany({
-        where: { merchantId, status: 'pending' },
-        orderBy: { createdAt: 'desc' },
+        where: { merchantId, status: "pending" },
+        orderBy: { createdAt: "desc" },
         take: 5,
-        select: { id: true, companyName: true, businessType: true, createdAt: true },
+        select: {
+          id: true,
+          companyName: true,
+          businessType: true,
+          createdAt: true,
+        },
       }),
     );
     return rows.map((row) => ({

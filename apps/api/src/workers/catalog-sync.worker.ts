@@ -1,15 +1,19 @@
-import { Inject, Logger } from '@nestjs/common';
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
-import type { Job } from 'bullmq';
-import { Redis } from 'ioredis';
-import { createHash } from 'node:crypto';
-import * as Sentry from '@sentry/node';
-import { PrismaService } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
-import { ShopifyApiService } from '../shopify/shopify-api.service';
-import { REDIS_CACHE } from '../redis/redis.module';
-import { QUEUE_CATALOG } from '../queues/queue.module';
-import { asShopifyId, isFinalAttempt, type WebhookJobData } from './worker-helpers';
+import { Inject, Logger } from "@nestjs/common";
+import { Processor, WorkerHost, OnWorkerEvent } from "@nestjs/bullmq";
+import type { Job } from "bullmq";
+import { Redis } from "ioredis";
+import { createHash } from "node:crypto";
+import * as Sentry from "@sentry/node";
+import { PrismaService } from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
+import { ShopifyApiService } from "../shopify/shopify-api.service";
+import { REDIS_CACHE } from "../redis/redis.module";
+import { JOB_INVENTORY_SYNC, QUEUE_CATALOG } from "../queues/queue.module";
+import {
+  asShopifyId,
+  isFinalAttempt,
+  type WebhookJobData,
+} from "./worker-helpers";
 
 const SNAPSHOT_TTL_SECONDS = 2_592_000; // 30 days
 
@@ -34,26 +38,87 @@ export class CatalogSyncWorker extends WorkerHost {
   }
 
   async process(job: Job<WebhookJobData>): Promise<void> {
-    await this.merchantContext.runAsSystem(() => this.handle(job));
+    await this.merchantContext.runAsSystem(() =>
+      job.name === JOB_INVENTORY_SYNC
+        ? this.handleInventory(job)
+        : this.handle(job),
+    );
   }
 
-  private async handle(job: Job<WebhookJobData>): Promise<void> {
-    const { webhookEventId, shopifyDomain, topic } = job.data;
+  /**
+   * inventory_levels/update: Shopify's payload keys availability by
+   * `inventory_item_id`/`location_id`, not by product/variant, and the platform
+   * has no inventory-item→variant map yet. The correct, side-effect-safe action
+   * is to invalidate this merchant's short-TTL inventory + catalog-page caches so
+   * the next buyer read re-fetches fresh availability. (Once
+   * ShopifyApiService.getVariant lands, this can narrow to the affected variants.)
+   */
+  private async handleInventory(job: Job<WebhookJobData>): Promise<void> {
+    const { webhookEventId, shopifyDomain } = job.data;
 
-    const event = await this.prisma.webhookEvent.findUnique({ where: { id: webhookEventId } });
+    const event = await this.prisma.webhookEvent.findUnique({
+      where: { id: webhookEventId },
+    });
     if (!event) {
       this.logger.warn(`Webhook event ${webhookEventId} not found; skipping`);
       return;
     }
     await this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { status: 'processing', workerJobId: job.id ?? null, attemptCount: job.attemptsMade + 1 },
+      data: {
+        status: "processing",
+        workerJobId: job.id ?? null,
+        attemptCount: job.attemptsMade + 1,
+      },
+    });
+
+    const merchant = await this.prisma.merchant.findFirst({
+      where: { shopifyDomain, isActive: true },
+      select: { id: true },
+    });
+    if (!merchant) {
+      // No active merchant (e.g. mid-uninstall): nothing to invalidate. Ack.
+      await this.markProcessed(webhookEventId);
+      return;
+    }
+
+    await this.invalidateInventory(merchant.id);
+    await this.invalidatePages(merchant.id);
+    const payload = event.payloadJson as {
+      inventory_item_id?: number | string;
+    } | null;
+    await this.writeAudit(
+      merchant.id,
+      asShopifyId(payload?.inventory_item_id) ?? "unknown",
+      "inventory_updated",
+    );
+    await this.markProcessed(webhookEventId);
+    this.logger.log(`Invalidated inventory caches for merchant ${merchant.id}`);
+  }
+
+  private async handle(job: Job<WebhookJobData>): Promise<void> {
+    const { webhookEventId, shopifyDomain, topic } = job.data;
+
+    const event = await this.prisma.webhookEvent.findUnique({
+      where: { id: webhookEventId },
+    });
+    if (!event) {
+      this.logger.warn(`Webhook event ${webhookEventId} not found; skipping`);
+      return;
+    }
+    await this.prisma.webhookEvent.update({
+      where: { id: webhookEventId },
+      data: {
+        status: "processing",
+        workerJobId: job.id ?? null,
+        attemptCount: job.attemptsMade + 1,
+      },
     });
 
     const payload = event.payloadJson as { id?: number | string } | null;
     const productId = asShopifyId(payload?.id);
     if (!productId) {
-      throw new Error('product webhook payload missing product id');
+      throw new Error("product webhook payload missing product id");
     }
 
     const merchant = await this.prisma.merchant.findFirst({
@@ -67,21 +132,32 @@ export class CatalogSyncWorker extends WorkerHost {
     const snapshotKey = `catalog:snapshot:${merchant.id}:${productId}`;
 
     // ── Deletion ─────────────────────────────────────────────────────────
-    if (topic === 'products/delete') {
+    if (topic === "products/delete") {
       await this.prisma.pricingTierOverride.deleteMany({
-        where: { shopifyProductId: productId, pricingTier: { merchantId: merchant.id } },
+        where: {
+          shopifyProductId: productId,
+          pricingTier: { merchantId: merchant.id },
+        },
       });
       await this.cache.del(snapshotKey);
       await this.invalidatePages(merchant.id);
-      await this.writeAudit(merchant.id, productId, 'deleted');
+      await this.writeAudit(merchant.id, productId, "deleted");
       await this.markProcessed(webhookEventId);
-      this.logger.log(`Deleted catalog product ${productId} for merchant ${merchant.id}`);
+      this.logger.log(
+        `Deleted catalog product ${productId} for merchant ${merchant.id}`,
+      );
       return;
     }
 
     // ── Create / update ──────────────────────────────────────────────────
-    const product = await this.shopify.getProduct(merchant.shopifyDomain, merchant.shopifyAccessToken, productId);
-    const hash = createHash('sha256').update(JSON.stringify(product)).digest('hex');
+    const product = await this.shopify.getProduct(
+      merchant.shopifyDomain,
+      merchant.shopifyAccessToken,
+      productId,
+    );
+    const hash = createHash("sha256")
+      .update(JSON.stringify(product))
+      .digest("hex");
 
     const previous = await this.cache.get(snapshotKey);
     if (previous === hash) {
@@ -89,7 +165,7 @@ export class CatalogSyncWorker extends WorkerHost {
       await this.markProcessed(webhookEventId);
       return;
     }
-    await this.cache.set(snapshotKey, hash, 'EX', SNAPSHOT_TTL_SECONDS);
+    await this.cache.set(snapshotKey, hash, "EX", SNAPSHOT_TTL_SECONDS);
 
     const variantIds = product.variants.map((variant) => String(variant.id));
 
@@ -117,32 +193,53 @@ export class CatalogSyncWorker extends WorkerHost {
     }
 
     await this.invalidatePages(merchant.id);
-    await this.writeAudit(merchant.id, productId, 'synced');
+    await this.writeAudit(merchant.id, productId, "synced");
     await this.markProcessed(webhookEventId);
-    this.logger.log(`Synced catalog product ${productId} for merchant ${merchant.id}`);
+    this.logger.log(
+      `Synced catalog product ${productId} for merchant ${merchant.id}`,
+    );
   }
 
   /** SCAN + DEL every cached catalog page for the merchant. */
   private async invalidatePages(merchantId: string): Promise<void> {
-    const pattern = `catalog:page:${merchantId}:*`;
-    let cursor = '0';
+    await this.scanDel(`catalog:page:${merchantId}:*`);
+  }
+
+  /** SCAN + DEL every cached per-variant inventory level for the merchant. */
+  private async invalidateInventory(merchantId: string): Promise<void> {
+    await this.scanDel(`inventory:${merchantId}:*`);
+  }
+
+  /** Cursor-scan the cache for `pattern` and delete matches in batches. */
+  private async scanDel(pattern: string): Promise<void> {
+    let cursor = "0";
     do {
-      const [next, keys] = await this.cache.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+      const [next, keys] = await this.cache.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        200,
+      );
       cursor = next;
       if (keys.length > 0) {
         await this.cache.del(...keys);
       }
-    } while (cursor !== '0');
+    } while (cursor !== "0");
   }
 
-  private async writeAudit(merchantId: string, productId: string, action: string): Promise<void> {
+  private async writeAudit(
+    merchantId: string,
+    productId: string,
+    action: string,
+  ): Promise<void> {
     await this.prisma.auditLog.create({
       data: {
         merchantId,
-        entityType: 'catalog_product',
+        entityType: "catalog_product",
         entityId: merchantId,
         action,
-        actorType: 'shopify_webhook',
+        actorType: "shopify_webhook",
         newValueJson: { shopifyProductId: productId },
       },
     });
@@ -151,11 +248,11 @@ export class CatalogSyncWorker extends WorkerHost {
   private async markProcessed(webhookEventId: string): Promise<void> {
     await this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { status: 'processed', processedAt: new Date() },
+      data: { status: "processed", processedAt: new Date() },
     });
   }
 
-  @OnWorkerEvent('failed')
+  @OnWorkerEvent("failed")
   async onFailed(job: Job<WebhookJobData>, error: Error): Promise<void> {
     if (!isFinalAttempt(job)) return;
     const { webhookEventId } = job.data;
@@ -163,15 +260,17 @@ export class CatalogSyncWorker extends WorkerHost {
       .runAsSystem(() =>
         this.prisma.webhookEvent.update({
           where: { id: webhookEventId },
-          data: { status: 'dead_letter', lastError: error.message },
+          data: { status: "dead_letter", lastError: error.message },
         }),
       )
       .catch(() => undefined);
     Sentry.captureException(error, {
-      level: 'error',
-      tags: { component: 'worker', queue: QUEUE_CATALOG, job: job.name },
+      level: "error",
+      tags: { component: "worker", queue: QUEUE_CATALOG, job: job.name },
       extra: { webhookEventId, attempts: job.attemptsMade },
     });
-    this.logger.error(`catalog:sync dead-letter ${webhookEventId}: ${error.message}`);
+    this.logger.error(
+      `catalog:sync dead-letter ${webhookEventId}: ${error.message}`,
+    );
   }
 }

@@ -1,6 +1,6 @@
-import NextAuth from 'next-auth';
-import type { NextRequest } from 'next/server';
-import { buildAuthOptions } from '@/lib/auth/auth-options';
+import NextAuth from "next-auth";
+import type { NextRequest } from "next/server";
+import { buildAuthOptions } from "@/lib/auth/auth-options";
 
 /**
  * Merchant NextAuth route handler (App Router). Buyers DO NOT use this endpoint —
@@ -12,9 +12,20 @@ import { buildAuthOptions } from '@/lib/auth/auth-options';
  * server secrets (NEXTAUTH_SECRET, Shopify credentials) are read at request time
  * rather than at module-load — otherwise `next build`'s page-data collection,
  * which runs without production secrets, would throw.
+ *
+ * Shopify OAuth is per-shop, so the concrete store domain must be known when the
+ * provider's authorize/token URLs are built. It rides the request `shop` query
+ * param in BOTH phases: the sign-in initiation appends it (the merchant-login
+ * form passes `{ shop }` to `signIn`), and Shopify echoes `shop` on the OAuth
+ * callback redirect. We read it from the query and hand it to
+ * {@link buildAuthOptions}, which validates it before interpolating it.
  */
-async function handler(req: NextRequest, ctx: { params: { nextauth: string[] } }): Promise<Response> {
-  return NextAuth(req as never, ctx as never, buildAuthOptions());
+async function handler(
+  req: NextRequest,
+  ctx: { params: { nextauth: string[] } },
+): Promise<Response> {
+  const shop = req.nextUrl.searchParams.get("shop") ?? undefined;
+  return NextAuth(req as never, ctx as never, buildAuthOptions(shop));
 }
 
 export { handler as GET, handler as POST };

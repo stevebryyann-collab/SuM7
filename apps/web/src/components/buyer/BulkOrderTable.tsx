@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import Link from 'next/link';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Info, LayoutGrid, List } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -318,7 +319,12 @@ export function BulkOrderTable({
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-sm text-text-primary">{highlight(product.title, search)}</p>
+                      <Link
+                        href={`/portal/catalog/${product.handle}`}
+                        className="truncate text-sm text-text-primary transition-colors duration-fast hover:text-accent hover:underline"
+                      >
+                        {highlight(product.title, search)}
+                      </Link>
                       {showMatrixToggle ? (
                         <button
                           type="button"

@@ -4,6 +4,7 @@ import type { VolumeBreakCondition } from '@b2b/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { MerchantContextService } from '../prisma/merchant-context.service';
 import { ShopifyApiService } from '../shopify/shopify-api.service';
+import type { ShopifyProduct } from '../shopify/shopify.types';
 import { PricingService, type ResolvedVariantPrice } from '../pricing/pricing.service';
 import { REDIS_CACHE } from '../redis/redis.module';
 
@@ -105,6 +106,91 @@ export class CatalogService {
     } finally {
       await this.cache.del(lockKey);
     }
+  }
+
+  /**
+   * Resolve one product by its Shopify handle with the buyer's tier pricing —
+   * powers the product-detail page. Streams the active product list and matches
+   * on handle (products linked from the catalog are on the first page, so this
+   * resolves immediately in practice); the scan is bounded so an unknown handle
+   * degrades to `null` (→ 404) rather than walking the entire store. Cached like
+   * the list pages so repeat views never re-hit Shopify.
+   */
+  async getProductByHandle(
+    buyerId: string,
+    merchantId: string,
+    handle: string,
+  ): Promise<CatalogProduct | null> {
+    const tierId = await this.resolveTierId(buyerId, merchantId);
+    const cacheKey = `catalog:product:${merchantId}:tier:${tierId ?? 'none'}:handle:${encodeURIComponent(handle)}`;
+
+    const cached = await this.cache.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as CatalogProduct;
+    }
+
+    const merchant = await this.merchantContext.run(merchantId, () =>
+      this.prisma.merchant.findFirstOrThrow({
+        where: { id: merchantId, isActive: true },
+        select: { shopifyDomain: true, shopifyAccessToken: true },
+      }),
+    );
+
+    const MAX_SCAN_PAGES = 20;
+    let match: ShopifyProduct | null = null;
+    let scanned = 0;
+    for await (const page of this.shopify.listProducts(
+      merchant.shopifyDomain,
+      merchant.shopifyAccessToken,
+      { status: 'active', limit: 250 },
+    )) {
+      match = page.find((product) => product.handle === handle) ?? null;
+      scanned += 1;
+      if (match || scanned >= MAX_SCAN_PAGES) break;
+    }
+    if (!match) return null;
+
+    const variantIds = match.variants.map((variant) => String(variant.id));
+    const priced = await this.pricing.resolveBuyerPricing(buyerId, merchantId, variantIds);
+    const priceByVariant = new Map<string, ResolvedVariantPrice>(
+      priced.map((entry) => [entry.shopifyVariantId, entry]),
+    );
+
+    const colors = new Set<string>();
+    const sizes = new Set<string>();
+    const variants: CatalogVariant[] = match.variants.map((variant) => {
+      const color = variant.option1;
+      const size = variant.option2;
+      if (color) colors.add(color);
+      if (size) sizes.add(size);
+      const resolved = priceByVariant.get(String(variant.id));
+      return {
+        shopifyVariantId: String(variant.id),
+        sku: variant.sku,
+        color,
+        size,
+        basePrice: resolved?.basePrice ?? variant.price,
+        resolvedPrice: resolved?.resolvedPrice ?? variant.price,
+        appliedTierType: resolved?.appliedTierType ?? null,
+        discountPct: resolved?.discountPct ?? null,
+        volumeBrackets: resolved?.volumeBrackets ?? null,
+        available: variant.available ?? variant.inventory_quantity > 0,
+      };
+    });
+
+    const product: CatalogProduct = {
+      shopifyProductId: String(match.id),
+      title: match.title,
+      handle: match.handle,
+      vendor: match.vendor,
+      productType: match.product_type,
+      colors: Array.from(colors),
+      sizes: Array.from(sizes),
+      variants,
+    };
+
+    await this.cache.set(cacheKey, JSON.stringify(product), 'EX', CACHE_TTL_SECONDS);
+    return product;
   }
 
   /** Invalidate every cached catalog artifact (pages + locks) for a merchant. */

@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
-import { WebhooksController } from './webhooks.controller';
-import { WebhookStatsController } from './webhook-stats.controller';
-import { WebhookHmacGuard } from './webhook-hmac.guard';
-import { AuthModule } from '../auth/auth.module';
+import { Module } from "@nestjs/common";
+import { WebhooksController } from "./webhooks.controller";
+import { ComplianceWebhooksController } from "./compliance-webhooks.controller";
+import { WebhookStatsController } from "./webhook-stats.controller";
+import { WebhookHmacGuard } from "./webhook-hmac.guard";
+import { AuthModule } from "../auth/auth.module";
 
 /**
  * Inbound Shopify webhook ingestion. Routes under /webhooks/* receive the raw
@@ -13,7 +14,11 @@ import { AuthModule } from '../auth/auth.module';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [WebhooksController, WebhookStatsController],
+  controllers: [
+    WebhooksController,
+    ComplianceWebhooksController,
+    WebhookStatsController,
+  ],
   providers: [WebhookHmacGuard],
 })
 export class WebhooksModule {}

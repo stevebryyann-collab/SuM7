@@ -1,15 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
-import type { Job } from 'bullmq';
-import { Prisma } from '@prisma/client';
-import Decimal from 'decimal.js';
-import { PrismaService } from '../prisma/prisma.service';
-import { asShopifyId, type WebhookJobData } from './worker-helpers';
+import { Injectable, Logger } from "@nestjs/common";
+import type { Job } from "bullmq";
+import { Prisma } from "@prisma/client";
+import Decimal from "decimal.js";
+import { PrismaService } from "../prisma/prisma.service";
+import { asShopifyId, type WebhookJobData } from "./worker-helpers";
 
 const ROUND = Decimal.ROUND_HALF_EVEN;
 const CREDIT_CAS_RETRIES = 3;
 
 function monthKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /**
@@ -33,28 +33,41 @@ export class InvoiceMarkPaidService {
   async run(job: Job<WebhookJobData>): Promise<void> {
     const { webhookEventId } = job.data;
 
-    const event = await this.prisma.webhookEvent.findUnique({ where: { id: webhookEventId } });
+    const event = await this.prisma.webhookEvent.findUnique({
+      where: { id: webhookEventId },
+    });
     if (!event) {
       this.logger.warn(`Webhook event ${webhookEventId} not found; skipping`);
       return;
     }
     await this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { status: 'processing', workerJobId: job.id ?? null, attemptCount: job.attemptsMade + 1 },
+      data: {
+        status: "processing",
+        workerJobId: job.id ?? null,
+        attemptCount: job.attemptsMade + 1,
+      },
     });
 
     const payload = event.payloadJson as { id?: number | string } | null;
     const shopifyOrderId = asShopifyId(payload?.id);
     if (!shopifyOrderId) {
-      throw new Error('orders/paid payload missing order id');
+      throw new Error("orders/paid payload missing order id");
     }
 
     const order = await this.prisma.order.findUnique({
       where: { shopifyOrderId },
-      select: { id: true, merchantId: true, buyerId: true, invoice: { select: { id: true } } },
+      select: {
+        id: true,
+        merchantId: true,
+        buyerId: true,
+        invoice: { select: { id: true } },
+      },
     });
     if (!order?.invoice) {
-      this.logger.warn(`No invoice for order ${shopifyOrderId}; acknowledging paid webhook`);
+      this.logger.warn(
+        `No invoice for order ${shopifyOrderId}; acknowledging paid webhook`,
+      );
       await this.markProcessed(webhookEventId);
       return;
     }
@@ -65,28 +78,46 @@ export class InvoiceMarkPaidService {
         await tx.$executeRawUnsafe(`SET LOCAL app.bypass_rls = 'true'`);
 
         // Row-lock the invoice so concurrent paid webhooks serialize here.
-        await tx.$queryRawUnsafe('SELECT id FROM invoices WHERE id = $1 FOR UPDATE', invoiceId);
+        await tx.$queryRawUnsafe(
+          "SELECT id FROM invoices WHERE id = $1 FOR UPDATE",
+          invoiceId,
+        );
 
         const invoice = await tx.invoice.findUnique({
           where: { id: invoiceId },
-          select: { status: true, total: true },
+          select: { status: true, total: true, amountPaid: true },
         });
         if (!invoice) {
-          return { applied: false, total: '0' };
+          return { applied: false, total: "0", collectedDelta: "0" };
         }
-        if (invoice.status === 'paid') {
-          return { applied: false, total: invoice.total.toFixed(2) };
+        if (invoice.status === "paid") {
+          return {
+            applied: false,
+            total: invoice.total.toFixed(2),
+            collectedDelta: "0",
+          };
         }
 
         const total = invoice.total.toFixed(2);
+        // Reconcile against any prior (manual partial) payment: GMV and buyer
+        // credit must count only the NEWLY-collected amount. Setting
+        // amountPaid=total while adding the FULL total to GMV double-counted a
+        // prior markAsPaid partial (§6 MED). markAsPaid already accrues on its
+        // delta; this path now matches it.
+        const prevPaid = new Decimal(invoice.amountPaid.toString());
+        const collectedDelta = Decimal.max(
+          new Decimal(0),
+          new Decimal(total).minus(prevPaid),
+        ).toDecimalPlaces(2, ROUND);
         const paidAt = new Date();
 
         await tx.invoice.update({
           where: { id: invoiceId },
-          data: { status: 'paid', paidAt, amountPaid: total },
+          data: { status: "paid", paidAt, amountPaid: total },
         });
 
-        // GMV rollover: reset the running total when the month key changes.
+        // GMV rollover: reset the running total when the month key changes. On a
+        // new month the bucket starts from THIS event's collected delta.
         const merchant = await tx.merchant.findUniqueOrThrow({
           where: { id: order.merchantId },
           select: { gmvCurrentMonth: true, gmvMonthKey: true },
@@ -94,14 +125,34 @@ export class InvoiceMarkPaidService {
         const currentKey = monthKey(paidAt);
         const nextGmv =
           merchant.gmvMonthKey === currentKey
-            ? new Decimal(merchant.gmvCurrentMonth.toString()).plus(total).toDecimalPlaces(2, ROUND)
-            : new Decimal(total);
+            ? new Decimal(merchant.gmvCurrentMonth.toString())
+                .plus(collectedDelta)
+                .toDecimalPlaces(2, ROUND)
+            : collectedDelta;
         await tx.merchant.update({
           where: { id: order.merchantId },
-          data: { gmvCurrentMonth: nextGmv.toFixed(2), gmvMonthKey: currentKey },
+          data: {
+            gmvCurrentMonth: nextGmv.toFixed(2),
+            gmvMonthKey: currentKey,
+          },
         });
 
-        return { applied: true, total };
+        // Additive per-month ledger (immutable billing source; see migration
+        // 014). Mirrors the running-bucket update above, but is never destroyed
+        // at month rollover, so the monthly overage cron can bill a closed month
+        // safely. Adds the collected DELTA, so total accrual across paths equals
+        // the invoice total exactly once.
+        await tx.$executeRaw`
+          INSERT INTO merchant_monthly_gmv (merchant_id, month_key, gmv)
+          VALUES (${order.merchantId}::uuid, ${currentKey}, ${collectedDelta.toFixed(2)}::numeric)
+          ON CONFLICT (merchant_id, month_key)
+          DO UPDATE SET gmv = merchant_monthly_gmv.gmv + EXCLUDED.gmv, updated_at = NOW()`;
+
+        return {
+          applied: true,
+          total,
+          collectedDelta: collectedDelta.toFixed(2),
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -112,16 +163,25 @@ export class InvoiceMarkPaidService {
       return;
     }
 
-    await this.releaseCredit(order.merchantId, order.buyerId, result.total);
+    // Release only the newly-collected delta of buyer credit (a prior partial
+    // markAsPaid already released its own portion).
+    await this.releaseCredit(
+      order.merchantId,
+      order.buyerId,
+      result.collectedDelta,
+    );
 
     await this.prisma.auditLog.create({
       data: {
         merchantId: order.merchantId,
-        entityType: 'invoice',
+        entityType: "invoice",
         entityId: invoiceId,
-        action: 'paid',
-        actorType: 'shopify_webhook',
-        newValueJson: { amountPaid: result.total },
+        action: "paid",
+        actorType: "shopify_webhook",
+        newValueJson: {
+          amountPaid: result.total,
+          collectedDelta: result.collectedDelta,
+        },
       },
     });
 
@@ -130,12 +190,17 @@ export class InvoiceMarkPaidService {
   }
 
   /** Decrement creditUsed under an optimistic version lock, retried on CAS miss. */
-  private async releaseCredit(merchantId: string, buyerId: string, amount: string): Promise<void> {
+  private async releaseCredit(
+    merchantId: string,
+    buyerId: string,
+    amount: string,
+  ): Promise<void> {
     for (let attempt = 0; attempt < CREDIT_CAS_RETRIES; attempt += 1) {
-      const relationship = await this.prisma.merchantBuyerRelationship.findUnique({
-        where: { merchantId_buyerId: { merchantId, buyerId } },
-        select: { id: true, creditUsed: true, creditVersion: true },
-      });
+      const relationship =
+        await this.prisma.merchantBuyerRelationship.findUnique({
+          where: { merchantId_buyerId: { merchantId, buyerId } },
+          select: { id: true, creditUsed: true, creditVersion: true },
+        });
       if (!relationship) {
         return;
       }
@@ -145,8 +210,14 @@ export class InvoiceMarkPaidService {
       ).toDecimalPlaces(2, ROUND);
 
       const updated = await this.prisma.merchantBuyerRelationship.updateMany({
-        where: { id: relationship.id, creditVersion: relationship.creditVersion },
-        data: { creditUsed: nextUsed.toFixed(2), creditVersion: { increment: 1 } },
+        where: {
+          id: relationship.id,
+          creditVersion: relationship.creditVersion,
+        },
+        data: {
+          creditUsed: nextUsed.toFixed(2),
+          creditVersion: { increment: 1 },
+        },
       });
       if (updated.count === 1) {
         return;
@@ -160,7 +231,7 @@ export class InvoiceMarkPaidService {
   private async markProcessed(webhookEventId: string): Promise<void> {
     await this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { status: 'processed', processedAt: new Date() },
+      data: { status: "processed", processedAt: new Date() },
     });
   }
 }

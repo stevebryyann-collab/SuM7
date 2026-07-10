@@ -1,8 +1,8 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ClerkBuyerGuard, type BuyerAuthenticatedRequest } from '../auth/guards/clerk-buyer.guard';
-import { CatalogService, type CatalogPage } from './catalog.service';
+import { CatalogService, type CatalogPage, type CatalogProduct } from './catalog.service';
 import { InventoryService, type InventoryLevel } from './inventory.service';
 
 /** Buyer catalog query — cursor + optional free-text search + page size. */
@@ -71,5 +71,24 @@ export class CatalogController {
 
     // Convert Map to plain object for JSON serialization
     return Object.fromEntries(levels);
+  }
+
+  /**
+   * Single product by Shopify handle, tier-priced for the buyer. Declared AFTER
+   * the static `buyer/catalog/inventory` route so that path is never captured by
+   * this `:handle` param. Unknown handles resolve to 404 PRODUCT_NOT_FOUND.
+   */
+  @Get('buyer/catalog/:handle')
+  @UseGuards(ClerkBuyerGuard)
+  async getProduct(
+    @Req() req: BuyerAuthenticatedRequest,
+    @Param('handle') handle: string,
+  ): Promise<CatalogProduct> {
+    const buyer = req.buyer!;
+    const product = await this.catalog.getProductByHandle(buyer.buyerId, buyer.merchantId, handle);
+    if (!product) {
+      throw new NotFoundException({ code: 'PRODUCT_NOT_FOUND', message: 'Product not found' });
+    }
+    return product;
   }
 }

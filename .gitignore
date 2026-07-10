@@ -37,3 +37,6 @@ coverage/
 # Secrets / keys
 *.pem
 !**/test-fixtures/*.pem
+
+# Claude Code local settings (may capture tokens from ad-hoc commands)
+.claude/settings.local.json

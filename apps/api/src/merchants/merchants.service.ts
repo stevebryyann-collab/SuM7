@@ -3,17 +3,20 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-} from '@nestjs/common';
+} from "@nestjs/common";
 import {
   type MerchantRole,
   type TeamMemberRole,
   type UpdateMerchantSettingsInput,
   type UpsertMerchantInput,
-} from '@b2b/shared';
-import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
-import { EncryptionService } from '../crypto/encryption.service';
-import { AppConfigService } from '../config/app-config.service';
+} from "@b2b/shared";
+import {
+  PrismaService,
+  type PrismaTransaction,
+} from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
+import { EncryptionService } from "../crypto/encryption.service";
+import { AppConfigService } from "../config/app-config.service";
 
 /** Result returned to the internal merchant-provisioning caller. */
 export interface MerchantUpsertResult {
@@ -109,7 +112,7 @@ export class MerchantsService {
         },
       }),
     );
-    await this.writeAudit(merchantId, merchantId, 'settings_updated', actorId, {
+    await this.writeAudit(merchantId, merchantId, "settings_updated", actorId, {
       invoicePrefix: dto.invoicePrefix,
     });
     return this.toSettings(merchant);
@@ -123,9 +126,9 @@ export class MerchantsService {
     notifyInvoiceOverdue: boolean;
     notifyPaymentReceived: boolean;
   }): MerchantSettings {
-    const platformDomain = this.config.get('PLATFORM_DOMAIN');
+    const platformDomain = this.config.get("PLATFORM_DOMAIN");
     return {
-      storeName: merchant.shopifyDomain.split('.')[0] ?? merchant.shopifyDomain,
+      storeName: merchant.shopifyDomain.split(".")[0] ?? merchant.shopifyDomain,
       shopifyDomain: merchant.shopifyDomain,
       platformDomain,
       applicationLink: `https://${merchant.shopifyDomain}/apps/wholesale`,
@@ -146,7 +149,7 @@ export class MerchantsService {
     const users = await this.merchantContext.run(merchantId, () =>
       this.prisma.merchantUser.findMany({
         where: { merchantId },
-        orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+        orderBy: [{ role: "asc" }, { createdAt: "asc" }],
         select: {
           id: true,
           email: true,
@@ -179,10 +182,10 @@ export class MerchantsService {
     actorId: string,
   ): Promise<TeamMember> {
     const target = await this.findTeamMember(merchantId, userId);
-    if (target.role === 'owner') {
+    if (target.role === "owner") {
       throw new ForbiddenException({
-        code: 'CANNOT_MODIFY_OWNER',
-        message: 'The owner role cannot be changed',
+        code: "CANNOT_MODIFY_OWNER",
+        message: "The owner role cannot be changed",
       });
     }
     const updated = await this.merchantContext.run(merchantId, () =>
@@ -201,38 +204,46 @@ export class MerchantsService {
         },
       }),
     );
-    await this.writeAudit(merchantId, userId, 'team_role_changed', actorId, { role });
+    await this.writeAudit(merchantId, userId, "team_role_changed", actorId, {
+      role,
+    });
     return {
       id: updated.id,
       email: updated.email,
       firstName: updated.firstName,
       lastName: updated.lastName,
       role: updated.role as MerchantRole,
-      lastLoginAt: updated.lastLoginAt ? updated.lastLoginAt.toISOString() : null,
+      lastLoginAt: updated.lastLoginAt
+        ? updated.lastLoginAt.toISOString()
+        : null,
       isActive: updated.isActive,
       createdAt: updated.createdAt.toISOString(),
     };
   }
 
   /** Remove a team member. The owner and the acting user cannot be removed. */
-  async removeTeamMember(merchantId: string, userId: string, actorId: string): Promise<void> {
+  async removeTeamMember(
+    merchantId: string,
+    userId: string,
+    actorId: string,
+  ): Promise<void> {
     const target = await this.findTeamMember(merchantId, userId);
-    if (target.role === 'owner') {
+    if (target.role === "owner") {
       throw new ForbiddenException({
-        code: 'CANNOT_REMOVE_OWNER',
-        message: 'The owner cannot be removed',
+        code: "CANNOT_REMOVE_OWNER",
+        message: "The owner cannot be removed",
       });
     }
     if (userId === actorId) {
       throw new ForbiddenException({
-        code: 'CANNOT_REMOVE_SELF',
-        message: 'You cannot remove yourself',
+        code: "CANNOT_REMOVE_SELF",
+        message: "You cannot remove yourself",
       });
     }
     await this.merchantContext.run(merchantId, () =>
       this.prisma.merchantUser.delete({ where: { id: userId } }),
     );
-    await this.writeAudit(merchantId, userId, 'team_member_removed', actorId, {
+    await this.writeAudit(merchantId, userId, "team_member_removed", actorId, {
       email: target.email,
     });
   }
@@ -248,7 +259,10 @@ export class MerchantsService {
       }),
     );
     if (!user) {
-      throw new NotFoundException({ code: 'TEAM_MEMBER_NOT_FOUND', message: 'Team member not found' });
+      throw new NotFoundException({
+        code: "TEAM_MEMBER_NOT_FOUND",
+        message: "Team member not found",
+      });
     }
     return { id: user.id, email: user.email, role: user.role as MerchantRole };
   }
@@ -266,17 +280,19 @@ export class MerchantsService {
         this.prisma.auditLog.create({
           data: {
             merchantId,
-            entityType: 'merchant',
+            entityType: "merchant",
             entityId,
             action,
-            actorType: 'merchant_user',
+            actorType: "merchant_user",
             actorId,
             newValueJson: newValue as Record<string, string>,
           },
         }),
       );
     } catch (error) {
-      this.logger.error(`Failed to write merchant audit log: ${(error as Error).message}`);
+      this.logger.error(
+        `Failed to write merchant audit log: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -302,6 +318,16 @@ export class MerchantsService {
           update: {
             shopifyAccessToken: ciphertext,
             shopifyAccessTokenKeyVersion: keyVersion,
+            // Reinstall reactivation (App Store BLOCKER). A prior app/uninstalled
+            // set isActive:false + deletedAt (merchant-cleanup.worker). Without
+            // reviving them here, a reinstall leaves the merchant inactive and
+            // MerchantSessionGuard throws MERCHANT_INACTIVE / WebhookHmacGuard
+            // rejects every business webhook — the standard uninstall→reinstall
+            // reviewer test locks the merchant out. The 90-day data-purge job is
+            // separately defused: it re-checks isActive/deletedAt at run time
+            // (merchant-purge-data.worker) and clearing deletedAt here disarms it.
+            isActive: true,
+            deletedAt: null,
           },
           create: {
             shopifyDomain: input.shopifyDomain,
@@ -323,7 +349,9 @@ export class MerchantsService {
       }),
     );
 
-    this.logger.log(`Upserted merchant ${result.merchantId} (${result.shopifyDomain})`);
+    this.logger.log(
+      `Upserted merchant ${result.merchantId} (${result.shopifyDomain})`,
+    );
     return result;
   }
 
@@ -344,17 +372,25 @@ export class MerchantsService {
       select: { id: true, email: true, role: true },
     });
     if (existing) {
-      return { id: existing.id, email: existing.email, role: existing.role as MerchantRole };
+      return {
+        id: existing.id,
+        email: existing.email,
+        role: existing.role as MerchantRole,
+      };
     }
 
     const userCount = await tx.merchantUser.count({ where: { merchantId } });
-    const role: MerchantRole = userCount === 0 ? 'owner' : 'staff';
+    const role: MerchantRole = userCount === 0 ? "owner" : "staff";
 
     const created = await tx.merchantUser.create({
       data: { merchantId, email, role },
       select: { id: true, email: true, role: true },
     });
-    return { id: created.id, email: created.email, role: created.role as MerchantRole };
+    return {
+      id: created.id,
+      email: created.email,
+      role: created.role as MerchantRole,
+    };
   }
 
   // ── Part 2 of 4: Merchant config and settings ──────────────────────────
@@ -392,15 +428,21 @@ export class MerchantsService {
       this.prisma.merchant.update({
         where: { id: merchantId },
         data: {
-          ...(dto.allowsBackOrders !== undefined && { allowsBackOrders: dto.allowsBackOrders }),
+          ...(dto.allowsBackOrders !== undefined && {
+            allowsBackOrders: dto.allowsBackOrders,
+          }),
           ...(dto.gtmId !== undefined && { gtmId: dto.gtmId }),
           ...(dto.ga4Id !== undefined && { ga4Id: dto.ga4Id }),
-          ...(dto.invoicePrefix !== undefined && { invoicePrefix: dto.invoicePrefix }),
-          ...(dto.paymentInstructions !== undefined && { paymentInstructions: dto.paymentInstructions }),
+          ...(dto.invoicePrefix !== undefined && {
+            invoicePrefix: dto.invoicePrefix,
+          }),
+          ...(dto.paymentInstructions !== undefined && {
+            paymentInstructions: dto.paymentInstructions,
+          }),
         },
       }),
     );
 
-    this.logger.log('Merchant settings updated', { merchantId, correlationId });
+    this.logger.log("Merchant settings updated", { merchantId, correlationId });
   }
 }

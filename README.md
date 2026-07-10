@@ -31,24 +31,24 @@ Tooling: pnpm workspaces + Turborepo.
 
 ## Architecture at a glance
 
-| Concern | Choice |
-|---|---|
-| Merchant auth | **NextAuth v4 + Shopify OAuth** (HS256 JWT, `NEXTAUTH_SECRET`) — Shopify embedded-app requirement |
-| Buyer auth | **Clerk** (`@clerk/backend`) — buyers have no Shopify identity |
-| Buyer accounts | UNIFIED cross-merchant; per-merchant config in `merchant_buyer_relationships` |
-| Multi-tenancy | App-level `where:{merchantId}` **and** PostgreSQL Row-Level Security (both always on) |
-| Money | Decimal.js, `ROUND_HALF_EVEN` — never native floats |
-| Financial writes | Prisma `$transaction` with `Serializable` isolation |
-| External calls | All wrapped in an opossum circuit breaker |
-| Pagination | Cursor-based only |
-| BNPL | Resolve, always via the `BnplAdapter` interface |
-| Billing | Hybrid: flat Stripe subscription + metered GMV |
+| Concern          | Choice                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| Merchant auth    | **NextAuth v4 + Shopify OAuth** (HS256 JWT, `NEXTAUTH_SECRET`) — Shopify embedded-app requirement |
+| Buyer auth       | **Clerk** (`@clerk/backend`) — buyers have no Shopify identity                                    |
+| Buyer accounts   | UNIFIED cross-merchant; per-merchant config in `merchant_buyer_relationships`                     |
+| Multi-tenancy    | App-level `where:{merchantId}` **and** PostgreSQL Row-Level Security (both always on)             |
+| Money            | Decimal.js, `ROUND_HALF_EVEN` — never native floats                                               |
+| Financial writes | Prisma `$transaction` with `Serializable` isolation                                               |
+| External calls   | All wrapped in an opossum circuit breaker                                                         |
+| Pagination       | Cursor-based only                                                                                 |
+| BNPL             | Resolve, always via the `BnplAdapter` interface                                                   |
+| Billing          | Paddle (Merchant of Record): flat subscription + one-time GMV overage charges                     |
 
 ### Provider map (locked)
 
 Frontend → **Vercel** · Backend → **Railway** · DB → **Supabase** (Postgres 16 + PgBouncer)
 · Cache/Queue Redis → **Railway** · Storage → **AWS S3** (SSE-KMS) · Email → **Resend**
-· Payments → **Stripe** · BNPL → **Resolve** · Tracing → **OpenTelemetry → Grafana Cloud**
+· Payments → **Paddle** (Merchant of Record) · BNPL → **Resolve** · Tracing → **OpenTelemetry → Grafana Cloud**
 · Errors → **Sentry** · Logs → **Pino / Better Stack**.
 
 ## Platform Capabilities (v2)
@@ -56,9 +56,10 @@ Frontend → **Vercel** · Backend → **Railway** · DB → **Supabase** (Postg
 Parts 1–4 of the build are complete: design-system foundation, buyer-facing features,
 merchant admin upgrades, and a final polish pass. See `PART_2_IMPLEMENTATION.md`,
 `PART_3_IMPLEMENTATION.md`, and `PART_4_IMPLEMENTATION.md` for the per-part detail;
-`CLAUDE.md` → *PARTS 1–4 OF 4 COMPLETED* has the consolidated file list.
+`CLAUDE.md` → _PARTS 1–4 OF 4 COMPLETED_ has the consolidated file list.
 
 **Merchant admin**
+
 - Unlimited pricing tiers (percentage-off, fixed price list, volume breaks) with
   priority ordering and per-buyer overrides — dense `DataTable`, not cards.
 - Buyer approval workflow with audited PII reveal, GDPR export/erase, and credit-
@@ -76,6 +77,7 @@ merchant admin upgrades, and a final polish pass. See `PART_2_IMPLEMENTATION.md`
 - Analytics: GMV trend, top buyers, monthly GMV, GTM/GA4 integration settings.
 
 **Buyer portal**
+
 - Self-serve application → approval → unified cross-merchant account (Clerk-owned).
 - Spreadsheet-style bulk ordering: virtualized table, CSV import, volume-break tooltips,
   inventory/back-order awareness, mobile-responsive cart.
@@ -85,6 +87,7 @@ merchant admin upgrades, and a final polish pass. See `PART_2_IMPLEMENTATION.md`
 - Shopping lists, discount codes (backend only — no admin UI yet), first-use welcome.
 
 **Cross-cutting**
+
 - Apple-Weather premium-glass design system: atmospheric morning-sky background,
   translucent glass surfaces over blur, soft blue-gray floating shadows, spring
   lift/press motion — shared tokens, `DataTable`, `StatusBadge`,
@@ -128,11 +131,11 @@ k6 run tests/load/catalog.k6.js      # a load scenario
 ## Environment variables
 
 The API validates env at boot (`apps/api/src/config/env.validation.ts`). Required keys
-include the database URLs, Redis URLs, Shopify, Clerk, AWS S3, Stripe, Resend, Resolve,
+include the database URLs, Redis URLs, Shopify, Clerk, AWS S3, Paddle, Resend, Resolve,
 encryption keys, and `NEXTAUTH_SECRET`. The web app additionally needs
 `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `API_BASE_URL`,
 `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `SHOPIFY_CLIENT_ID/SECRET`, `INTERNAL_API_SECRET`,
-and `PLATFORM_DOMAIN`. See `CLAUDE.md` → *Environment Variables* for the full list.
+and `PLATFORM_DOMAIN`. See `CLAUDE.md` → _Environment Variables_ for the full list.
 
 > **Build note:** `NEXTAUTH_SECRET` must be a real base64 value (`openssl rand -base64 32`).
 > A non-base64 placeholder makes NextAuth fail during `next build` page-data collection.

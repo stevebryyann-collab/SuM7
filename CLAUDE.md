@@ -1,7 +1,11 @@
 # CLAUDE.md — B2B Wholesale Portal
+
 # Project root: ~/wholesale-portal
+
 # Single source of truth for Claude Code.
+
 # This file wins over all prompts, uploads, and conversation instructions.
+
 # No exceptions.
 
 ---
@@ -25,40 +29,40 @@ and BNPL via Resolve. Launch vertical: Fashion & Apparel only.
 
 ## NON-NEGOTIABLE ARCHITECTURE DECISIONS
 
-| Decision | Rule |
-|---|---|
-| Buyer accounts | UNIFIED cross-merchant. One buyer email = one platform account. Per-merchant config lives in merchant_buyer_relationships. |
-| BNPL | Resolve (US, Phase 1). Always called through BnplAdapter interface — never Resolve SDK directly. |
-| Billing | Hybrid: flat Stripe subscription + Stripe metered GMV with per-tier free thresholds. |
-| Buyer portal | White-label via Shopify App Proxy — buyers see the merchant's Shopify domain only. |
-| Multi-tenancy | TWO layers: application where: { merchantId } AND PostgreSQL Row-Level Security. Both always active. |
-| Price arithmetic | Decimal.js with ROUND_HALF_EVEN everywhere. Never native JS floats for money. |
-| Financial writes | $transaction({ isolationLevel: 'Serializable' }) for all order + invoice mutations. |
-| External API calls | Every call through an opossum circuit breaker. No raw fetch to external services. |
-| Pagination | Cursor-based only. Never skip or offset. |
+| Decision           | Rule                                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Buyer accounts     | UNIFIED cross-merchant. One buyer email = one platform account. Per-merchant config lives in merchant_buyer_relationships.                                                                         |
+| BNPL               | Resolve (US, Phase 1). Always called through BnplAdapter interface — never Resolve SDK directly.                                                                                                   |
+| Billing            | Paddle (Merchant of Record): flat recurring subscription + one-time GMV overage charges, with per-tier free thresholds. Overrides the former hybrid-Stripe lock per the paddle-migration decision. |
+| Buyer portal       | White-label via Shopify App Proxy — buyers see the merchant's Shopify domain only.                                                                                                                 |
+| Multi-tenancy      | TWO layers: application where: { merchantId } AND PostgreSQL Row-Level Security. Both always active.                                                                                               |
+| Price arithmetic   | Decimal.js with ROUND_HALF_EVEN everywhere. Never native JS floats for money.                                                                                                                      |
+| Financial writes   | $transaction({ isolationLevel: 'Serializable' }) for all order + invoice mutations.                                                                                                                |
+| External API calls | Every call through an opossum circuit breaker. No raw fetch to external services.                                                                                                                  |
+| Pagination         | Cursor-based only. Never skip or offset.                                                                                                                                                           |
 
 ---
 
 ## PROVIDER MAP — LOCKED
 
-| Layer | Provider | Notes |
-|---|---|---|
-| Frontend hosting | Vercel | Next.js 14 App Router |
-| Backend hosting | Railway | NestJS 10 API only — no database on Railway |
-| Database | Supabase | PostgreSQL 16 + built-in PgBouncer |
-| Redis CACHE | Railway Redis | LRU eviction, port 6379 |
-| Redis QUEUE | Railway Redis | AOF persistence, port 6380, BullMQ only |
-| Merchant auth | NextAuth.js v4 + Shopify OAuth | Required — Shopify session tokens cannot be verified by Clerk |
-| Buyer auth | Clerk | Buyers have no Shopify identity — Clerk owns buyer sessions entirely |
-| File storage | AWS S3 | SSE-KMS, private bucket, presigned URLs only |
-| Email | Resend | React Email templates |
-| Payments | Stripe | Hybrid subscription + metered GMV |
-| BNPL | Resolve | Via BnplAdapter interface |
-| Shopify | Shopify Partners | OAuth, App Bridge, webhooks, App Proxy |
-| Tracing | OpenTelemetry → Grafana Cloud | OTLP export |
-| Errors | Sentry | Backend + frontend |
-| Logging | Pino / Better Stack | Structured JSON, PII masked at emit |
-| CI/CD | GitHub Actions | 8-stage pipeline |
+| Layer            | Provider                       | Notes                                                                     |
+| ---------------- | ------------------------------ | ------------------------------------------------------------------------- |
+| Frontend hosting | Vercel                         | Next.js 14 App Router                                                     |
+| Backend hosting  | Railway                        | NestJS 10 API only — no database on Railway                               |
+| Database         | Supabase                       | PostgreSQL 16 + built-in PgBouncer                                        |
+| Redis CACHE      | Railway Redis                  | LRU eviction, port 6379                                                   |
+| Redis QUEUE      | Railway Redis                  | AOF persistence, port 6380, BullMQ only                                   |
+| Merchant auth    | NextAuth.js v4 + Shopify OAuth | Required — Shopify session tokens cannot be verified by Clerk             |
+| Buyer auth       | Clerk                          | Buyers have no Shopify identity — Clerk owns buyer sessions entirely      |
+| File storage     | AWS S3                         | SSE-KMS, private bucket, presigned URLs only                              |
+| Email            | Resend                         | React Email templates                                                     |
+| Payments         | Paddle                         | Merchant of Record: recurring subscription + one-time GMV overage charges |
+| BNPL             | Resolve                        | Via BnplAdapter interface                                                 |
+| Shopify          | Shopify Partners               | OAuth, App Bridge, webhooks, App Proxy                                    |
+| Tracing          | OpenTelemetry → Grafana Cloud  | OTLP export                                                               |
+| Errors           | Sentry                         | Backend + frontend                                                        |
+| Logging          | Pino / Better Stack            | Structured JSON, PII masked at emit                                       |
+| CI/CD            | GitHub Actions                 | 8-stage pipeline                                                          |
 
 ---
 
@@ -89,6 +93,7 @@ for buyers.
 ### Files to implement (exactly as original prompts define):
 
 apps/web/src/app/api/auth/[...nextauth]/route.ts
+
 - Shopify OAuth provider with PKCE flow
 - shopify_domain pulled from state parameter
 - signIn callback: upsert merchant + owner merchant_user via
@@ -96,9 +101,10 @@ apps/web/src/app/api/auth/[...nextauth]/route.ts
 - JWT callback: encode merchantId, shopifyDomain, role
   (HS256, 7-day, sliding window — extend if within 24h of expiry)
 - Session callback: expose merchantId, shopifyDomain, role to client
-- Cookies: httpOnly, Secure, SameSite=Strict, __Secure- prefix in prod
+- Cookies: httpOnly, Secure, SameSite=Strict, \_\_Secure- prefix in prod
 
 apps/api/src/auth/guards/merchant-session.guard.ts
+
 - Validates NextAuth JWT on every merchant request
 - Extracts merchantId and role from verified payload
 - Calls MerchantContextService.run(merchantId) to set RLS context
@@ -106,6 +112,7 @@ apps/api/src/auth/guards/merchant-session.guard.ts
 - Throws 401 with codes: MISSING_TOKEN, INVALID_TOKEN, MERCHANT_INACTIVE
 
 ### Files that do NOT exist — never create:
+
 - apps/api/src/auth/guards/clerk-merchant.guard.ts
 
 ---
@@ -116,9 +123,10 @@ apps/api/src/auth/guards/merchant-session.guard.ts
 
 apps/api/src/auth/guards/clerk-buyer.guard.ts
 Used on all buyer routes requiring merchant approval.
+
 - Extract Bearer token from Authorization header
 - Call verifyToken(token, { secretKey: CLERK_SECRET_KEY }) from @clerk/backend
-- Read merchantId from __merchant_domain cookie (set by App Proxy middleware)
+- Read merchantId from \_\_merchant_domain cookie (set by App Proxy middleware)
 - Query merchant_buyer_relationships WHERE merchantId = ? AND
   buyer.clerkUserId = payload.sub
 - No relationship: ForbiddenException code NO_RELATIONSHIP
@@ -132,21 +140,23 @@ Used on all buyer routes requiring merchant approval.
 
 apps/api/src/auth/guards/clerk-authenticated.guard.ts
 Used on pre-approval buyer routes (apply endpoint only).
+
 - Extract and verify Bearer token via Clerk
 - No approval status check — buyer is authenticated but not yet approved
 - Attach { clerkUserId, email: payload.email } to request.buyerIdentity
 
 apps/api/src/auth/clerk-webhooks.controller.ts
+
 - POST /webhooks/clerk
 - Verify Svix signature using CLERK_WEBHOOK_SECRET before any processing
 - Handle user.created:
-    UPDATE buyers SET clerkUserId = event.data.id
-    WHERE email = event.data.email_addresses[0].email_address
+  UPDATE buyers SET clerkUserId = event.data.id
+  WHERE email = event.data.email_addresses[0].email_address
 - Handle user.updated:
-    If event.data.email_addresses[0].verification.status === 'verified':
-    UPDATE buyers SET emailVerifiedAt = NOW()
-    WHERE clerkUserId = event.data.id
-    Only update if emailVerifiedAt IS NULL (do not overwrite existing timestamp)
+  If event.data.email_addresses[0].verification.status === 'verified':
+  UPDATE buyers SET emailVerifiedAt = NOW()
+  WHERE clerkUserId = event.data.id
+  Only update if emailVerifiedAt IS NULL (do not overwrite existing timestamp)
 - Handle user.deleted: log only — GDPR erasure runs via internal pipeline
 - Return { received: true }
 - EXCLUDED from ValidationPipe and rate limiting
@@ -158,6 +168,7 @@ apps/web/src/app/(auth)/buyer-signup/page.tsx
 Clerk SignUp component, styled per design rules below.
 
 ### Files that do NOT exist — never create:
+
 - apps/api/src/auth/services/buyer-auth.service.ts
 - apps/api/src/auth/guards/buyer-jwt.guard.ts
 
@@ -168,16 +179,18 @@ Clerk SignUp component, styled per design rules below.
 ### datasource block (always both URLs):
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_DIRECT_URL")
+provider = "postgresql"
+url = env("DATABASE_URL")
+directUrl = env("DATABASE_DIRECT_URL")
 }
 
 ### merchants table:
+
 No changes from original prompts. Do not add clerkOrgId.
 Merchants are identified by shopifyDomain.
 
 ### merchant_users table:
+
 Keep exactly as original prompts define.
 Fields: id, merchantId, email, passwordHash, role, firstName, lastName,
 mfaSecret, lastLoginAt, loginFailCount, lockedUntil, isActive,
@@ -188,11 +201,13 @@ passwordHash is retained for potential future staff direct-login capability.
 ### buyers table — MODIFIED from original prompts:
 
 REMOVE these fields (Clerk owns them):
+
 - passwordHash
 - loginFailCount
 - lockedUntil
 
 ADD this field:
+
 - clerkUserId String? @unique @map("clerk_user_id")
   Nullable — Clerk webhook may arrive after buyer record is created.
   The clerk-buyer.guard handles this race condition by checking for null
@@ -207,10 +222,12 @@ emailVerifiedAt is synced from Clerk via user.updated webhook.
 See clerk-webhooks.controller.ts above.
 
 ### refresh_tokens table:
+
 REMOVE entirely. Clerk manages buyer sessions. NextAuth manages merchant
 sessions. No custom refresh token table is needed or correct.
 
 ### All other tables:
+
 Unchanged from original prompts.
 merchant_buyer_relationships, pricing_tiers, pricing_tier_overrides,
 orders, order_line_items, invoices, buyer_registration_applications,
@@ -227,43 +244,45 @@ DATABASE_DIRECT_URL — Supabase direct, port 5432, migrations only:
 postgresql://postgres.[ref]:[pass]@aws-0-[region].pooler.supabase.com:5432/postgres
 
 RLS setup — run once in Supabase SQL editor after project creation:
-  CREATE ROLE app_user;
-  CREATE ROLE audit_writer;
-  GRANT app_user TO authenticator;
+CREATE ROLE app_user;
+CREATE ROLE audit_writer;
+GRANT app_user TO authenticator;
 Then: pnpm db:migrate
 
 docker-compose.yml:
-  KEEP: redis-cache (6379, allkeys-lru), redis-queue (6380, appendonly, noeviction)
-  REMOVE: postgres service, pgadmin service
-  Local PostgreSQL: npx supabase start
+KEEP: redis-cache (6379, allkeys-lru), redis-queue (6380, appendonly, noeviction)
+REMOVE: postgres service, pgadmin service
+Local PostgreSQL: npx supabase start
 
 ---
 
 ## GUARD USAGE — ENFORCED IN ALL CONTROLLERS
 
-| Context | Guard | Import from |
-|---|---|---|
-| Merchant admin route | MerchantSessionGuard | ../auth/guards/merchant-session.guard |
-| Buyer route (requires approval) | ClerkBuyerGuard | ../auth/guards/clerk-buyer.guard |
-| Buyer route (pre-approval only) | ClerkAuthenticatedGuard | ../auth/guards/clerk-authenticated.guard |
-| Shopify webhook route | WebhookHmacGuard | ../webhooks/webhook-hmac.guard |
-| Clerk webhook route | No guard — Svix verified inside controller | — |
-| Stripe webhook route | No guard — Stripe sig verified inside controller | — |
-| Resolve webhook route | No guard — HMAC verified inside controller | — |
-| Health check routes | No guard + @SkipThrottle() | — |
+| Context                         | Guard                                                  | Import from                              |
+| ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
+| Merchant admin route            | MerchantSessionGuard                                   | ../auth/guards/merchant-session.guard    |
+| Buyer route (requires approval) | ClerkBuyerGuard                                        | ../auth/guards/clerk-buyer.guard         |
+| Buyer route (pre-approval only) | ClerkAuthenticatedGuard                                | ../auth/guards/clerk-authenticated.guard |
+| Shopify webhook route           | WebhookHmacGuard                                       | ../webhooks/webhook-hmac.guard           |
+| Clerk webhook route             | No guard — Svix verified inside controller             | —                                        |
+| Paddle webhook route            | No guard — Paddle signature verified inside controller | —                                        |
+| Resolve webhook route           | No guard — HMAC verified inside controller             | —                                        |
+| Health check routes             | No guard + @SkipThrottle()                             | —                                        |
 
 ---
 
 ## ENVIRONMENT VARIABLES — VALIDATED LIST
 
 Remove (no longer needed):
+
 - AUTH_PRIVATE_KEY
 - AUTH_PUBLIC_KEY
 
 Add:
-- CLERK_SECRET_KEY (required — starts with sk_live_ or sk_test_)
-- CLERK_PUBLISHABLE_KEY (required — starts with pk_live_ or pk_test_)
-- CLERK_WEBHOOK_SECRET (required — starts with whsec_)
+
+- CLERK*SECRET_KEY (required — starts with sk_live* or sk*test*)
+- CLERK*PUBLISHABLE_KEY (required — starts with pk_live* or pk*test*)
+- CLERK*WEBHOOK_SECRET (required — starts with whsec*)
 - DATABASE_DIRECT_URL (required — Supabase direct connection for migrations)
 
 Complete validated list for env.validation.ts:
@@ -274,9 +293,9 @@ NEXTAUTH_SECRET,
 CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY, CLERK_WEBHOOK_SECRET,
 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
 S3_BUCKET_NAME, S3_REGION, S3_KMS_KEY_ARN,
-STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-STRIPE_STARTER_PRICE_ID, STRIPE_GROWTH_PRICE_ID,
-STRIPE_PRO_PRICE_ID, STRIPE_GMV_METERED_PRICE_ID,
+PADDLE_API_KEY, PADDLE_WEBHOOK_SECRET, PADDLE_ENV,
+PADDLE_STARTER_PRICE_ID, PADDLE_GROWTH_PRICE_ID,
+PADDLE_PRO_PRICE_ID, PADDLE_GMV_PRICE_ID, PADDLE_CHECKOUT_URL,
 RESEND_API_KEY, RESEND_FROM_ADDRESS,
 ENCRYPTION_KEY_V1, CURRENT_ENCRYPTION_KEY_VERSION (default: 1),
 RESOLVE_API_KEY, RESOLVE_WEBHOOK_SECRET,
@@ -290,6 +309,7 @@ INTERNAL_API_SECRET (min 32 chars)
 ---
 
 # WHOLESALE PORTAL DESIGN SYSTEM
+
 ## Apple Weather Inspired Premium Glass Design Language
 
 ---
@@ -1034,7 +1054,7 @@ All runbooks in docs/runbooks/
 ## PACKAGE VERSIONS — DO NOT UPGRADE OR SUBSTITUTE
 
 next: 14.x
-@nestjs/core and all @nestjs/*: 10.x
+@nestjs/core and all @nestjs/\*: 10.x
 prisma and @prisma/client: 5.x
 bullmq: 5.x
 @clerk/backend: latest stable
@@ -1053,7 +1073,7 @@ pino: 8.x
 date-fns: 3.x
 zod: 3.x
 react-hook-form: 7.x
-stripe: 14.x or latest stable
+@paddle/paddle-node-sdk: 3.x or latest stable
 typescript: 5.x
 
 ---
@@ -1061,45 +1081,45 @@ typescript: 5.x
 ## MONOREPO LAYOUT
 
 ~/wholesale-portal/
- apps/
-   ├── web/           # Next.js 14 — merchant admin + buyer portal
-   └── api/           # NestJS 10 backend
- packages/
-   ├── shared/        # TypeScript types, Zod schemas, utils, error codes
-   └── database/      # Prisma schema, migrations, generated client
- tests/
-   ├── e2e/           # Playwright specs
-   └── load/          # k6 load test scripts
- docs/
-   └── runbooks/
- CLAUDE.md
- turbo.json
- pnpm-workspace.yaml
- package.json
- docker-compose.yml
- .github/
-    ├── workflows/ci.yml
-    └── dependabot.yml
+apps/
+├── web/ # Next.js 14 — merchant admin + buyer portal
+└── api/ # NestJS 10 backend
+packages/
+├── shared/ # TypeScript types, Zod schemas, utils, error codes
+└── database/ # Prisma schema, migrations, generated client
+tests/
+├── e2e/ # Playwright specs
+└── load/ # k6 load test scripts
+docs/
+└── runbooks/
+CLAUDE.md
+turbo.json
+pnpm-workspace.yaml
+package.json
+docker-compose.yml
+.github/
+├── workflows/ci.yml
+└── dependabot.yml
 
 ---
 
 ## FILES SUMMARY
 
 Create (new — not in original prompts):
-  apps/api/src/auth/guards/clerk-buyer.guard.ts
-  apps/api/src/auth/guards/clerk-authenticated.guard.ts
-  apps/api/src/auth/clerk-webhooks.controller.ts
-  apps/web/src/app/(auth)/buyer-login/page.tsx
-  apps/web/src/app/(auth)/buyer-signup/page.tsx
+apps/api/src/auth/guards/clerk-buyer.guard.ts
+apps/api/src/auth/guards/clerk-authenticated.guard.ts
+apps/api/src/auth/clerk-webhooks.controller.ts
+apps/web/src/app/(auth)/buyer-login/page.tsx
+apps/web/src/app/(auth)/buyer-signup/page.tsx
 
 Restore exactly as original prompts define:
-  apps/web/src/app/api/auth/[...nextauth]/route.ts
-  apps/api/src/auth/guards/merchant-session.guard.ts
+apps/web/src/app/api/auth/[...nextauth]/route.ts
+apps/api/src/auth/guards/merchant-session.guard.ts
 
 Never create:
-  apps/api/src/auth/services/buyer-auth.service.ts
-  apps/api/src/auth/guards/buyer-jwt.guard.ts
-  apps/api/src/auth/guards/clerk-merchant.guard.ts
+apps/api/src/auth/services/buyer-auth.service.ts
+apps/api/src/auth/guards/buyer-jwt.guard.ts
+apps/api/src/auth/guards/clerk-merchant.guard.ts
 
 ---
 
@@ -1125,23 +1145,23 @@ Package scope in this repo is **`@b2b/*`** (`@b2b/api`, `@b2b/web`, `@b2b/shared
 below; the original build prompts used the wrong scope.
 
 After any backend change:
-  pnpm --filter=@b2b/api build
-  pnpm typecheck
+pnpm --filter=@b2b/api build
+pnpm typecheck
 
 After pricing or financial logic:
-  pnpm --filter=@b2b/api test:unit -- --testPathPattern=pricing
-  pnpm typecheck
+pnpm --filter=@b2b/api test:unit -- --testPathPattern=pricing
+pnpm typecheck
 
 After any frontend change:
-  pnpm --filter=@b2b/web build
-  pnpm typecheck
+pnpm --filter=@b2b/web build
+pnpm typecheck
 
 After schema changes:
-  pnpm db:generate
-  pnpm typecheck
+pnpm db:generate
+pnpm typecheck
 
 Full verification (run before declaring any prompt done):
-  pnpm typecheck
+pnpm typecheck
 
 Zero errors required. Do not proceed until verification passes.
 
@@ -1154,12 +1174,12 @@ polish) is done. Full per-file detail lives in the three implementation docs;
 this section is the consolidated reference so a fresh session doesn't have to
 re-derive it from git history.
 
-| Part | Scope | Doc |
-|---|---|---|
-| 1 | Design-system foundation: tokens (`tailwind.config.ts` + `globals.css`), `DataTable`, `StatusBadge`, `DashboardKpiCard`, `Sidebar`, `PageLayout`, `EmptyState`, `ConfirmDialog`, typed `toasts`, all 13 merchant pages wired to `PageLayout` | `CONTEXT_HANDOFF.md` |
-| 2 | Buyer features: inventory visibility, shopping lists, discount codes (backend only, no admin UI), GA4/GTM analytics | `PART_2_IMPLEMENTATION.md` |
-| 3 | Merchant admin: sales-rep portal, fulfillment tracking + shipping emails, standing-order reminders, settings analytics tab, full design-system reskin of dashboard/orders/invoices/buyers/analytics | `PART_3_IMPLEMENTATION.md` |
-| 4 | Polish: micro-interactions, invoice PDF redesign, GMV-milestone + first-buyer-approval celebrations, system health dashboard, pricing table redesign, `FadeIn` page-load choreography, Playwright visual-consistency suite | `PART_4_IMPLEMENTATION.md` |
+| Part | Scope                                                                                                                                                                                                                                        | Doc                        |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 1    | Design-system foundation: tokens (`tailwind.config.ts` + `globals.css`), `DataTable`, `StatusBadge`, `DashboardKpiCard`, `Sidebar`, `PageLayout`, `EmptyState`, `ConfirmDialog`, typed `toasts`, all 13 merchant pages wired to `PageLayout` | `CONTEXT_HANDOFF.md`       |
+| 2    | Buyer features: inventory visibility, shopping lists, discount codes (backend only, no admin UI), GA4/GTM analytics                                                                                                                          | `PART_2_IMPLEMENTATION.md` |
+| 3    | Merchant admin: sales-rep portal, fulfillment tracking + shipping emails, standing-order reminders, settings analytics tab, full design-system reskin of dashboard/orders/invoices/buyers/analytics                                          | `PART_3_IMPLEMENTATION.md` |
+| 4    | Polish: micro-interactions, invoice PDF redesign, GMV-milestone + first-buyer-approval celebrations, system health dashboard, pricing table redesign, `FadeIn` page-load choreography, Playwright visual-consistency suite                   | `PART_4_IMPLEMENTATION.md` |
 
 Note: a separate design-system rollout was originally planned as its own
 "Parts 2–4" (see `CONTEXT_HANDOFF.md` → NOT DONE) but never shipped as
@@ -1169,6 +1189,7 @@ the pricing table rebuild). Do not go looking for a separate "design-system
 Part 2" branch or doc — it doesn't exist; the work is folded into Parts 3–4.
 
 ### New database tables / columns added since the schema in this file
+
 - `shopping_lists`, `shopping_list_items`, `b2b_discount_codes` (migration 008)
 - `merchants.gtmId`, `merchants.ga4Id`, `merchants.allowsBackOrders` (migration 009)
 - `sales_rep` value on the merchant-role enum, `sales_rep_sessions` table (RLS'd), `orders.rep_session_id` (migration 010)
@@ -1177,6 +1198,7 @@ Part 2" branch or doc — it doesn't exist; the work is folded into Parts 3–4.
 - No new environment variables were added across Parts 2–4.
 
 ### Net-new frontend components/hooks worth knowing about
+
 `DataTable` family, `DropdownMenu` (dependency-free, portals out of
 `overflow-hidden` tables so row menus are never clipped), `FadeIn`,
 `CopyButton` + `useCopyToClipboard`, `GmvMilestoneToast`, `FirstUseWelcome`,
@@ -1184,7 +1206,8 @@ Part 2" branch or doc — it doesn't exist; the work is folded into Parts 3–4.
 `/settings/health`), `useStandingOrders`.
 
 ### Design-system enforcement (binding, not aspirational)
-- Tokens in `tailwind.config.ts` / `globals.css` are the *only* source of
+
+- Tokens in `tailwind.config.ts` / `globals.css` are the _only_ source of
   color, shadow, radius, and duration values — no hardcoded hex, no arbitrary
   Tailwind values, no shadow outside the token scale.
 - Every financial/money-value cell renders with `tabular-nums` (enforced by
@@ -1200,6 +1223,7 @@ Part 2" branch or doc — it doesn't exist; the work is folded into Parts 3–4.
   old minimalist rule that forbade blur/transforms.
 
 ### Competitive positioning (why GMV-milestone messaging exists)
+
 The platform's core pitch versus marketplace alternatives (Faire, etc.) is
 **zero marketplace commission** — merchants keep 100% of GMV processed
 through their own wholesale channel instead of paying a ~15% marketplace
@@ -1210,6 +1234,7 @@ decoration — preserve the commission-comparison framing if these thresholds
 or messages are ever revised.
 
 ### Verification (last run at the Part 4 handoff, 2026-07-02)
+
 ```
 pnpm typecheck                       # 6/6 successful
 pnpm --filter @b2b/api build         # ok

@@ -1,11 +1,17 @@
-import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
-import type { Job } from 'bullmq';
-import * as Sentry from '@sentry/node';
-import { PrismaService } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
-import { QUEUE_BUYER } from '../queues/queue.module';
-import { isFinalAttempt, type WebhookJobData } from './worker-helpers';
+import { Logger } from "@nestjs/common";
+import { Processor, WorkerHost, OnWorkerEvent } from "@nestjs/bullmq";
+import type { Job } from "bullmq";
+import * as Sentry from "@sentry/node";
+import { PrismaService } from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
+import {
+  JOB_BUYER_SYNC,
+  JOB_GDPR_CUSTOMER_REDACT,
+  JOB_GDPR_DATA_REQUEST,
+  QUEUE_BUYER,
+} from "../queues/queue.module";
+import { GdprComplianceService } from "./gdpr-compliance.worker";
+import { isFinalAttempt, type WebhookJobData } from "./worker-helpers";
 
 /** Minimal shape of the Shopify customer webhook payload we read. */
 interface ShopifyCustomerPayload {
@@ -27,31 +33,48 @@ export class BuyerSyncWorker extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly merchantContext: MerchantContextService,
+    private readonly gdpr: GdprComplianceService,
   ) {
     super();
   }
 
   async process(job: Job<WebhookJobData>): Promise<void> {
-    await this.merchantContext.runAsSystem(() => this.handle(job));
+    await this.merchantContext.runAsSystem(() => {
+      switch (job.name) {
+        case JOB_GDPR_DATA_REQUEST:
+          return this.gdpr.recordDataRequest(job);
+        case JOB_GDPR_CUSTOMER_REDACT:
+          return this.gdpr.redactCustomer(job);
+        case JOB_BUYER_SYNC:
+        default:
+          return this.handle(job);
+      }
+    });
   }
 
   private async handle(job: Job<WebhookJobData>): Promise<void> {
     const { webhookEventId, shopifyDomain } = job.data;
 
-    const event = await this.prisma.webhookEvent.findUnique({ where: { id: webhookEventId } });
+    const event = await this.prisma.webhookEvent.findUnique({
+      where: { id: webhookEventId },
+    });
     if (!event) {
       this.logger.warn(`Webhook event ${webhookEventId} not found; skipping`);
       return;
     }
     await this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { status: 'processing', workerJobId: job.id ?? null, attemptCount: job.attemptsMade + 1 },
+      data: {
+        status: "processing",
+        workerJobId: job.id ?? null,
+        attemptCount: job.attemptsMade + 1,
+      },
     });
 
     const payload = event.payloadJson as ShopifyCustomerPayload | null;
     const email = payload?.email ?? null;
     if (!email) {
-      this.logger.warn('customers/create payload has no email; skipping');
+      this.logger.warn("customers/create payload has no email; skipping");
       await this.markProcessed(webhookEventId);
       return;
     }
@@ -66,7 +89,8 @@ export class BuyerSyncWorker extends WorkerHost {
       return;
     }
 
-    const company = payload?.company ?? payload?.default_address?.company ?? null;
+    const company =
+      payload?.company ?? payload?.default_address?.company ?? null;
     if (company && buyer.companyName.trim().length === 0) {
       await this.prisma.buyer.update({
         where: { id: buyer.id },
@@ -82,10 +106,10 @@ export class BuyerSyncWorker extends WorkerHost {
     await this.prisma.auditLog.create({
       data: {
         merchantId: merchant?.id ?? null,
-        entityType: 'buyer',
+        entityType: "buyer",
         entityId: buyer.id,
-        action: 'synced',
-        actorType: 'shopify_webhook',
+        action: "synced",
+        actorType: "shopify_webhook",
         newValueJson: { email },
       },
     });
@@ -97,11 +121,11 @@ export class BuyerSyncWorker extends WorkerHost {
   private async markProcessed(webhookEventId: string): Promise<void> {
     await this.prisma.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { status: 'processed', processedAt: new Date() },
+      data: { status: "processed", processedAt: new Date() },
     });
   }
 
-  @OnWorkerEvent('failed')
+  @OnWorkerEvent("failed")
   async onFailed(job: Job<WebhookJobData>, error: Error): Promise<void> {
     if (!isFinalAttempt(job)) return;
     const { webhookEventId } = job.data;
@@ -109,15 +133,17 @@ export class BuyerSyncWorker extends WorkerHost {
       .runAsSystem(() =>
         this.prisma.webhookEvent.update({
           where: { id: webhookEventId },
-          data: { status: 'dead_letter', lastError: error.message },
+          data: { status: "dead_letter", lastError: error.message },
         }),
       )
       .catch(() => undefined);
     Sentry.captureException(error, {
-      level: 'error',
-      tags: { component: 'worker', queue: QUEUE_BUYER, job: job.name },
+      level: "error",
+      tags: { component: "worker", queue: QUEUE_BUYER, job: job.name },
       extra: { webhookEventId, attempts: job.attemptsMade },
     });
-    this.logger.error(`buyer:sync dead-letter ${webhookEventId}: ${error.message}`);
+    this.logger.error(
+      `buyer:sync dead-letter ${webhookEventId}: ${error.message}`,
+    );
   }
 }

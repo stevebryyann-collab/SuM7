@@ -103,7 +103,7 @@ enum AuditActorType {
   buyer
   system
   shopify_webhook
-  stripe_webhook
+  paddle_webhook
   bnpl_webhook
 }
 
@@ -118,8 +118,8 @@ model Merchant {
   shopifyAccessTokenKeyVersion  Int              @default(1) @map("shopify_access_token_key_version") @db.SmallInt
   shopifyStoreId                String?          @map("shopify_store_id") @db.VarChar(100)
   subscriptionTier              SubscriptionTier @default(starter) @map("subscription_tier")
-  subscriptionStripeId          String?          @map("subscription_stripe_id") @db.VarChar(255)
-  stripeCustomerId              String?          @map("stripe_customer_id") @db.VarChar(255)
+  subscriptionPaddleId          String?          @unique @map("subscription_paddle_id") @db.VarChar(255)
+  paddleCustomerId              String?          @unique @map("paddle_customer_id") @db.VarChar(255)
   gmvCurrentMonth               Decimal          @default(0) @map("gmv_current_month") @db.Decimal(15, 2)
   gmvMonthKey                   String           @default("0000-00") @map("gmv_month_key") @db.Char(7)
   trialEndsAt                   DateTime?        @map("trial_ends_at") @db.Timestamptz(6)
@@ -149,6 +149,7 @@ model Merchant {
   shoppingLists    ShoppingList[]
   salesRepSessions SalesRepSession[]
   standingOrders   StandingOrder[]
+  monthlyGmv       MerchantMonthlyGmv[]
 
   @@index([subscriptionTier])
   @@map("merchants")
@@ -463,6 +464,58 @@ model IdempotencyKey {
 
   @@index([expiresAt])
   @@map("idempotency_keys")
+}
+
+// Paddle webhook idempotency + ordering ledger. Paddle delivers at-least-once
+// with no ordering guarantee, so every event id is recorded exactly once here
+// (unique event_id) BEFORE processing: a redelivery collides on the unique index
+// and is skipped (no duplicate audit rows, no re-mutation), and a subscription
+// state change is applied only when no NEWER event for the same Paddle entity has
+// already been recorded (occurred_at ordering guard). No RLS — this is a global
+// provider-event table (mirrors idempotency_keys), not merchant-owned.
+model PaddleWebhookEvent {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId        String    @unique @map("event_id") @db.VarChar(255)
+  eventType      String    @map("event_type") @db.VarChar(100)
+  paddleEntityId String?   @map("paddle_entity_id") @db.VarChar(255)
+  occurredAt     DateTime? @map("occurred_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([paddleEntityId, occurredAt(sort: Desc)])
+  @@map("paddle_webhook_events")
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Billing — monthly GMV ledger (Paddle overage)
+// ──────────────────────────────────────────────────────────────────────
+
+// Append-only, per-(merchant, month) GMV accumulator. Written additively at
+// every invoice-payment accrual site (dual-written alongside the mutable
+// merchants.gmv_current_month running bucket, which stays authoritative for the
+// live "current month" display). Unlike that single running bucket — which the
+// first payment of a new month overwrites at rollover — each month owns its own
+// immutable row here, so the monthly overage cron can bill a CLOSED month from a
+// value that can never be destroyed by an early next-month payment.
+//
+// `chargedAt` is the idempotency latch: the cron flips it from NULL→now() with a
+// conditional updateMany (an atomic compare-and-set) before calling Paddle, so a
+// redelivery / re-run / concurrent pod can never double-charge. On a Paddle
+// failure the latch is reset to NULL to allow a later retry.
+model MerchantMonthlyGmv {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  merchantId     String    @map("merchant_id") @db.Uuid
+  monthKey       String    @map("month_key") @db.Char(7)
+  gmv            Decimal   @default(0) @db.Decimal(15, 2)
+  chargedAt      DateTime? @map("charged_at") @db.Timestamptz(6)
+  paddleChargeId String?   @map("paddle_charge_id") @db.VarChar(255)
+  feeCents       Int?      @map("fee_cents")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, monthKey])
+  @@map("merchant_monthly_gmv")
 }
 
 // ──────────────────────────────────────────────────────────────────────

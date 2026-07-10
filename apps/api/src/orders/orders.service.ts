@@ -5,28 +5,35 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-} from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { Decimal } from 'decimal.js';
-import { addDays } from 'date-fns';
-import * as Sentry from '@sentry/node';
+} from "@nestjs/common";
+import { Prisma } from "@prisma/client";
+import { Decimal } from "decimal.js";
+import { addDays } from "date-fns";
+import * as Sentry from "@sentry/node";
 import type {
   BulkOrderInput,
   DecodedCursor,
   PaginatedResponse,
   PaymentTerms,
   ResolvedOrderLine,
-} from '@b2b/shared';
-import { PrismaService, type PrismaTransaction } from '../prisma/prisma.service';
-import { MerchantContextService } from '../prisma/merchant-context.service';
-import { PricingService } from '../pricing/pricing.service';
-import { ShopifyApiService } from '../shopify/shopify-api.service';
-import { PAYMENT_TERMS_DAYS } from '../workers/worker-helpers';
-import type { ShopifyDraftOrderInput } from '../shopify/shopify.types';
+} from "@b2b/shared";
+import {
+  PrismaService,
+  type PrismaTransaction,
+} from "../prisma/prisma.service";
+import { MerchantContextService } from "../prisma/merchant-context.service";
+import { PricingService } from "../pricing/pricing.service";
+import { ShopifyApiService } from "../shopify/shopify-api.service";
+import { PAYMENT_TERMS_DAYS } from "../workers/worker-helpers";
+import type { ShopifyDraftOrderInput } from "../shopify/shopify.types";
 
 /** Banker's-rounding Decimal — all order money math is deterministic. */
-const Money = Decimal.clone({ rounding: Decimal.ROUND_HALF_EVEN, precision: 40 });
-const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const Money = Decimal.clone({
+  rounding: Decimal.ROUND_HALF_EVEN,
+  precision: 40,
+});
+const UUID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const CREDIT_CAS_RETRIES = 3;
 const SERIALIZABLE_RETRIES = 3;
 
@@ -189,13 +196,19 @@ export class OrdersService {
     const resolved = await this.pricing.resolveOrderLinePricing(
       buyerId,
       merchantId,
-      dto.lineItems.map((li) => ({ shopifyVariantId: li.shopifyVariantId, quantity: li.quantity })),
+      dto.lineItems.map((li) => ({
+        shopifyVariantId: li.shopifyVariantId,
+        quantity: li.quantity,
+      })),
     );
     if (resolved.length === 0) {
-      throw new BadRequestException({ code: 'EMPTY_ORDER', message: 'Order has no line items' });
+      throw new BadRequestException({
+        code: "EMPTY_ORDER",
+        message: "Order has no line items",
+      });
     }
 
-    const currency = resolved[0]?.currency ?? 'USD';
+    const currency = resolved[0]?.currency ?? "USD";
     let subtotal = this.sumLineTotals(resolved);
 
     // Part 2 of 4: Validate discount code if provided
@@ -209,7 +222,7 @@ export class OrdersService {
       );
       if (!validation.valid) {
         throw new BadRequestException({
-          code: 'INVALID_DISCOUNT_CODE',
+          code: "INVALID_DISCOUNT_CODE",
           reason: validation.invalidReason,
         });
       }
@@ -231,11 +244,17 @@ export class OrdersService {
 
       for (const line of resolved) {
         const level = inventory.get(line.shopifyVariantId);
-        if (level && level.status === 'out_of_stock') {
+        if (level && level.status === "out_of_stock") {
           if (!level.allowsBackOrder) {
             throw new BadRequestException({
-              code: 'OUT_OF_STOCK_ITEMS',
-              items: [{ shopifyVariantId: line.shopifyVariantId, productTitle: line.productTitle, variantTitle: line.variantTitle }],
+              code: "OUT_OF_STOCK_ITEMS",
+              items: [
+                {
+                  shopifyVariantId: line.shopifyVariantId,
+                  productTitle: line.productTitle,
+                  variantTitle: line.variantTitle,
+                },
+              ],
             });
           }
           containsBackOrder = true;
@@ -246,20 +265,33 @@ export class OrdersService {
 
     // Steps 2 + 6: FOR SHARE the relationship (blocks concurrent approval /
     // suspension changes) and reserve credit with an optimistic version CAS.
-    const reserved = await this.verifyAndReserveCredit(merchantId, buyerId, subtotal);
+    const reserved = await this.verifyAndReserveCredit(
+      merchantId,
+      buyerId,
+      subtotal,
+    );
 
     const paymentTerms = reserved.paymentTerms;
     const dueDate = this.computeDueDate(paymentTerms);
 
     // Step 5: minimum order check against the resolved (server) subtotal (after discount).
-    await this.enforceMinimumOrder(merchantId, reserved.pricingTierId, subtotal);
+    await this.enforceMinimumOrder(
+      merchantId,
+      reserved.pricingTierId,
+      subtotal,
+    );
 
     // Steps 7–9: create + complete the Shopify draft order. Any failure releases
     // the reserved credit so a rejected order never consumes the buyer's limit.
     let shopifyOrderId: string;
     let shopifyOrderNumber: string;
     try {
-      const draftInput = this.buildDraftOrderInput(resolved, currency, dto.notes, idempotencyKey);
+      const draftInput = this.buildDraftOrderInput(
+        resolved,
+        currency,
+        dto.notes,
+        idempotencyKey,
+      );
       const draft = await this.shopify.createDraftOrder(
         merchant.shopifyDomain,
         merchant.shopifyAccessToken,
@@ -275,7 +307,11 @@ export class OrdersService {
         shopifyOrderId = String(order.id);
         shopifyOrderNumber = String(order.order_number);
       } catch (completeError) {
-        await this.deleteDraftBestEffort(merchant.shopifyDomain, merchant.shopifyAccessToken, draftOrderId);
+        await this.deleteDraftBestEffort(
+          merchant.shopifyDomain,
+          merchant.shopifyAccessToken,
+          draftOrderId,
+        );
         throw completeError;
       }
     } catch (shopifyError) {
@@ -315,8 +351,12 @@ export class OrdersService {
       // out of scope of the current ShopifyApiService).
       await this.releaseCredit(merchantId, buyerId, subtotal);
       Sentry.captureException(persistError, {
-        level: 'fatal',
-        tags: { component: 'orders', stage: 'persist', syncStatus: 'shopify_orphan' },
+        level: "fatal",
+        tags: {
+          component: "orders",
+          stage: "persist",
+          syncStatus: "shopify_orphan",
+        },
         extra: { merchantId, buyerId, shopifyOrderId, idempotencyKey },
       });
       this.logger.error(
@@ -324,8 +364,9 @@ export class OrdersService {
       );
       if (this.isSerializationFailure(persistError)) {
         throw new ConflictException({
-          code: 'SERIALIZATION_FAILURE',
-          message: 'Order could not be recorded due to a write conflict; please retry',
+          code: "SERIALIZATION_FAILURE",
+          message:
+            "Order could not be recorded due to a write conflict; please retry",
         });
       }
       throw persistError;
@@ -342,7 +383,7 @@ export class OrdersService {
       currency,
       paymentTerms,
       dueDate: dueDate ? dueDate.toISOString() : null,
-      estimatedInvoiceDelivery: 'within 60 seconds',
+      estimatedInvoiceDelivery: "within 60 seconds",
       containsBackOrder,
       backOrderItems,
     };
@@ -357,7 +398,8 @@ export class OrdersService {
     this.assertUuid(merchantId);
     const cursor = this.decodeCursor(params.cursor);
     const where: Prisma.OrderWhereInput = { merchantId };
-    if (params.status) where.status = params.status as Prisma.OrderWhereInput['status'];
+    if (params.status)
+      where.status = params.status as Prisma.OrderWhereInput["status"];
     if (params.buyerId) where.buyerId = params.buyerId;
     const createdAt = this.dateRange(params.dateFrom, params.dateTo);
     if (createdAt) where.createdAt = createdAt;
@@ -371,7 +413,7 @@ export class OrdersService {
     const rows = await this.merchantContext.run(merchantId, () =>
       this.prisma.order.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: params.limit + 1,
         select: this.orderSelect(),
       }),
@@ -399,7 +441,7 @@ export class OrdersService {
     const rows = await this.merchantContext.run(merchantId, () =>
       this.prisma.order.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: params.limit + 1,
         select: this.orderSelect(),
       }),
@@ -481,7 +523,10 @@ export class OrdersService {
       }),
     );
     if (!order) {
-      throw new NotFoundException({ code: 'ORDER_NOT_FOUND', message: 'Order not found' });
+      throw new NotFoundException({
+        code: "ORDER_NOT_FOUND",
+        message: "Order not found",
+      });
     }
 
     return {
@@ -506,7 +551,9 @@ export class OrdersService {
       trackingUrl: order.trackingUrl,
       fulfillmentService: order.fulfillmentService,
       shippedAt: order.shippedAt ? order.shippedAt.toISOString() : null,
-      estimatedDeliveryAt: order.estimatedDeliveryAt ? order.estimatedDeliveryAt.toISOString() : null,
+      estimatedDeliveryAt: order.estimatedDeliveryAt
+        ? order.estimatedDeliveryAt.toISOString()
+        : null,
       lineItems: order.lineItems.map((li) => ({
         shopifyVariantId: li.shopifyVariantId,
         shopifyProductId: li.shopifyProductId,
@@ -562,7 +609,7 @@ export class OrdersService {
     const minimum = new Money(tier.minOrderAmount.toString());
     if (subtotal.lessThan(minimum)) {
       throw new BadRequestException({
-        code: 'MINIMUM_ORDER_NOT_MET',
+        code: "MINIMUM_ORDER_NOT_MET",
         message: `Order subtotal ${subtotal.toFixed(2)} is below the minimum of ${minimum.toFixed(2)}`,
         minimumAmount: minimum.toFixed(2),
         currentAmount: subtotal.toFixed(2),
@@ -581,7 +628,7 @@ export class OrdersService {
         const variantId = Number(line.shopifyVariantId);
         if (!Number.isSafeInteger(variantId)) {
           throw new BadRequestException({
-            code: 'INVALID_VARIANT_ID',
+            code: "INVALID_VARIANT_ID",
             message: `Variant id ${line.shopifyVariantId} is not a valid Shopify id`,
           });
         }
@@ -627,17 +674,20 @@ export class OrdersService {
           const rel = rows[0];
           if (!rel) {
             throw new ForbiddenException({
-              code: 'NO_RELATIONSHIP',
-              message: 'No relationship with this merchant',
+              code: "NO_RELATIONSHIP",
+              message: "No relationship with this merchant",
             });
           }
-          if (rel.approvalStatus === 'suspended') {
-            throw new ForbiddenException({ code: 'BUYER_SUSPENDED', message: 'Account suspended' });
-          }
-          if (rel.approvalStatus !== 'approved') {
+          if (rel.approvalStatus === "suspended") {
             throw new ForbiddenException({
-              code: 'BUYER_NOT_APPROVED',
-              message: 'Account not approved',
+              code: "BUYER_SUSPENDED",
+              message: "Account suspended",
+            });
+          }
+          if (rel.approvalStatus !== "approved") {
+            throw new ForbiddenException({
+              code: "BUYER_NOT_APPROVED",
+              message: "Account not approved",
             });
           }
 
@@ -646,8 +696,8 @@ export class OrdersService {
             const used = new Money(rel.creditUsed.toString());
             if (used.plus(orderTotal).greaterThan(limit)) {
               throw new BadRequestException({
-                code: 'CREDIT_LIMIT_EXCEEDED',
-                message: 'This order would exceed the available credit limit',
+                code: "CREDIT_LIMIT_EXCEEDED",
+                message: "This order would exceed the available credit limit",
                 creditLimit: limit.toFixed(2),
                 creditUsed: used.toFixed(2),
                 orderTotal: orderTotal.toFixed(2),
@@ -680,13 +730,17 @@ export class OrdersService {
       }
     }
     throw new ConflictException({
-      code: 'CONCURRENT_MODIFICATION',
-      message: 'Credit limit was modified concurrently; please retry',
+      code: "CONCURRENT_MODIFICATION",
+      message: "Credit limit was modified concurrently; please retry",
     });
   }
 
   /** Best-effort credit release used when the order fails after reservation. */
-  private async releaseCredit(merchantId: string, buyerId: string, amount: Decimal): Promise<void> {
+  private async releaseCredit(
+    merchantId: string,
+    buyerId: string,
+    amount: Decimal,
+  ): Promise<void> {
     try {
       await this.prisma.$transaction(async (tx) => {
         await this.setTenant(tx, merchantId);
@@ -699,11 +753,13 @@ export class OrdersService {
       });
     } catch (error) {
       Sentry.captureException(error, {
-        level: 'error',
-        tags: { component: 'orders', stage: 'credit_release' },
+        level: "error",
+        tags: { component: "orders", stage: "credit_release" },
         extra: { merchantId, buyerId, amount: amount.toFixed(2) },
       });
-      this.logger.error(`Failed to release reserved credit: ${(error as Error).message}`);
+      this.logger.error(
+        `Failed to release reserved credit: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -726,7 +782,7 @@ export class OrdersService {
     containsBackOrder?: boolean;
   }): Promise<string> {
     const subtotalStr = params.subtotal.toFixed(2);
-    const discountAmountStr = params.discountAmount?.toFixed(2) ?? '0';
+    const discountAmountStr = params.discountAmount?.toFixed(2) ?? "0";
     for (let attempt = 0; attempt < SERIALIZABLE_RETRIES; attempt += 1) {
       try {
         return await this.prisma.$transaction(
@@ -737,14 +793,14 @@ export class OrdersService {
               where: { shopifyOrderId: params.shopifyOrderId },
               update: {
                 subtotal: subtotalStr,
-                taxAmount: '0',
-                shippingAmount: '0',
+                taxAmount: "0",
+                shippingAmount: "0",
                 total: subtotalStr,
                 currency: params.currency,
                 paymentTerms: params.paymentTerms,
                 dueDate: params.dueDate,
-                status: 'confirmed',
-                syncStatus: 'synced',
+                status: "confirmed",
+                syncStatus: "synced",
                 pricingTierIdAtOrder: params.pricingTierIdAtOrder,
                 notes: params.notes,
                 discountCodeId: params.discountCodeId ?? null,
@@ -757,14 +813,14 @@ export class OrdersService {
                 shopifyOrderId: params.shopifyOrderId,
                 shopifyOrderNumber: params.shopifyOrderNumber,
                 subtotal: subtotalStr,
-                taxAmount: '0',
-                shippingAmount: '0',
+                taxAmount: "0",
+                shippingAmount: "0",
                 total: subtotalStr,
                 currency: params.currency,
                 paymentTerms: params.paymentTerms,
                 dueDate: params.dueDate,
-                status: 'confirmed',
-                syncStatus: 'synced',
+                status: "confirmed",
+                syncStatus: "synced",
                 pricingTierIdAtOrder: params.pricingTierIdAtOrder,
                 notes: params.notes,
                 discountCodeId: params.discountCodeId ?? null,
@@ -797,7 +853,10 @@ export class OrdersService {
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
-        if (this.isSerializationFailure(error) && attempt < SERIALIZABLE_RETRIES - 1) {
+        if (
+          this.isSerializationFailure(error) &&
+          attempt < SERIALIZABLE_RETRIES - 1
+        ) {
           await this.sleep(this.backoffMs(attempt));
           continue;
         }
@@ -806,8 +865,8 @@ export class OrdersService {
     }
     // Unreachable: the loop returns or throws on the final attempt.
     throw new ConflictException({
-      code: 'SERIALIZATION_FAILURE',
-      message: 'Order could not be recorded after retries',
+      code: "SERIALIZATION_FAILURE",
+      message: "Order could not be recorded after retries",
     });
   }
 
@@ -822,10 +881,10 @@ export class OrdersService {
         this.prisma.auditLog.create({
           data: {
             merchantId,
-            entityType: 'order',
+            entityType: "order",
             entityId: orderId,
-            action: 'created',
-            actorType: 'buyer',
+            action: "created",
+            actorType: "buyer",
             actorId: buyerId,
             newValueJson: {
               lineItems: lines.map((line) => ({
@@ -837,19 +896,29 @@ export class OrdersService {
         }),
       );
     } catch (error) {
-      this.logger.error(`Failed to write order audit log: ${(error as Error).message}`);
+      this.logger.error(
+        `Failed to write order audit log: ${(error as Error).message}`,
+      );
     }
   }
 
   // ── Shopify compensation ────────────────────────────────────────────────
 
-  private async deleteDraftBestEffort(domain: string, token: string, draftOrderId: string): Promise<void> {
+  private async deleteDraftBestEffort(
+    domain: string,
+    token: string,
+    draftOrderId: string,
+  ): Promise<void> {
     try {
       await this.shopify.deleteDraftOrder(domain, token, draftOrderId);
     } catch (deleteError) {
       Sentry.captureException(deleteError, {
-        level: 'fatal',
-        tags: { component: 'orders', stage: 'draft_cleanup', syncStatus: 'shopify_orphan' },
+        level: "fatal",
+        tags: {
+          component: "orders",
+          stage: "draft_cleanup",
+          syncStatus: "shopify_orphan",
+        },
         extra: { domain, draftOrderId },
       });
       this.logger.error(
@@ -871,25 +940,31 @@ export class OrdersService {
           shopifyAccessToken: true,
           isActive: true,
           trialEndsAt: true,
-          subscriptionStripeId: true,
+          subscriptionPaddleId: true,
         },
       }),
     );
     if (!merchant || !merchant.isActive) {
       throw new ForbiddenException({
-        code: 'MERCHANT_INACTIVE',
-        message: 'Merchant account is inactive',
+        code: "MERCHANT_INACTIVE",
+        message: "Merchant account is inactive",
       });
     }
-    const trialActive = merchant.trialEndsAt !== null && merchant.trialEndsAt.getTime() > Date.now();
-    const hasSubscription = Boolean(merchant.subscriptionStripeId);
+    const trialActive =
+      merchant.trialEndsAt !== null &&
+      merchant.trialEndsAt.getTime() > Date.now();
+    const hasSubscription = Boolean(merchant.subscriptionPaddleId);
     if (!trialActive && !hasSubscription) {
       throw new ForbiddenException({
-        code: 'SUBSCRIPTION_REQUIRED',
-        message: 'Merchant trial has expired and no active subscription is present',
+        code: "SUBSCRIPTION_REQUIRED",
+        message:
+          "Merchant trial has expired and no active subscription is present",
       });
     }
-    return { shopifyDomain: merchant.shopifyDomain, shopifyAccessToken: merchant.shopifyAccessToken };
+    return {
+      shopifyDomain: merchant.shopifyDomain,
+      shopifyAccessToken: merchant.shopifyAccessToken,
+    };
   }
 
   private orderSelect(): Prisma.OrderSelect {
@@ -932,7 +1007,12 @@ export class OrdersService {
     const page = hasNextPage ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const endCursor =
-      hasNextPage && last ? this.encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null;
+      hasNextPage && last
+        ? this.encodeCursor({
+            createdAt: last.createdAt.toISOString(),
+            id: last.id,
+          })
+        : null;
 
     return {
       data: page.map((row) => ({
@@ -949,7 +1029,9 @@ export class OrdersService {
         dueDate: row.dueDate ? row.dueDate.toISOString() : null,
         createdAt: row.createdAt.toISOString(),
         invoiceStatus: row.invoice?.status ?? null,
-        invoiceDueDate: row.invoice?.dueDate ? row.invoice.dueDate.toISOString() : null,
+        invoiceDueDate: row.invoice?.dueDate
+          ? row.invoice.dueDate.toISOString()
+          : null,
       })),
       pageInfo: { hasNextPage, endCursor },
     };
@@ -958,20 +1040,28 @@ export class OrdersService {
   // ── Cursor + small utilities ────────────────────────────────────────────
 
   private encodeCursor(cursor: DecodedCursor): string {
-    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64');
+    return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64");
   }
 
   private decodeCursor(raw: string | undefined): DecodedCursor | null {
     if (!raw) return null;
     try {
-      const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8')) as Partial<DecodedCursor>;
-      if (typeof parsed.createdAt === 'string' && typeof parsed.id === 'string') {
+      const parsed = JSON.parse(
+        Buffer.from(raw, "base64").toString("utf8"),
+      ) as Partial<DecodedCursor>;
+      if (
+        typeof parsed.createdAt === "string" &&
+        typeof parsed.id === "string"
+      ) {
         return { createdAt: parsed.createdAt, id: parsed.id };
       }
     } catch {
       // fall through to the invalid-cursor error
     }
-    throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Malformed pagination cursor' });
+    throw new BadRequestException({
+      code: "INVALID_CURSOR",
+      message: "Malformed pagination cursor",
+    });
   }
 
   private dateRange(
@@ -984,23 +1074,31 @@ export class OrdersService {
     return filter.gte || filter.lte ? filter : undefined;
   }
 
-  private async setTenant(tx: PrismaTransaction, merchantId: string): Promise<void> {
+  private async setTenant(
+    tx: PrismaTransaction,
+    merchantId: string,
+  ): Promise<void> {
     this.assertUuid(merchantId);
-    await tx.$executeRawUnsafe(`SET LOCAL app.current_merchant_id = '${merchantId}'`);
+    await tx.$executeRawUnsafe(
+      `SET LOCAL app.current_merchant_id = '${merchantId}'`,
+    );
   }
 
   private assertUuid(value: string): void {
     if (!UUID_RE.test(value)) {
-      throw new BadRequestException({ code: 'INVALID_ID', message: `Malformed id: ${value}` });
+      throw new BadRequestException({
+        code: "INVALID_ID",
+        message: `Malformed id: ${value}`,
+      });
     }
   }
 
   private isSerializationFailure(error: unknown): boolean {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       // P2034: write conflict / deadlock; raw 40001: serialization failure.
-      if (error.code === 'P2034') return true;
+      if (error.code === "P2034") return true;
       const dbCode = (error.meta as { code?: string } | undefined)?.code;
-      if (dbCode === '40001') return true;
+      if (dbCode === "40001") return true;
     }
     return false;
   }
