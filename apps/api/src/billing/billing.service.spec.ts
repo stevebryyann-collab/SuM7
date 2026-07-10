@@ -104,6 +104,7 @@ function setup(opts: {
     merchantContext,
     {} as unknown as EmailService,
     {} as unknown as Redis,
+    {} as unknown as Redis,
   );
   service.onModuleInit();
   (
@@ -130,11 +131,13 @@ function releaseCalls(updateMany: jest.Mock): unknown[] {
   );
 }
 
-/** updateMany calls that anchor the Paddle charge id onto the ledger row. */
+/** updateMany call args that anchor the Paddle charge id onto the ledger row. */
 function chargeIdCalls(updateMany: jest.Mock): unknown[] {
-  return updateMany.mock.calls.filter(
-    ([arg]) => "paddleChargeId" in ((arg as { data?: object })?.data ?? {}),
-  );
+  return updateMany.mock.calls
+    .map(([arg]) => arg)
+    .filter(
+      (arg) => "paddleChargeId" in ((arg as { data?: object })?.data ?? {}),
+    );
 }
 
 describe("BillingService.chargeMonthlyGmvOverage", () => {
